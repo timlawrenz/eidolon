@@ -9,4 +9,4 @@ scikit-image
 imageio
 plotly
 opencv-python
-git+https://github.com/facebookresearch/pytorch3d.git@stable --no-build-isolation
+git+https://github.com/facebookresearch/pytorch3d.git@stable
