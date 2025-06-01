@@ -27,14 +27,32 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
 4.  **Download FLAME assets:**
     *   Go to [https://flame.is.tue.mpg.de/](https://flame.is.tue.mpg.de/) and register for a free account.
     *   Download the following assets:
-        *   FLAME 2023 (select "FLAME model (female, male, gender-neutral)")
-        *   FLAME Vertex Masks (select "Vertex masks")
-        *   FLAME Mediapipe Landmark Embedding (select "Landmark embedding for Mediapipe")
+        *   FLAME 2023 (select "FLAME 2023 ... no chumpy dependency"). This will provide `.npz` files (e.g., `generic_model.npz`, `female_model.npz`, `male_model.npz`).
+        *   FLAME Vertex Masks (select "Vertex masks", e.g., `vertex_masks.npz`).
+        *   FLAME Mediapipe Landmark Embedding (select "Landmark embedding for Mediapipe", e.g., `mediapipe_landmark_embedding.npz`).
     *   Unzip the downloaded files.
     *   Create a directory `data/flame_model/` in the root of this project.
-    *   Place the unzipped model files into the `data/flame_model/` directory. You should have at least `generic_model.pkl`, `head_template_mesh.obj`, `mediapipe_landmark_embedding.npz`, and `vertex_masks.npz` (or similar, depending on the exact files from the FLAME 2023 download) in this directory.
+    *   Place the unzipped model files into the `data/flame_model/` directory. You should have at least `generic_model.npz` (or `female_model.npz`/`male_model.npz`), `head_template_mesh.obj` (often included or can be generated), `mediapipe_landmark_embedding.npz`, and `vertex_masks.npz` in this directory.
 
 ## Usage
+
+(Add instructions on how to run your project here)
+
+## Running the Notebooks
+
+1.  Ensure you have completed all steps in the [Setup](#setup) section, including installing dependencies and downloading FLAME assets.
+2.  Activate your virtual environment:
+    ```bash
+    source .venv/bin/activate
+    ```
+3.  Start JupyterLab from the root directory of the project:
+    ```bash
+    jupyter lab
+    ```
+4.  JupyterLab will open in your web browser. Navigate to the `notebooks/` directory and open `01_exploration_and_rendering.ipynb`.
+5.  Run the cells in the notebook sequentially.
+
+## References
 
 (Add instructions on how to run your project here)
 
