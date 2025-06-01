@@ -1,6 +1,7 @@
-torch
-torchvision
-torchaudio
+--find-links https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt230/download.html
+torch==2.3.0
+torchvision==0.18.0
+torchaudio==2.3.0
 numpy
 scipy
 jupyterlab
