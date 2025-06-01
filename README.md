@@ -55,10 +55,6 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
 
 ## References
 
-(Add instructions on how to run your project here)
-
-## References
-
 This project utilizes the FLAME model:
 
 ```bibtex
