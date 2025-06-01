@@ -37,3 +37,20 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
 ## Usage
 
 (Add instructions on how to run your project here)
+
+## References
+
+This project utilizes the FLAME model:
+
+```bibtex
+@article{FLAME:SiggraphAsia2017, 
+  title = {Learning a model of facial shape and expression from {4D} scans}, 
+  author = {Li, Tianye and Bolkart, Timo and Black, Michael. J. and Li, Hao and Romero, Javier}, 
+  journal = {ACM Transactions on Graphics, (Proc. SIGGRAPH Asia)}, 
+  volume = {36}, 
+  number = {6}, 
+  year = {2017}, 
+  pages = {194:1--194:17},
+  url = {https://doi.org/10.1145/3130800.3130813} 
+}
+```
