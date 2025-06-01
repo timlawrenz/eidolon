@@ -19,6 +19,7 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
     *(On Windows, use `.venv\Scripts\activate`)*
 
 3.  **Install dependencies:**
+    This project uses the FLAME model. When using the `.pkl` model files (like `flame2023.pkl`), the `chumpy` library is required. It will be installed as part of the command below.
 
     ```bash
     pip install -r requirements.txt
@@ -27,12 +28,12 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
 4.  **Download FLAME assets:**
     *   Go to [https://flame.is.tue.mpg.de/](https://flame.is.tue.mpg.de/) and register for a free account.
     *   Download the following assets:
-        *   FLAME 2023 (select "FLAME 2023 ... no chumpy dependency"). This will provide `.npz` files (e.g., `generic_model.npz`, `female_model.npz`, `male_model.npz`).
-        *   FLAME Vertex Masks (select "Vertex masks", e.g., `vertex_masks.npz`).
-        *   FLAME Mediapipe Landmark Embedding (select "Landmark embedding for Mediapipe", e.g., `mediapipe_landmark_embedding.npz`).
+        *   FLAME 2023 (select the main "FLAME model" download, which typically includes `.pkl` files like `flame2023.pkl`).
+        *   FLAME Vertex Masks (select "Vertex masks", e.g., `FLAME_masks.pkl` or `vertex_masks.npz`). The file `FLAME_masks.pkl` is present in your `data/flame_model` directory.
+        *   FLAME Mediapipe Landmark Embedding (select "Landmark embedding for Mediapipe", e.g., `mediapipe_landmark_embedding.npz`). This is present in your `data/flame_model` directory.
     *   Unzip the downloaded files.
-    *   Create a directory `data/flame_model/` in the root of this project.
-    *   Place the unzipped model files into the `data/flame_model/` directory. You should have at least `generic_model.npz` (or `female_model.npz`/`male_model.npz`), `head_template_mesh.obj` (often included or can be generated), `mediapipe_landmark_embedding.npz`, and `vertex_masks.npz` in this directory.
+    *   Create a directory `data/flame_model/` in the root of this project (if it doesn't exist).
+    *   Place the unzipped model files into the `data/flame_model/` directory. Based on your files, you should have at least `flame2023.pkl`, `FLAME_masks.pkl`, and `mediapipe_landmark_embedding.npz`. The `head_template_mesh.obj` is also useful if provided in the FLAME download.
 
 ## Usage
 
