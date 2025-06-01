@@ -5,3 +5,7 @@ numpy
 scipy
 jupyterlab
 matplotlib
+scikit-image
+imageio
+plotly
+opencv-python
