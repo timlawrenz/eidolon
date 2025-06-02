@@ -85,8 +85,11 @@ for epoch in range(NUM_EPOCHS):
         unnormalized_images_np = unnormalized_images_np.astype(np.uint8)
 
         # Get landmarks for the entire batch.
+        # Convert the numpy array (B,H,W,C) to a tensor (B,C,H,W) as expected by the face_detector.
+        images_for_fa = torch.from_numpy(unnormalized_images_np).permute(0, 3, 1, 2).float().to(DEVICE)
+        
         # gt_landmarks_list contains a list of numpy arrays (or None if no face detected)
-        gt_landmarks_list = fa.get_landmarks_from_batch(unnormalized_images_np)
+        gt_landmarks_list = fa.get_landmarks_from_batch(images_for_fa)
         
         # TODO: Convert gt_landmarks_list to a stacked torch.Tensor `gt_landmarks_2d`.
         # Handle cases where landmarks are not detected (gt_landmarks_list[j] is None).
