@@ -138,26 +138,17 @@ class FLAME(nn.Module):
 
         # Load 3D landmark embedding
         landmark_data = np.load(landmark_embedding_path, allow_pickle=True)
-        # Common key for landmark vertex IDs is 'lmk_vertex_ids' or similar.
-        # If 'lmk_vertex_ids' also fails, inspect the .npz file for the correct key.
-        try:
-            landmark_indices = landmark_data['lmk_vertex_ids'] 
-        except KeyError:
-            # Fallback or error if 'lmk_vertex_ids' is also not found.
-            # For now, let's try 'vertex_ids' as a last resort or raise a more informative error.
-            # However, the original error indicates 'vertex_ids' was already tried.
-            # The user should inspect their .npz file.
-            print(f"ERROR: Could not find 'lmk_vertex_ids' or 'vertex_ids' in {landmark_embedding_path}.")
+        # Common key for landmark vertex IDs is 'landmark_indices' based on inspection.
+        if 'landmark_indices' not in landmark_data:
+            print(f"ERROR: Key 'landmark_indices' not found in {landmark_embedding_path}.")
             print(f"Available keys: {list(landmark_data.keys())}")
-            # Defaulting to an empty tensor or raising an error might be appropriate.
-            # For now, to make it runnable but highlight the issue:
             # This will likely cause issues downstream if not corrected.
-            landmark_indices = np.array([], dtype=np.int64) 
-            # A better approach would be to raise an error here if the key is critical and not found.
-            # raise KeyError(f"Critical key for landmark vertex IDs not found in {landmark_embedding_path}. Check keys: {list(landmark_data.keys())}")
+            # Consider raising an error if this key is critical.
+            landmark_indices_np = np.array([], dtype=np.int64) 
+        else:
+            landmark_indices_np = landmark_data['landmark_indices']
 
-
-        self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices, dtype=torch.long))
+        self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_np, dtype=torch.long))
 
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None, 
