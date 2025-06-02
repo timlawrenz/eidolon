@@ -50,8 +50,13 @@ NUM_EXPRESSION_COEFFS = 50
 NUM_GLOBAL_POSE_COEFFS = 6 # e.g., axis-angle
 NUM_JAW_POSE_COEFFS = 3
 NUM_EYE_POSE_COEFFS = 6 # 3 for left, 3 for right
+NUM_NECK_POSE_COEFFS = 3 # Added for neck pose
 NUM_TRANSLATION_COEFFS = 3
-# Ensure NUM_COEFFS == NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS + ...
+# Remaining coefficients, e.g., for texture, lighting, or other details
+# Calculated as: NUM_COEFFS - (sum of above)
+# 227 - (100 + 50 + 6 + 3 + 6 + 3 + 3) = 227 - 171 = 56
+NUM_DETAIL_COEFFS = 56 
+# Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
 LOSS_WEIGHTS = {
     'pixel': 1.0,
     'landmark': 1e-4, # Landmarks are sensitive, start with a small weight
@@ -139,10 +144,18 @@ def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
     eye_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_EYE_POSE_COEFFS]
     current_idx += NUM_EYE_POSE_COEFFS
 
+    # Neck pose
+    neck_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_NECK_POSE_COEFFS]
+    current_idx += NUM_NECK_POSE_COEFFS
+
     # Translation
     transl_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_TRANSLATION_COEFFS]
     current_idx += NUM_TRANSLATION_COEFFS
 
+    # Detail/Other parameters (e.g., texture, lighting)
+    detail_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_DETAIL_COEFFS]
+    current_idx += NUM_DETAIL_COEFFS
+    
     # Assert that all coefficients have been deconstructed
     assert current_idx == NUM_COEFFS, f"Mismatch in deconstructed coeffs: expected {NUM_COEFFS}, got {current_idx}"
 
@@ -152,7 +165,9 @@ def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
         'pose_params': pose_params,
         'jaw_pose_params': jaw_pose_params,
         'eye_pose_params': eye_pose_params,
-        'transl': transl_params # FLAME model might expect 'transl'
+        'neck_pose_params': neck_pose_params,
+        'transl': transl_params, # FLAME model might expect 'transl'
+        'detail_params': detail_params
     }
 
 # 3. The Training Loop
@@ -179,7 +194,9 @@ for epoch in range(NUM_EPOCHS):
             pose_params=pred_coeffs_dict['pose_params'],
             jaw_pose_params=pred_coeffs_dict['jaw_pose_params'],
             eye_pose_params=pred_coeffs_dict['eye_pose_params'],
+            neck_pose_params=pred_coeffs_dict['neck_pose_params'],
             transl=pred_coeffs_dict['transl']
+            # detail_params are deconstructed but not used by the FLAME placeholder model yet
         )
         
         # TODO 3: Project 3D landmarks to 2D screen space
