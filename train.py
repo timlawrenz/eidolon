@@ -103,7 +103,8 @@ for epoch in range(NUM_EPOCHS):
         valid_landmarks_list = [gt_landmarks_list[idx] for idx in valid_indices]
         
         # Convert the clean list of landmarks to a tensor
-        gt_landmarks_2d = torch.from_numpy(np.array(valid_landmarks_list)).float().to(DEVICE)
+        # Use np.stack to ensure proper stacking of arrays into a new dimension
+        gt_landmarks_2d = torch.from_numpy(np.stack(valid_landmarks_list, axis=0)).float().to(DEVICE)
 
         # --- Forward Pass (Encoder) ---
         optimizer.zero_grad()
