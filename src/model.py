@@ -528,58 +528,19 @@ class FLAME(nn.Module):
         # This is a placeholder for how poses are combined.
         # A proper FLAME layer would handle this internally based on its design.
         
-        # Convert global pose (6D) to 3x3 rotation matrix
-        if pose_params.shape[1] == 6:
-            global_rot_mat = rotation_6d_to_matrix(pose_params) # (B, 3, 3)
-        elif pose_params.shape[1] == 3: # If global pose is already axis-angle (e.g. for easier start)
-            print("Warning: Global pose is 3D (axis-angle), converting to matrix. Consider 6D output from encoder.")
-            global_rot_mat = batch_rodrigues(pose_params)
-        else:
-            print(f"Warning: Global pose_params have unexpected shape {pose_params.shape}. Expected 3 or 6. Using identity for global rotation.")
-            global_rot_mat = torch.eye(3, device=device, dtype=shape_params.dtype).unsqueeze(0).repeat(batch_size, 1, 1) # Use shape_params.dtype
-
-        # Convert other poses (axis-angle) to 3x3 rotation matrices
-        neck_rot_mat = batch_rodrigues(neck_pose_params)
-        jaw_rot_mat = batch_rodrigues(jaw_pose_params)
-        eye_l_rot_mat = batch_rodrigues(eye_pose_params[:, :3])
-        eye_r_rot_mat = batch_rodrigues(eye_pose_params[:, 3:])
-
-        # Stack rotation matrices for the 5 main LBS joints: global, neck, jaw, left_eye, right_eye
-        # This order should match the joint order in lbs_weights and parents for FLAME
-        rot_mats_for_lbs = torch.stack([
-            global_rot_mat, 
-            neck_rot_mat, 
-            jaw_rot_mat, 
-            eye_l_rot_mat, 
-            eye_r_rot_mat
-        ], dim=1) # (B, 5, 3, 3)
-
-        # Create pose_feature_vector for posedirs
-        # Typically driven by neck, jaw, left eye, right eye rotations (excluding identity for each).
-        # FLAME posedirs (36 components) = 4 joints * 9 components each.
-        # rot_mats_for_lbs is stacked as [global, neck, jaw, eye_l, eye_r]
-        # We need indices 1 (neck), 2 (jaw), 3 (eye_l), 4 (eye_r).
-        num_joints_for_posedirs = 4 
-        # Select the rotation matrices for neck, jaw, left eye, right eye
-        rot_mats_subset_for_posedirs = rot_mats_for_lbs[:, 1:1+num_joints_for_posedirs, :, :] # (B, 4, 3, 3)
-
-        ident = torch.eye(3, device=device, dtype=shape_params.dtype).unsqueeze(0) # (1,3,3)
-        
-        # (B, num_joints_for_posedirs, 3, 3) -> (B, num_joints_for_posedirs*9)
-        pose_feature_vector_for_posedirs = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) # Should be (B, 4*9=36)
-        
-        num_expected_posedirs_coeffs = self.posedirs.shape[2] # This should be 36
-        if pose_feature_vector_for_posedirs.shape[1] != num_expected_posedirs_coeffs:
-            print(f"Warning: Mismatch in pose_feature_vector_for_posedirs size. Expected {num_expected_posedirs_coeffs}, "
-                  f"got {pose_feature_vector_for_posedirs.shape[1]}. Using zeros for posedirs effect.")
-            pose_feature_vector_for_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=shape_params.dtype)
-
-
-        pred_verts_posed = lbs(v_expressed, 
-                               rot_mats_for_lbs,
-                               pose_feature_vector_for_posedirs,
-                               self.J_regressor, self.parents_lbs, self.lbs_weights, self.posedirs, # Use self.parents_lbs
-                               dtype=self.v_template.dtype)
+        # The lbs function now takes individual pose parameters and handles conversions internally.
+        pred_verts_posed = lbs(
+            v_shaped_expressed=v_expressed,
+            global_pose_params_6d=pose_params,         # (B, 6) from train.py
+            neck_pose_params_ax=neck_pose_params,      # (B, 3) axis-angle
+            jaw_pose_params_ax=jaw_pose_params,        # (B, 3) axis-angle
+            eye_pose_params_ax=eye_pose_params,        # (B, 6) axis-angle
+            J_regressor=self.J_regressor,
+            parents_lbs=self.parents_lbs,
+            lbs_weights=self.lbs_weights,
+            posedirs=self.posedirs,
+            dtype=self.v_template.dtype
+        )
         
         # 4. Apply global translation
         if transl is not None:
