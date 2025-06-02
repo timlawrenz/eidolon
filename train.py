@@ -72,8 +72,7 @@ NUM_DETAIL_COEFFS = 56
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
 DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' # Updated path for DECA landmarks
 
-VISUALIZATION_INTERVAL = 500 # Steps between generating validation images
-LOGGING_INTERVAL = 10 # Steps between printing loss
+VISUALIZATION_INTERVAL = 500 # Steps between generating validation images, and for all detailed logging.
 
 LOSS_WEIGHTS = {
     'pixel': 1.0,
@@ -261,12 +260,32 @@ for epoch in range(NUM_EPOCHS):
         total_loss.backward() 
         optimizer.step()
         
-        # Visual validation step
-        if i % VISUALIZATION_INTERVAL == 0: # Every VISUALIZATION_INTERVAL steps
+        # Visual validation step, TensorBoard logging, and detailed console output
+        if i % VISUALIZATION_INTERVAL == 0: 
+            current_global_step = epoch * len(data_loader) + i
+            
+            # --- Console Logging ---
+            # Fetch specific loss values for console logging
+            loss_pixel_val = loss_dict.get('pixel', torch.tensor(0.0)).item()
+            loss_landmark_val = loss_dict.get('landmark', torch.tensor(0.0)).item()
+            loss_reg_shape_val = loss_dict.get('reg_shape', torch.tensor(0.0)).item()
+            loss_total_val = total_loss.item() # Already available
+
+            print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], Batch: {current_batch_size}, "
+                  f"Total Loss: {loss_total_val:.4f}, Pixel: {loss_pixel_val:.4f}, "
+                  f"Landmark: {loss_landmark_val:.4f}, RegShape: {loss_reg_shape_val:.4f}")
+
+            # --- TensorBoard Scalar Logging ---
+            writer.add_scalar('Loss/train_total', loss_total_val, current_global_step)
+            for loss_name, loss_value in loss_dict.items():
+                if loss_name != 'total': # total is already logged
+                    val_to_log = loss_value.item() if hasattr(loss_value, 'item') else loss_value
+                    writer.add_scalar(f'Loss/train_{loss_name}', val_to_log, current_global_step)
+            writer.add_scalar('Hyperparameters/learning_rate', LEARNING_RATE, current_global_step)
+
+            # --- Validation Image Generation and TensorBoard Image Logging ---
             encoder.eval() # Set model to evaluation mode
             with torch.no_grad(): # No gradients needed for validation
-                # Take a few images from the current batch for visualization
-                # Ensure there are enough images in the batch, otherwise take all
                 num_val_samples = min(4, gt_images.shape[0]) 
                 val_gt_images = gt_images[:num_val_samples]
                 val_gt_landmarks = gt_landmarks_2d[:num_val_samples]
@@ -283,22 +302,19 @@ for epoch in range(NUM_EPOCHS):
                     neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
                     transl=val_pred_coeffs_dict['transl']
                 )
-                # image_size_for_projection is defined in the main loop scope
                 val_pred_landmarks_2d_model = cameras.transform_points_screen(
                     val_pred_landmarks_3d, image_size=image_size_for_projection
                 )[:, :, :2]
                 
-                # Create Meshes for visualization
-                val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7 # Gray
+                val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
                 val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
                 
                 val_meshes_batch = Meshes(
-                    verts=list(val_pred_verts), # List of (N,3) tensors
-                    faces=[flame_model.faces_idx] * val_pred_verts.shape[0], # Repeat faces for each mesh
+                    verts=list(val_pred_verts),
+                    faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
                     textures=val_textures_batch
                 )
-                val_rendered_images = renderer(val_meshes_batch) # (B, H, W, C)
-                val_rendered_images = val_rendered_images.permute(0, 3, 1, 2)[:, :3, :, :] # (B, C, H, W), RGB
+                val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
 
                 output_dir = "outputs/validation_images"
                 os.makedirs(output_dir, exist_ok=True)
@@ -307,51 +323,21 @@ for epoch in range(NUM_EPOCHS):
                 save_validation_images(
                     val_gt_images, val_rendered_images, 
                     val_gt_landmarks, val_pred_landmarks_2d_model,
-                    save_path_prefix, # Pass the prefix, function will append _sample_idx.png
+                    save_path_prefix,
                     num_images=num_val_samples 
                 )
 
-                # --- TensorBoard Logging for Images ---
-                # Unnormalize gt_images (assuming they are normalized like training data)
                 mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
                 std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
                 val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
                 
-                # Create a grid of images
-                # global_step is defined in the LOGGING_INTERVAL block, ensure it's available or define it here too
-                # For simplicity, let's use the same global_step as scalar logging,
-                # assuming VISUALIZATION_INTERVAL is a multiple of LOGGING_INTERVAL
-                current_global_step = epoch * len(data_loader) + i 
-                
                 img_grid_gt = torchvision.utils.make_grid(val_gt_images_unnorm_tb.clamp(0,1)) 
                 writer.add_image('Validation/ground_truth', img_grid_gt, current_global_step)
                 
-                # Rendered images are likely already in a good range [0,1] but clamp to be safe
                 img_grid_rendered = torchvision.utils.make_grid(val_rendered_images.clamp(0,1))
                 writer.add_image('Validation/prediction', img_grid_rendered, current_global_step)
 
             encoder.train() # Set model back to training mode
-        
-        if i % LOGGING_INTERVAL == 0:
-            current_loss = total_loss.item()
-            print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], "
-                  f"Batch Size: {current_batch_size}, Loss: {current_loss:.4f}")
-            
-            # --- TensorBoard Logging for Scalars ---
-            global_step = epoch * len(data_loader) + i
-            writer.add_scalar('Loss/train_total', total_loss.item(), global_step)
-            
-            # Log individual losses from loss_dict
-            for loss_name, loss_value in loss_dict.items():
-                if loss_name != 'total' and hasattr(loss_value, 'item'): # Ensure it's a tensor
-                    writer.add_scalar(f'Loss/train_{loss_name}', loss_value.item(), global_step)
-                elif loss_name != 'total': # if it's already a float/int
-                     writer.add_scalar(f'Loss/train_{loss_name}', loss_value, global_step)
-            
-            # Log learning rate
-            writer.add_scalar('Hyperparameters/learning_rate', LEARNING_RATE, global_step)
-            # TODO: Log individual losses from loss_dict to console if desired
-            # print(f"    Losses: {loss_dict}") # Example logging
 
 print("Training finished (skeleton).")
 
