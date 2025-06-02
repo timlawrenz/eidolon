@@ -4,6 +4,7 @@ import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
 import numpy as np
 import pickle
+from pytorch3d.transforms import rotation_6d_to_matrix, matrix_to_axis_angle # For pose conversion
 
 # --- LBS Helper Functions ---
 
