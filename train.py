@@ -55,16 +55,21 @@ NUM_COEFFS = 227 # Total number of FLAME parameters the encoder will predict
 # Example breakdown (adjust based on your actual FLAME parameterization):
 NUM_SHAPE_COEFFS = 100
 NUM_EXPRESSION_COEFFS = 50
-NUM_GLOBAL_POSE_COEFFS = 6 # e.g., axis-angle
-NUM_JAW_POSE_COEFFS = 3
-NUM_EYE_POSE_COEFFS = 6 # 3 for left, 3 for right
-NUM_NECK_POSE_COEFFS = 3 # Added for neck pose
-NUM_TRANSLATION_COEFFS = 3
+NUM_GLOBAL_POSE_COEFFS = 6 # e.g., axis-angle for global rotation
+NUM_JAW_POSE_COEFFS = 3    # Jaw pose
+NUM_EYE_POSE_COEFFS = 6    # Left and right eye pose (3 each)
+NUM_NECK_POSE_COEFFS = 3   # Neck pose
+NUM_TRANSLATION_COEFFS = 3 # Global translation
+
 # Remaining coefficients, e.g., for texture, lighting, or other details
 # Calculated as: NUM_COEFFS - (sum of above)
-# 227 - (100 + 50 + 6 + 3 + 6 + 3 + 3) = 227 - 171 = 56
+# Current sum: 100+50+6+3+6+3+3 = 171
+# NUM_COEFFS = 227, so 227 - 171 = 56
 NUM_DETAIL_COEFFS = 56 
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
+FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
+LANDMARK_EMBEDDING_PATH = './data/flame_model/mediapipe_landmark_embedding.npz'
+
 VISUALIZATION_INTERVAL = 500 # Steps between generating validation images
 LOGGING_INTERVAL = 10 # Steps between printing loss
 
@@ -90,20 +95,16 @@ loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
 optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
 
 # Initialize FLAME model
-flame_model = FLAME().to(DEVICE) # Using the placeholder FLAME model
+# Pass paths and parameter dimensions to the FLAME model constructor
+flame_model = FLAME(
+    flame_model_path=FLAME_MODEL_PKL_PATH,
+    landmark_embedding_path=LANDMARK_EMBEDDING_PATH,
+    n_shape=NUM_SHAPE_COEFFS,
+    n_exp=NUM_EXPRESSION_COEFFS
+).to(DEVICE)
 
-# Load FLAME faces for rendering (needed for Meshes object)
-# This should ideally be part of the FLAME model class or loaded once.
-# For now, loading it here.
-flame_pkl_path = './data/flame_model/flame2023.pkl'
-try:
-    with open(flame_pkl_path, 'rb') as f:
-        flame_data_pkl = pickle.load(f, encoding='latin1')
-    flame_faces_tensor = torch.from_numpy(flame_data_pkl['f'].astype(np.int64)).to(DEVICE)
-except FileNotFoundError:
-    print(f"ERROR: FLAME model pkl not found at {flame_pkl_path} for loading faces. Exiting.")
-    exit()
-
+# FLAME faces are now loaded within the FLAME class, access via flame_model.faces_idx
+# flame_faces_tensor = flame_model.faces_idx # This is already on DEVICE if registered as buffer
 
 # Setup PyTorch3D renderer and cameras (similar to main.py)
 R, T = look_at_view_transform(dist=2.0, elev=0, azim=0) # Adjusted dist for potential variance
@@ -231,7 +232,7 @@ for epoch in range(NUM_EPOCHS):
 
         meshes_batch = Meshes(
             verts=list(pred_verts), # List of (N,3) tensors
-            faces=[flame_faces_tensor] * current_batch_size, # Repeat faces for each mesh in batch
+            faces=[flame_model.faces_idx] * current_batch_size, # Repeat faces for each mesh in batch
             textures=textures_batch
         )
         rendered_images = renderer(meshes_batch) # renderer outputs (B, H, W, C)
@@ -291,7 +292,7 @@ for epoch in range(NUM_EPOCHS):
                 
                 val_meshes_batch = Meshes(
                     verts=list(val_pred_verts), # List of (N,3) tensors
-                    faces=[flame_faces_tensor] * val_pred_verts.shape[0], # Repeat faces for each mesh
+                    faces=[flame_model.faces_idx] * val_pred_verts.shape[0], # Repeat faces for each mesh
                     textures=val_textures_batch
                 )
                 val_rendered_images = renderer(val_meshes_batch) # (B, H, W, C)
