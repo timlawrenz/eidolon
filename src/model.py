@@ -44,20 +44,38 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     Returns:
         A_global (torch.Tensor): Batch of global transformation matrices (B, J, 4, 4).
     """
-    # TODO: Implement the full kinematic chain transformation.
-    # This involves iterating through joints from root to leaves,
-    # composing local transformations with parent's global transformation.
+    # TODO: Implement the full kinematic chain transformation for LBS.
+    # This function should take per-joint rotation matrices `rot_mats` (e.g., for 5-16 FLAME joints)
+    # and the rest-pose joint locations `joints`, and the `parents` kinematic tree.
+    # It should output `A_global`: the world transformation matrix (4x4) for each joint.
+    # This involves:
+    # 1. Creating local transformation matrices for each joint using its rotation and relative
+    #    translation from its parent in the rest pose.
+    # 2. Iterating through the kinematic tree (root to leaves) and composing these local
+    #    transformations to get the global transformation for each joint:
+    #    A_global[j] = A_global[parent[j]] @ A_local_relative_to_parent[j]
     #
-    # For now, returning identity transformations for each joint.
-    # This means no actual posing will occur from LBS joint rotations.
+    # The current placeholder returns identity rotations with joint translations,
+    # which means no actual articulated posing will occur from LBS joint rotations.
+    # The `rot_mats` input to this placeholder might also be for a subset of joints
+    # (e.g., 5 main joints) while `joints` and `parents` might be for the full skeleton (e.g., 16 joints).
+    # A full implementation needs to handle this mapping correctly.
+
     batch_size = rot_mats.shape[0]
-    num_joints = joints.shape[1]
+    # num_joints should correspond to the number of joints in the `parents` array and `J_regressor` output.
+    num_joints_in_skeleton = joints.shape[1] 
     device = rot_mats.device
 
-    # Placeholder: Return identity transformations
-    A_global = torch.eye(4, dtype=dtype, device=device).unsqueeze(0).unsqueeze(0).repeat(batch_size, num_joints, 1, 1)
-    # To make it a valid (though incorrect) transformation, set translation part from joints
-    A_global[:, :, :3, 3] = joints 
+    # Placeholder: Return identity rotations, but use translations from input joints.
+    # This means A_global effectively translates each joint to its rest position without rotation.
+    A_global = torch.eye(4, dtype=dtype, device=device).unsqueeze(0).unsqueeze(0).repeat(batch_size, num_joints_in_skeleton, 1, 1)
+    A_global[:, :, :3, 3] = joints # joints are (B, num_joints_in_skeleton, 3)
+    
+    # If rot_mats are provided for a subset of these joints (e.g., 5 main ones),
+    # a proper implementation would map these to the correct indices in the full A_global
+    # and then perform the kinematic chain update.
+    # For this placeholder, we are not using rot_mats to modify the rotation part of A_global.
+    
     return A_global
 
 
@@ -143,13 +161,37 @@ def lbs(v_shaped_expressed, pose_params_all, J_regressor, parents, lbs_weights, 
     # We need a pose_feature_vector from rot_mats (excluding identity for root)
     # This is highly model-specific. For now, a placeholder.
     # TODO: Create correct pose_feature_vector for FLAME's posedirs.
-    # This vector should be (B, num_pose_blendshape_coeffs), e.g. (B, 27) for FLAME.
-    # It's derived from (rot_mats - Identity) of relevant joints.
-    num_pose_blendshape_coeffs = posedirs.shape[2]
-    pose_feature_vector = torch.zeros(batch_size, num_pose_blendshape_coeffs, device=device, dtype=dtype) # Placeholder
-
-    pose_blendshapes = torch.einsum('BP,VCP->BVC', pose_feature_vector, posedirs)
+    # `posedirs` (N_verts, 3, num_blendshape_coeffs, e.g., 27 for FLAME) are typically driven by
+    # the rotations of a subset of joints (e.g., global, neck, jaw).
+    # The `rot_mats` here are (B, num_flame_main_joints, 3, 3), e.g., (B, 5, 3, 3).
+    # Assuming the first 3 joints in `rot_mats` (global, neck, jaw) drive the 27 posedirs.
+    # (R_joint - Identity) reshaped and concatenated. (3 joints * 9 components/joint = 27).
     
+    num_pose_blendshape_coeffs = posedirs.shape[2] # e.g., 27
+    
+    if num_pose_blendshape_coeffs > 0:
+        # Assume the first 3 joints in rot_mats (global, neck, jaw) drive these posedirs
+        # This is an assumption and might need adjustment based on FLAME specifics.
+        num_joints_for_posedirs = num_pose_blendshape_coeffs // 9 # Should be 3 if 27 coeffs
+        
+        if rot_mats.shape[1] >= num_joints_for_posedirs:
+            rot_mats_for_posedirs = rot_mats[:, :num_joints_for_posedirs, :, :]
+            ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).unsqueeze(0) # (1,1,3,3)
+            # pose_feature_vector should be (B, num_joints_for_posedirs * 9)
+            pose_feature_vector = (rot_mats_for_posedirs - ident).view(batch_size, -1) # (B, 27)
+            
+            # Ensure the reshaped size matches num_pose_blendshape_coeffs
+            if pose_feature_vector.shape[1] != num_pose_blendshape_coeffs:
+                print(f"Warning: Mismatch in pose_feature_vector size for posedirs. Expected {num_pose_blendshape_coeffs}, got {pose_feature_vector.shape[1]}. Using zeros.")
+                pose_feature_vector = torch.zeros(batch_size, num_pose_blendshape_coeffs, device=device, dtype=dtype)
+        else:
+            print(f"Warning: Not enough rotation matrices for posedirs. Expected at least {num_joints_for_posedirs}. Using zeros for pose_feature_vector.")
+            pose_feature_vector = torch.zeros(batch_size, num_pose_blendshape_coeffs, device=device, dtype=dtype)
+            
+        pose_blendshapes = torch.einsum('BP,VCP->BVC', pose_feature_vector, posedirs)
+    else:
+        pose_blendshapes = torch.zeros_like(v_shaped_expressed) # No posedirs to apply
+
     v_posed = v_posed_lbs + pose_blendshapes
     return v_posed
 
