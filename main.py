@@ -2,6 +2,12 @@ import torch
 import numpy as np
 import pickle # Use the pickle library for .pkl files
 import matplotlib.pyplot as plt
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer.mesh import TexturesVertex
+from pytorch3d.renderer import (
+    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    MeshRenderer, MeshRasterizer, SoftPhongShader
+)
 
 # --- 1. Define the path to your FLAME model file ---
 # UPDATE THIS PATH to the actual .pkl file you found
@@ -47,9 +53,6 @@ vertex_colors = generic_color.view(1, 3).expand(num_vertices, 3)
 
 # Part B
 
-from pytorch3d.structures import Meshes
-from pytorch3d.renderer.mesh import TexturesVertex
-
 # We use our new variables to create the mesh.
 # The texture is now our generic gray color per vertex.
 # We need to add a batch dimension for PyTorch3D -> (1, num_vertices, 3)
@@ -63,11 +66,6 @@ average_face_mesh = Meshes(
     textures=textures
 )
 print("PyTorch3D Meshes object created with FLAME 2023 model.")
-
-from pytorch3d.renderer import (
-    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
-    MeshRenderer, MeshRasterizer, SoftPhongShader
-)
 
 # --- Select a device ---
 if torch.cuda.is_available():
