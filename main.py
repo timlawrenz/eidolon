@@ -7,12 +7,9 @@ import matplotlib.pyplot as plt
 # UPDATE THIS PATH to the actual .pkl file you found
 flame_model_path = './data/flame_model/flame2023.pkl' 
 
-# In older versions of NumPy, `np.int` was an alias (often for `np.int_` or Python's `int`).
-# Pickle files created with older NumPy versions may expect deprecated aliases like
-# np.int, np.float, np.bool, etc., to exist. The `chumpy` library, used by the
-# FLAME model pickle, imports these.
-# With NumPy pinned to 1.23.5, these aliases should be available,
-# so explicit creation might not be needed.
+# The chumpy library, used by the FLAME model pickle, relies on older NumPy aliases.
+# Pinning NumPy to version 1.23.5 in requirements.txt ensures these aliases are
+# available, allowing the pickle file to load correctly.
 
 try:
     # Load the model using pickle
