@@ -45,7 +45,7 @@ print(f"Data parsed: {num_vertices} vertices, {num_triangles} triangles.")
 generic_color = torch.tensor([0.7, 0.7, 0.7]) # A nice medium gray
 vertex_colors = generic_color.view(1, 3).expand(num_vertices, 3)
 
-# Part B (New Version for FLAME)
+# Part B
 
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer.mesh import TexturesVertex
@@ -63,3 +63,39 @@ average_face_mesh = Meshes(
     textures=textures
 )
 print("PyTorch3D Meshes object created with FLAME 2023 model.")
+
+from pytorch3d.renderer import (
+    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    MeshRenderer, MeshRasterizer, SoftPhongShader
+)
+
+# --- Select a device ---
+if torch.cuda.is_available():
+    device = torch.device("cuda:0")
+    torch.cuda.set_device(device)
+else:
+    device = torch.device("cpu")
+print(f"Using device: {device}")
+
+# --- Set up the renderer (camera, lights, etc.) ---
+R, T = look_at_view_transform(dist=2.7, elev=0, azim=0)
+cameras = FoVPerspectiveCameras(device=device, R=R, T=T)
+raster_settings = RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
+lights = PointLights(device=device, location=[[0.0, 0.0, 3.0]])
+shader = SoftPhongShader(device=device, cameras=cameras, lights=lights)
+
+renderer = MeshRenderer(
+    rasterizer=MeshRasterizer(cameras=cameras, raster_settings=raster_settings),
+    shader=shader
+)
+
+# --- Move mesh to the correct device and render! ---
+average_face_mesh = average_face_mesh.to(device)
+images = renderer(average_face_mesh)
+
+# --- Visualize the output ---
+plt.figure(figsize=(8, 8))
+plt.imshow(images[0, ..., :3].cpu().numpy())
+plt.axis("off")
+plt.title("Success! The Rendered Average Face")
+plt.show()
