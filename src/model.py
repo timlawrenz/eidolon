@@ -279,6 +279,24 @@ class FLAME(nn.Module):
         
         print(f"DEBUG: FLAME model data keys: {list(flame_model_data.keys())}") # Print keys for debugging
 
+        # --- Debugging expressedirs ---
+        if 'expressedirs' in flame_model_data:
+            print(f"DEBUG: 'expressedirs' key found. Type: {type(flame_model_data['expressedirs'])}")
+            expressedirs_content = flame_model_data['expressedirs']
+            if expressedirs_content is not None:
+                if hasattr(expressedirs_content, 'shape'):
+                    print(f"DEBUG: 'expressedirs' content shape: {expressedirs_content.shape}")
+                if hasattr(expressedirs_content, 'r'): # For chumpy objects
+                    if hasattr(expressedirs_content.r, 'shape'):
+                        print(f"DEBUG: 'expressedirs.r' content shape: {expressedirs_content.r.shape}")
+                    else:
+                        print(f"DEBUG: 'expressedirs.r' exists but has no shape attribute.")
+            else:
+                print("DEBUG: 'expressedirs' key found, but its content is None.")
+        else:
+            print("DEBUG: 'expressedirs' key NOT found in flame_model_data.")
+        # --- End Debugging expressedirs ---
+
         # FLAME components
         # Conditionally access .r to get NumPy arrays from potential chumpy objects
         
