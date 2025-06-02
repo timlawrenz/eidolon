@@ -76,9 +76,9 @@ VISUALIZATION_INTERVAL = 500 # Steps between generating validation images, and f
 
 LOSS_WEIGHTS = {
     'pixel': 1.0,
-    'landmark': 1e-4, # Landmarks are sensitive, start with a small weight
-    'reg_shape': 1e-6,
-    'reg_expression': 1e-6
+    'landmark': 1e-4, # Keep this for now, or even consider slightly increasing later
+    'reg_shape': 1e-4,  # << INCREASED (try 1e-4, 1e-3, or even 1e-2)
+    'reg_expression': 1e-5 # << Maybe increase slightly too if expressions also look extreme
 }
 
 # 2. Initialize everything
