@@ -31,7 +31,7 @@ from src.loss import TotalLoss
 # --- Hyperparameters and Config ---
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 NUM_EPOCHS = 50
 # IMAGE_DIR is no longer used by FaceDataset, replaced by HF_DATASET_NAME
 # IMAGE_DIR = "path/to/your/face/dataset" 
