@@ -51,12 +51,13 @@ vertex_colors = generic_color.view(1, 3).expand(num_vertices, 3)
 # Part B (New Version for FLAME)
 
 from pytorch3d.structures import Meshes
+from pytorch3d.renderer.mesh import TexturesVertex
 
 # We use our new variables to create the mesh.
 # The texture is now our generic gray color per vertex.
 # We need to add a batch dimension for PyTorch3D -> (1, num_vertices, 3)
 verts_rgb = vertex_colors.unsqueeze(0)
-textures = verts_rgb
+textures = TexturesVertex(verts_features=verts_rgb)
 
 # Create the Meshes object
 average_face_mesh = Meshes(
