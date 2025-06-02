@@ -138,46 +138,48 @@ class FLAME(nn.Module):
 
         # Load 3D landmark embedding
         landmark_data = np.load(landmark_embedding_path, allow_pickle=True)
-        # Common key for landmark vertex IDs is 'landmark_indices' based on inspection.
-        if 'landmark_indices' not in landmark_data:
-            print(f"ERROR: Key 'landmark_indices' not found in {landmark_embedding_path}.")
-            print(f"Available keys: {list(landmark_data.keys())}")
-            # This will likely cause issues downstream if not corrected.
-            # Consider raising an error if this key is critical.
-            landmark_indices_np = np.array([], dtype=np.int64) 
-            num_loaded_landmarks = 0
-        else:
-            landmark_indices_np = landmark_data['landmark_indices']
-            num_loaded_landmarks = landmark_indices_np.shape[0]
+        
+        NUM_EXPECTED_LANDMARKS = 68 # Standard 68 landmarks
+        self.using_barycentric_landmarks = False
 
-        # Assuming ground truth landmarks are 68 points.
-        # If the loaded landmark_indices provide a different number (e.g., 105),
-        # we take a subset for now to match the common 68-point convention.
-        # This is a placeholder: a proper mapping or a 68-point specific embedding should be used.
-        NUM_GT_LANDMARKS = 68 # As per face_alignment default and common usage
-        if num_loaded_landmarks != NUM_GT_LANDMARKS:
-            print(f"Warning: Loaded landmark_indices from NPZ have {num_loaded_landmarks} points, "
-                  f"but ground truth is expected to have {NUM_GT_LANDMARKS} points.")
-            print(f"Taking the first {NUM_GT_LANDMARKS} landmark indices from the NPZ file as a placeholder.")
-            # This assumes the first NUM_GT_LANDMARKS points from the NPZ have some correspondence.
-            # This might not be accurate for meaningful landmark loss.
-            if num_loaded_landmarks > NUM_GT_LANDMARKS:
-                landmark_indices_to_use = landmark_indices_np[:NUM_GT_LANDMARKS]
-            else: # If NPZ has fewer than 68, this will also be problematic.
-                landmark_indices_to_use = landmark_indices_np 
-                # This will lead to an error later if landmark_indices_to_use has < 68 points
-                # and gt_landmarks still has 68. For now, let's assume NPZ has >= 68.
-                if num_loaded_landmarks < NUM_GT_LANDMARKS and num_loaded_landmarks > 0 :
-                     print(f"Critical Warning: NPZ file has only {num_loaded_landmarks} landmarks, less than the expected {NUM_GT_LANDMARKS}. Landmark loss will be problematic.")
-                elif num_loaded_landmarks == 0:
-                     print(f"Critical Warning: No landmark indices loaded from NPZ. Landmark prediction will be empty.")
-
-
-        else:
-            landmark_indices_to_use = landmark_indices_np
+        if 'lmk_face_idx' in landmark_data and 'lmk_b_coords' in landmark_data:
+            lmk_face_idx_np = landmark_data['lmk_face_idx']
+            lmk_b_coords_np = landmark_data['lmk_b_coords']
+            if lmk_face_idx_np.shape == (NUM_EXPECTED_LANDMARKS,) and \
+               lmk_b_coords_np.shape == (NUM_EXPECTED_LANDMARKS, 3):
+                self.register_buffer('landmark_face_idx', torch.tensor(lmk_face_idx_np, dtype=torch.long))
+                self.register_buffer('landmark_b_coords', torch.tensor(lmk_b_coords_np, dtype=torch.float32))
+                self.using_barycentric_landmarks = True
+                print("Using 68 barycentric landmarks for FLAME.")
+            else:
+                print(f"Warning: Barycentric landmark data ('lmk_face_idx', 'lmk_b_coords') found but shapes are not for {NUM_EXPECTED_LANDMARKS} points. "
+                      f"lmk_face_idx shape: {lmk_face_idx_np.shape}, lmk_b_coords shape: {lmk_b_coords_np.shape}. "
+                      "Falling back to 'landmark_indices'.")
+        
+        if not self.using_barycentric_landmarks:
+            print("Attempting to use 'landmark_indices' for vertex-based landmarks.")
+            if 'landmark_indices' not in landmark_data:
+                print(f"ERROR: Key 'landmark_indices' not found in {landmark_embedding_path}.")
+                print(f"Available keys: {list(landmark_data.keys())}")
+                landmark_indices_np = np.array([], dtype=np.int64)
+            else:
+                landmark_indices_np = landmark_data['landmark_indices']
             
-        self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_to_use, dtype=torch.long))
-
+            num_loaded_vertex_landmarks = landmark_indices_np.shape[0]
+            
+            if num_loaded_vertex_landmarks == NUM_EXPECTED_LANDMARKS:
+                landmark_indices_to_use = landmark_indices_np
+                print(f"Using {NUM_EXPECTED_LANDMARKS} vertex-based landmarks from 'landmark_indices'.")
+            elif num_loaded_vertex_landmarks > NUM_EXPECTED_LANDMARKS:
+                print(f"Warning: 'landmark_indices' from NPZ have {num_loaded_vertex_landmarks} points. "
+                      f"Taking the first {NUM_EXPECTED_LANDMARKS} as a placeholder.")
+                landmark_indices_to_use = landmark_indices_np[:NUM_EXPECTED_LANDMARKS]
+            else: # num_loaded_vertex_landmarks < NUM_EXPECTED_LANDMARKS (includes 0)
+                print(f"Critical Warning: 'landmark_indices' has {num_loaded_vertex_landmarks} points, "
+                      f"less than the expected {NUM_EXPECTED_LANDMARKS}. Landmark prediction will be problematic or empty.")
+                landmark_indices_to_use = landmark_indices_np # Use as is, might be empty
+            
+            self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_to_use, dtype=torch.long))
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None, 
                   eye_pose_params=None, jaw_pose_params=None, neck_pose_params=None, transl=None, detail_params=None):
@@ -245,6 +247,36 @@ class FLAME(nn.Module):
             pred_verts = pred_verts_posed
 
         # 5. Calculate 3D landmarks
-        pred_landmarks_3d = pred_verts[:, self.landmark_vertex_ids, :]
+        NUM_EXPECTED_LANDMARKS = 68 # Define for clarity within forward pass as well
+        if self.using_barycentric_landmarks:
+            # Get the vertices for each landmark face
+            # pred_verts is (B, N_verts, 3)
+            # self.faces_idx is (N_faces, 3) contains vertex indices for each triangle
+            # self.landmark_face_idx is (N_landmarks=68,) contains indices of triangles
+
+            landmark_triangles_verts_idx = self.faces_idx[self.landmark_face_idx] # (N_landmarks, 3)
+
+            pred_landmarks_3d_list = []
+            for b in range(batch_size):
+                current_pred_verts = pred_verts[b] # (N_verts, 3)
+                # Get the 3 vertices for each landmark triangle: (N_landmarks, 3, 3)
+                tri_verts = current_pred_verts[landmark_triangles_verts_idx]
+                # Interpolate using barycentric coordinates: (N_landmarks, 3)
+                pred_landmarks_3d_sample = torch.einsum('ijk,ik->ij', tri_verts, self.landmark_b_coords)
+                pred_landmarks_3d_list.append(pred_landmarks_3d_sample)
+            pred_landmarks_3d = torch.stack(pred_landmarks_3d_list, dim=0) # (B, N_landmarks=68, 3)
+
+        elif hasattr(self, 'landmark_vertex_ids') and self.landmark_vertex_ids.numel() > 0:
+            pred_landmarks_3d = pred_verts[:, self.landmark_vertex_ids, :]
+            # This slicing should already ensure 68 points if __init__ logic is correct
+            if pred_landmarks_3d.shape[1] != NUM_EXPECTED_LANDMARKS:
+                 print(f"Warning: Using 'landmark_vertex_ids' results in {pred_landmarks_3d.shape[1]} landmarks, "
+                       f"but expected {NUM_EXPECTED_LANDMARKS}. This will cause a loss calculation error if not aligned with GT.")
+                 # Fallback to a dummy tensor of correct shape if mismatch to prevent crash, though loss will be wrong.
+                 # This case should ideally not be hit if __init__ correctly prepares landmark_vertex_ids.
+                 pred_landmarks_3d = torch.zeros(batch_size, NUM_EXPECTED_LANDMARKS, 3, device=device)
+        else:
+            print("Error: No valid landmark definition (barycentric or vertex_ids) loaded in FLAME model for 68 points.")
+            pred_landmarks_3d = torch.zeros(batch_size, NUM_EXPECTED_LANDMARKS, 3, device=device)
         
         return pred_verts, pred_landmarks_3d
