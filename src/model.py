@@ -77,6 +77,60 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     # and then perform the kinematic chain update.
     # For this placeholder, we are not using rot_mats to modify the rotation part of A_global.
     
+    # --- Start of actual batch_rigid_transform implementation ---
+    # `rot_mats` here are for the joints in the `parents` array (e.g., 5 LBS joints)
+    # `joints` are the rest-pose locations for these same joints.
+    
+    dtype = rot_mats.dtype # Infer dtype from rot_mats
+    
+    # Calculate relative joint locations
+    # `parents` array uses -1 for the root. For PyTorch indexing, root's parent can be set to 0
+    # but care must be taken not to subtract J[0] from J[0].
+    # A common way is to compute J_transformed_local which is J for root, and J_child - J_parent for others.
+    
+    # Initialize A_global with local transformations for each joint in its own coordinate system
+    # (rotation from rot_mats, translation is the relative offset from parent)
+    # Then compose them.
+
+    # Create a list of 4x4 local transformation matrices
+    # T_local_j = [ R_j | (J_j - J_parent(j)) ]
+    #             [  0  |          1         ]
+    # For root (j=0), translation is J_0
+    
+    num_joints = joints.shape[1] # Should be 5 for the LBS joints
+    
+    # Pad joints to homogeneous coordinates for simpler matrix multiplication later
+    # J_homo = torch.cat([joints, torch.zeros(batch_size, num_joints, 1, device=device, dtype=dtype)], dim=2)
+    # This is not needed if we construct 4x4 matrices directly.
+
+    # Calculate relative joint positions for local transformations
+    rel_joints = torch.zeros_like(joints)
+    rel_joints[:, 0] = joints[:, 0] # Root joint's position is its own translation
+    for j_idx in range(1, num_joints):
+        parent_idx = parents[j_idx]
+        rel_joints[:, j_idx] = joints[:, j_idx] - joints[:, parent_idx]
+
+    # Create local transformation matrices (rotation + relative translation)
+    # These are transforms from parent's coordinate system to child's coordinate system
+    transforms_local_list = []
+    for j_idx in range(num_joints):
+        T_j_local = torch.eye(4, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1) # (B, 4, 4)
+        T_j_local[:, :3, :3] = rot_mats[:, j_idx]
+        T_j_local[:, :3, 3] = rel_joints[:, j_idx]
+        transforms_local_list.append(T_j_local)
+
+    # Compute global transformations by iterating through the kinematic chain
+    A_global_list = [transforms_local_list[0]] # Global transform of root is its local transform
+
+    for j_idx in range(1, num_joints):
+        parent_idx = parents[j_idx]
+        # A_world_j = A_world_parent(j) @ T_local_j
+        A_j_world = torch.bmm(A_global_list[parent_idx], transforms_local_list[j_idx])
+        A_global_list.append(A_j_world)
+        
+    A_global = torch.stack(A_global_list, dim=1) # (B, num_joints, 4, 4)
+    # --- End of actual batch_rigid_transform implementation ---
+    
     return A_global
 
 
@@ -84,7 +138,7 @@ def lbs(v_shaped_expressed,
         rot_mats_lbs, # (B, num_lbs_joints, 3, 3) - e.g., for 5 main FLAME joints
         pose_feature_vector_posedirs, # (B, num_posedirs_coeffs) - e.g., (B, 27)
         J_regressor, 
-        parents, 
+        parents_lbs, # Renamed to parents_lbs to be specific for the 5 LBS joints
         lbs_weights, 
         posedirs, 
         dtype=torch.float32):
@@ -272,23 +326,26 @@ class FLAME(nn.Module):
         self.register_buffer('faces_idx', torch.tensor(faces_np, dtype=torch.long))
         
         # Kinematic tree (parents of joints)
-        # The FLAME pkl might store parents differently, e.g., flame_model_data['parent']
-        # For now, LBS is a TODO, so parents are not immediately critical.
-        # We'll use a placeholder if not found, but a real LBS implementation needs correct parents.
+        # self.parents_full_skeleton is for the full 16-joint skeleton if needed elsewhere.
         if 'kintree_table' in flame_model_data:
-             parents = flame_model_data['kintree_table'][0].astype(np.int64)
-             parents[0] = -1 # Root joint has no parent
-             self.register_buffer('parents', torch.tensor(parents, dtype=torch.long))
-        elif 'parent' in flame_model_data: # Some FLAME versions might use this key
-             parents = flame_model_data['parent'].astype(np.int64)
-             parents[0] = -1 
-             self.register_buffer('parents', torch.tensor(parents, dtype=torch.long))
+             parents_full_np = flame_model_data['kintree_table'][0].astype(np.int64)
+             parents_full_np[0] = -1 # Root joint has no parent
+             self.register_buffer('parents_full_skeleton', torch.tensor(parents_full_np, dtype=torch.long))
+        elif 'parent' in flame_model_data: 
+             parents_full_np = flame_model_data['parent'].astype(np.int64)
+             parents_full_np[0] = -1 
+             self.register_buffer('parents_full_skeleton', torch.tensor(parents_full_np, dtype=torch.long))
         else:
-            print("Warning: Joint parent information ('kintree_table' or 'parent') not found in FLAME model. LBS will be affected.")
-            # Placeholder for number of joints, typically 16 for FLAME (including global)
-            # This needs to match J_regressor.shape[0]
-            num_joints = self.J_regressor.shape[0] if hasattr(self, 'J_regressor') else 16 
-            self.register_buffer('parents', torch.full((num_joints,), -1, dtype=torch.long))
+            print("Warning: Full skeleton parent information ('kintree_table' or 'parent') not found in FLAME model.")
+            # This might be okay if only the 5-joint LBS is used.
+            self.register_buffer('parents_full_skeleton', torch.empty(0, dtype=torch.long))
+
+        # Define parents for the 5 LBS joints (global, neck, jaw, left_eye, right_eye)
+        # This assumes a simplified hierarchy for these 5 joints for LBS purposes.
+        # Global (0) is root. Neck (1) is child of Global. Jaw (2) is child of Neck.
+        # Left Eye (3) and Right Eye (4) are children of Neck (simplified head).
+        parents_lbs_np = np.array([-1, 0, 1, 1, 1], dtype=np.int64)
+        self.register_buffer('parents_lbs', torch.tensor(parents_lbs_np, dtype=torch.long))
 
 
         # --- Load DECA Landmark Data for 68 points ---
@@ -481,7 +538,7 @@ class FLAME(nn.Module):
         pred_verts_posed = lbs(v_expressed, 
                                rot_mats_for_lbs,
                                pose_feature_vector_for_posedirs,
-                               self.J_regressor, self.parents, self.lbs_weights, self.posedirs,
+                               self.J_regressor, self.parents_lbs, self.lbs_weights, self.posedirs, # Use self.parents_lbs
                                dtype=self.v_template.dtype)
         
         # 4. Apply global translation
