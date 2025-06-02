@@ -50,41 +50,39 @@ To run the main script, which loads the FLAME model, renders an average face, an
     ```
     The first time you run this, it may take a few moments to download the pre-trained ResNet-50 model weights. A plot window showing the rendered average face should appear.
 
-### Preparing an Image Dataset (Example: FFHQ Thumbnails via Hugging Face)
+### Preparing Image Dataset and Landmarks (Example: FFHQ Thumbnails via Hugging Face)
 
-To train the encoder, you need a dataset of face images. The `FaceDataset` class in `src/dataset.py` is now configured to load datasets directly from the Hugging Face Hub.
+To train the encoder, you need a dataset of face images and their corresponding 2D landmarks. The script `scripts/download_ffhq_huggingface.py` handles downloading images from Hugging Face and pre-processing landmarks.
 
-1.  **Install the `datasets` library:**
-    If you haven't already, ensure your virtual environment is active and install the library:
+1.  **Install Dependencies:**
+    Ensure your virtual environment is active and all dependencies, including `datasets` and `face_alignment`, are installed:
     ```bash
-    pip install datasets
+    pip install -r requirements.txt
     ```
-    This dependency is also listed in `requirements.txt`.
 
-2.  **Configure `train.py` for the dataset:**
-    The `train.py` script uses `FaceDataset` to load data. You need to ensure the `HF_DATASET_NAME` constant in `train.py` is set to the desired Hugging Face dataset. By default, it's set to `"nuwandaa/ffhq128"`:
-    ```python
-    # In train.py:
-    HF_DATASET_NAME = "nuwandaa/ffhq128" 
-    HF_DATASET_SPLIT = "train"
+2.  **Run the Data Preparation Script:**
+    The script `scripts/download_ffhq_huggingface.py` will:
+    *   Download the FFHQ dataset (identified as `nuwandaa/ffhq128` by default) from Hugging Face. This dataset provides images pre-resized to 128x128 pixels.
+    *   Save these images as PNG files into the `data/ffhq_thumbnails_128/` directory (configurable via `IMAGE_SAVE_DIR` in the script).
+    *   For each image, detect 2D facial landmarks using the `face_alignment` library.
+    *   Save the detected landmarks (typically a `(68, 2)` NumPy array) as an `.npy` file in the `data/ffhq_landmarks_128/` directory (configurable via `LANDMARK_SAVE_DIR` in the script). Landmark files are named to correspond with image files (e.g., `thumb_00000.npy`).
+
+    Run the script from the root of your `project-eidolon` directory:
+    ```bash
+    python scripts/download_ffhq_huggingface.py
     ```
-    When `train.py` is run for the first time, the `datasets` library will download and cache the specified dataset. This might take some time depending on the dataset size and your internet connection.
+    This process can take a significant amount of time. The script will create the necessary save directories if they don't exist.
 
-    *Note on Hugging Face Access:* While many datasets are public, if you encounter access issues or plan to use private/gated datasets, it's good practice to log in to the Hugging Face Hub. You can do this by running `huggingface-cli login` in your terminal and following the prompts.
-
-    The script `scripts/download_ffhq_huggingface.py` is no longer necessary for preparing data for `FaceDataset` and can be deleted.
+    *Note on Hugging Face Access:* While `nuwandaa/ffhq128` is public, if you encounter access issues or use other datasets, log in via `huggingface-cli login`.
 
 ### Running the Training Script (Skeleton)
 
-The `train.py` script is a skeleton for training the `EidolonEncoder`. To run it:
+The `train.py` script trains the `EidolonEncoder`. It now uses pre-loaded images and landmarks from disk, and a multi-process `DataLoader` for efficiency.
 
-1.  Ensure you have completed all steps in the [Setup](#setup) section and that `datasets` is installed.
-2.  Activate your virtual environment:
-    ```bash
-    source .venv/bin/activate
-    ```
-3.  Ensure the `HF_DATASET_NAME` in `train.py` is set to your desired dataset (default is `"nuwandaa/ffhq128"`).
-4.  Run the script from the root directory of the project:
+1.  Ensure you have completed all steps in the [Setup](#setup).
+2.  **Ensure you have run `scripts/download_ffhq_huggingface.py`** to prepare the image and landmark data. The output directories should be `data/ffhq_thumbnails_128/` for images and `data/ffhq_landmarks_128/` for landmarks, or as configured in `train.py`.
+3.  Verify that `IMAGE_DIR` and `LANDMARK_DIR` in `train.py` point to these directories.
+4.  Activate your virtual environment:
     ```bash
     python train.py
     ```

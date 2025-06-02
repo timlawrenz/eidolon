@@ -24,20 +24,34 @@ import face_alignment # For landmark detection
 # Assuming src.dataset, src.model, src.loss are in the Python path
 # If train.py is in the root, and src is a subdirectory:
 from src.dataset import FaceDataset
-from src.model import EidolonEncoder # Assuming FLAME class is not yet defined or needed here
-# from src.model import FLAME # Placeholder if you have a FLAME nn.Module
+from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
+import pickle # For loading FLAME model faces
+
+# PyTorch3D imports for renderer and camera
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import (
+    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    MeshRenderer, MeshRasterizer, SoftPhongShader, TexturesVertex
+)
+
 
 # --- Hyperparameters and Config ---
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
-BATCH_SIZE = 128
+BATCH_SIZE = 128 # Start small (e.g., 8-16) and increase if memory allows
 NUM_EPOCHS = 50
-# IMAGE_DIR is no longer used by FaceDataset, replaced by HF_DATASET_NAME
-# IMAGE_DIR = "path/to/your/face/dataset" 
-HF_DATASET_NAME = "nuwandaa/ffhq128" # Dataset name on Hugging Face Hub
-HF_DATASET_SPLIT = "train"
-NUM_COEFFS = 227 # The number you chose for your encoder
+IMAGE_DIR = "data/ffhq_thumbnails_128" # Directory for pre-processed images
+LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
+NUM_COEFFS = 227 # Total number of FLAME parameters the encoder will predict
+# Example breakdown (adjust based on your actual FLAME parameterization):
+NUM_SHAPE_COEFFS = 100
+NUM_EXPRESSION_COEFFS = 50
+NUM_GLOBAL_POSE_COEFFS = 6 # e.g., axis-angle
+NUM_JAW_POSE_COEFFS = 3
+NUM_EYE_POSE_COEFFS = 6 # 3 for left, 3 for right
+NUM_TRANSLATION_COEFFS = 3
+# Ensure NUM_COEFFS == NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS + ...
 LOSS_WEIGHTS = {
     'pixel': 1.0,
     'landmark': 1e-4, # Landmarks are sensitive, start with a small weight
@@ -53,132 +67,163 @@ encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
 loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
 optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
 
-# Initialize the landmark detector. This will load its own model.
-# Using '2d' for 2D landmarks. It will use DEVICE.
-print("Initializing landmark detector...")
-fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, device=str(DEVICE))
-print("Landmark detector initialized.")
+# flame = FLAME().to(DEVICE) # Assuming your FLAME class is also an nn.Module
+# renderer = ... # Your PyTorch3D renderer, needed for projecting landmarks
+# cameras = ... # Your PyTorch3D camera, needed for projecting landmarks
+loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
+optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
 
-print(f"Initializing FaceDataset with Hugging Face dataset: {HF_DATASET_NAME}")
-# FaceDataset now loads directly from Hugging Face
-dataset = FaceDataset(hf_dataset_name=HF_DATASET_NAME, hf_dataset_split=HF_DATASET_SPLIT)
-# For Hugging Face datasets, num_workers=0 is often safer to start with,
-# as the Dataset object itself might not be easily picklable for multiprocessing,
-# or it might handle its own parallelism.
-data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+# Initialize FLAME model
+flame_model = FLAME().to(DEVICE) # Using the placeholder FLAME model
+
+# Load FLAME faces for rendering (needed for Meshes object)
+# This should ideally be part of the FLAME model class or loaded once.
+# For now, loading it here.
+flame_pkl_path = './data/flame_model/flame2023.pkl'
+try:
+    with open(flame_pkl_path, 'rb') as f:
+        flame_data_pkl = pickle.load(f, encoding='latin1')
+    flame_faces_tensor = torch.from_numpy(flame_data_pkl['f'].astype(np.int64)).to(DEVICE)
+except FileNotFoundError:
+    print(f"ERROR: FLAME model pkl not found at {flame_pkl_path} for loading faces. Exiting.")
+    exit()
+
+
+# Setup PyTorch3D renderer and cameras (similar to main.py)
+R, T = look_at_view_transform(dist=2.0, elev=0, azim=0) # Adjusted dist for potential variance
+cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T)
+raster_settings = RasterizationSettings(image_size=224, blur_radius=0.0, faces_per_pixel=1) # Match image size
+lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])
+# Using a simple shader. For albedo/texture, a different shader might be needed later.
+shader = SoftPhongShader(device=DEVICE, cameras=cameras, lights=lights)
+renderer = MeshRenderer(
+    rasterizer=MeshRasterizer(cameras=cameras, raster_settings=raster_settings),
+    shader=shader
+)
+
+print(f"Initializing FaceDataset with images from: {IMAGE_DIR} and landmarks from: {LANDMARK_DIR}")
+dataset = FaceDataset(image_dir=IMAGE_DIR, landmark_dir=LANDMARK_DIR)
+data_loader = DataLoader(
+    dataset, 
+    batch_size=BATCH_SIZE, 
+    shuffle=True, 
+    num_workers=8,
+    pin_memory=True
+)
 
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
 
 # 3. The Training Loop
 for epoch in range(NUM_EPOCHS):
+# Helper function to deconstruct the coefficient vector
+# This needs to match how your FLAME model expects its parameters
+# and the order/size defined by NUM_SHAPE_COEFFS, etc.
+def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
+    batch_size = pred_coeffs_vec_batch.shape[0]
+    current_idx = 0
+    
+    shape_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_SHAPE_COEFFS]
+    current_idx += NUM_SHAPE_COEFFS
+    
+    expression_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_EXPRESSION_COEFFS]
+    current_idx += NUM_EXPRESSION_COEFFS
+    
+    # Global pose (e.g., axis-angle)
+    pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_GLOBAL_POSE_COEFFS]
+    current_idx += NUM_GLOBAL_POSE_COEFFS
+
+    # Jaw pose
+    jaw_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_JAW_POSE_COEFFS]
+    current_idx += NUM_JAW_POSE_COEFFS
+    
+    # Eye pose (left and right eye)
+    eye_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_EYE_POSE_COEFFS]
+    current_idx += NUM_EYE_POSE_COEFFS
+
+    # Translation
+    transl_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_TRANSLATION_COEFFS]
+    current_idx += NUM_TRANSLATION_COEFFS
+
+    # Assert that all coefficients have been deconstructed
+    assert current_idx == NUM_COEFFS, f"Mismatch in deconstructed coeffs: expected {NUM_COEFFS}, got {current_idx}"
+
+    return {
+        'shape_params': shape_params,
+        'expression_params': expression_params,
+        'pose_params': pose_params,
+        'jaw_pose_params': jaw_pose_params,
+        'eye_pose_params': eye_pose_params,
+        'transl': transl_params # FLAME model might expect 'transl'
+    }
+
+# 3. The Training Loop
+for epoch in range(NUM_EPOCHS):
     for i, batch in enumerate(data_loader):
         gt_images = batch['image'].to(DEVICE)
+        gt_landmarks_2d = batch['gt_landmarks'].to(DEVICE) # Pre-loaded landmarks
         
-        # --- A. Get Ground Truth 2D Landmarks from the input image ---
-        # Unnormalize images for face_alignment: (B,C,H,W) tensor to (B,H,W,C) numpy [0,255]
-        unnormalized_images_np = gt_images.cpu().numpy().transpose(0, 2, 3, 1)
-        # These are standard ImageNet mean/std used in FaceDataset transforms
-        mean = np.array([0.485, 0.456, 0.406])
-        std = np.array([0.229, 0.224, 0.225])
-        unnormalized_images_np = (unnormalized_images_np * std + mean) * 255
-        unnormalized_images_np = unnormalized_images_np.astype(np.uint8)
+        current_batch_size = gt_images.size(0)
 
-        # Get landmarks for the entire batch.
-        # Convert the numpy array (B,H,W,C) to a tensor (B,C,H,W) as expected by the face_detector.
-        images_for_fa = torch.from_numpy(unnormalized_images_np).permute(0, 3, 1, 2).float().to(DEVICE)
-        
-        # gt_landmarks_list contains a list of numpy arrays (or None if no face detected)
-        gt_landmarks_list = fa.get_landmarks_from_batch(images_for_fa)
-        
-        # --- Process the batch to handle failures in landmark detection ---
-        # gt_landmarks_list contains a list of numpy arrays (or None if no face detected)
-        # Each non-None element could be (68,2) for a single face, or (num_faces, 68,2) for multiple.
-        
-        processed_valid_landmarks = []
-        filtered_image_indices = [] # Store original batch indices of valid images
-
-        # Standard landmark count for the 2D model used by face_alignment
-        EXPECTED_NUM_LANDMARKS = 68
-        EXPECTED_LANDMARK_DIM = 2
-
-        for batch_idx, lms_data in enumerate(gt_landmarks_list):
-            if lms_data is None:
-                continue  # Skip if no landmarks detected for this image
-
-            current_face_landmarks = None
-            if lms_data.ndim == 3: # Potentially multiple faces, shape (num_faces, num_landmarks, 2)
-                # Check if there's at least one face and its landmarks match expected shape
-                if lms_data.shape[0] > 0 and lms_data.shape[1:] == (EXPECTED_NUM_LANDMARKS, EXPECTED_LANDMARK_DIM):
-                    current_face_landmarks = lms_data[0] # Take the first face's landmarks
-                else:
-                    print(f"Warning: Image at batch index {batch_idx} had multi-face landmarks of unexpected shape {lms_data.shape}. Skipping.")
-            elif lms_data.ndim == 2: # Single face, shape (num_landmarks, 2)
-                if lms_data.shape == (EXPECTED_NUM_LANDMARKS, EXPECTED_LANDMARK_DIM):
-                    current_face_landmarks = lms_data
-                else:
-                    print(f"Warning: Image at batch index {batch_idx} had single-face landmarks of unexpected shape {lms_data.shape}. Skipping.")
-            else:
-                # Landmarks detected, but not in expected 2D or 3D array format
-                print(f"Warning: Image at batch index {batch_idx} had landmarks of unexpected ndim {lms_data.ndim} and shape {lms_data.shape}. Skipping.")
-
-            if current_face_landmarks is not None:
-                processed_valid_landmarks.append(current_face_landmarks)
-                filtered_image_indices.append(batch_idx)
-        
-        if not filtered_image_indices:
-            print(f"Warning: No faces with valid landmark format processed in batch step {i}. Skipping.")
-            continue
-            
-        # Filter the original gt_images based on the indices for which we successfully processed landmarks
-        gt_images_filtered = gt_images[filtered_image_indices]
-        
-        # Now, processed_valid_landmarks should contain only (EXPECTED_NUM_LANDMARKS, EXPECTED_LANDMARK_DIM) arrays
-        gt_landmarks_2d = torch.from_numpy(np.stack(processed_valid_landmarks, axis=0)).float().to(DEVICE)
-
-        # --- Forward Pass (Encoder) ---
+        # --- Forward Pass ---
         optimizer.zero_grad()
-        # Pass only the valid images to the encoder
-        pred_coeffs_vec = encoder(gt_images_filtered) 
         
-        # Deconstruct pred_coeffs_vec for regularization loss (based on filtered batch)
-        num_shape_coeffs = 100  # Assuming these are defined or known
-        num_expression_coeffs = 50
+        pred_coeffs_vec = encoder(gt_images)
         
-        shape_params = pred_coeffs_vec[:, :num_shape_coeffs]
-        expression_params = pred_coeffs_vec[:, num_shape_coeffs : num_shape_coeffs + num_expression_coeffs]
+        # TODO 1: Deconstruct pred_coeffs_vec into a dictionary for FLAME
+        pred_coeffs_dict = deconstruct_flame_coeffs(pred_coeffs_vec)
         
-        pred_coeffs_for_loss = {
-            'shape': shape_params,
-            'expression': expression_params
+        # TODO 2: Run the FLAME model to get 3D vertices and landmarks
+        # Pass parameters to FLAME model. Ensure keys match FLAME model's forward method.
+        pred_verts, pred_landmarks_3d = flame_model(
+            shape_params=pred_coeffs_dict['shape_params'],
+            expression_params=pred_coeffs_dict['expression_params'],
+            pose_params=pred_coeffs_dict['pose_params'],
+            jaw_pose_params=pred_coeffs_dict['jaw_pose_params'],
+            eye_pose_params=pred_coeffs_dict['eye_pose_params'],
+            transl=pred_coeffs_dict['transl']
+        )
+        
+        # TODO 3: Project 3D landmarks to 2D screen space
+        # cameras.transform_points_screen outputs (x, y, z_ndc), we only need x, y
+        pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d)[:, :, :2]
+
+        # TODO 4: Render the image using the predicted vertices
+        # Create a batch of Meshes
+        # For textures, use a generic gray color for now, or a placeholder texture
+        # Ensure pred_verts is (B, N, 3) and flame_faces_tensor is (F, 3)
+        # We need to repeat faces for each item in the batch if rendering multiple meshes
+        # Or, if renderer supports batched Meshes with shared topology, that's simpler.
+        # PyTorch3D Meshes can take a list of verts and faces.
+        
+        # Create a generic texture for the batch
+        num_vertices_flame = pred_verts.shape[1]
+        generic_vertex_colors = torch.ones_like(pred_verts) * 0.7 # Gray
+        textures_batch = TexturesVertex(verts_features=generic_vertex_colors.to(DEVICE))
+
+        meshes_batch = Meshes(
+            verts=list(pred_verts), # List of (N,3) tensors
+            faces=[flame_faces_tensor] * current_batch_size, # Repeat faces for each mesh in batch
+            textures=textures_batch
+        )
+        rendered_images = renderer(meshes_batch) # renderer outputs (B, H, W, C)
+        # Loss function might expect (B, C, H, W), so permute if necessary
+        rendered_images = rendered_images.permute(0, 3, 1, 2)[:, :3, :, :] # Keep only RGB, drop Alpha if present
+
+        # --- C. Loss Calculation (Now with all REAL tensors) ---
+        # For regularization, TotalLoss expects 'shape' and 'expression' keys
+        # We pass the relevant parts of pred_coeffs_dict
+        coeffs_for_loss_fn = {
+            'shape': pred_coeffs_dict['shape_params'],
+            'expression': pred_coeffs_dict['expression_params']
         }
-        
-        # --- Dummy tensors for unimplemented parts of the pipeline ---
-        # These should be adjusted to match the filtered batch size
-        current_batch_size = gt_images_filtered.size(0)
-        
-        # TODO: Instantiate FLAME model and pass the full deconstructed pred_coeffs_dict
-        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict_full) # pred_coeffs_dict_full from filtered pred_coeffs_vec
-        pred_verts_dummy = torch.zeros(current_batch_size, 5023, 3).to(DEVICE)
-
-        # TODO: Project 3D landmarks to 2D screen space using the PyTorch3D camera
-        # pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d_from_flame)[:, :, :2]
-        pred_landmarks_2d_model_dummy = torch.zeros(current_batch_size, 68, 2).to(DEVICE)
-
-        # TODO: Render the image using the predicted vertices and a renderer
-        # rendered_images = renderer(pred_verts_for_renderer, ...)
-        rendered_images_dummy = torch.zeros_like(gt_images_filtered) # Match filtered batch
-        
-        # --- C. Loss Calculation ---
-        # Now using real gt_landmarks_2d and gt_images_filtered.
-        # Other inputs are still dummies but sized for the filtered batch.
         total_loss, loss_dict = loss_fn(
-            pred_coeffs_for_loss,       # Actual shape/expression params from filtered batch
-            pred_verts_dummy,           # Dummy, but sized for filtered batch
-            pred_landmarks_2d_model_dummy, # Dummy, but sized for filtered batch
-            rendered_images_dummy,      # Dummy, but sized for filtered batch
-            gt_images_filtered,         # Filtered ground-truth images
-            gt_landmarks_2d             # Real, filtered ground-truth landmarks
+            coeffs_for_loss_fn,      
+            pred_verts,          
+            pred_landmarks_2d_model, 
+            rendered_images,     
+            gt_images,         
+            gt_landmarks_2d      
         )
 
         # --- Backward Pass ---
@@ -188,7 +233,7 @@ for epoch in range(NUM_EPOCHS):
         if i % 10 == 0:
             current_loss = total_loss.item()
             print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], "
-                  f"Batch Size (valid): {current_batch_size}, Loss: {current_loss:.4f}")
+                  f"Batch Size: {current_batch_size}, Loss: {current_loss:.4f}")
             # TODO: Log individual losses from loss_dict
             # print(f"    Losses: {loss_dict}") # Example logging
 
