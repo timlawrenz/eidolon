@@ -62,20 +62,19 @@ To train the encoder, you need a dataset of face images. A reliable way to get t
     This dependency has also been added to `requirements.txt`.
 
 2.  **Run the Download and Processing Script:**
-    A script `scripts/download_ffhq_huggingface.py` is provided to download the FFHQ dataset, resize images to 128x128 thumbnails, and save them to `data/ffhq_thumbnails_128/`.
+    A script `scripts/download_ffhq_huggingface.py` is provided to download the FFHQ 128x128 thumbnail dataset and save the images to `data/ffhq_thumbnails_128/`.
 
     First, ensure the `scripts` directory exists. Then, run the script from the root of your `project-eidolon` directory:
     ```bash
     python scripts/download_ffhq_huggingface.py
     ```
     This script will:
-    *   Download the FFHQ dataset (identified as `huggan/FFHQ`) from Hugging Face. This can be large and take a significant amount of time, as it initially fetches high-resolution images.
-    *   Iterate through the dataset, resize each image to 128x128 pixels.
-    *   Save the thumbnails as PNG files in the `data/ffhq_thumbnails_128/` directory.
+    *   Download the FFHQ dataset (identified as `nuwandaa/ffhq128`) from Hugging Face. This dataset provides images pre-resized to 128x128 pixels.
+    *   Iterate through the dataset and save the images as PNG files in the `data/ffhq_thumbnails_128/` directory.
 
     The target directory `data/ffhq_thumbnails_128/` will be created by the script if it doesn't exist.
 
-    *Note on Hugging Face Access:* While `huggan/FFHQ` is a public dataset, if you encounter access issues or plan to use other datasets, it's good practice to log in to the Hugging Face Hub. You can do this by running `huggingface-cli login` in your terminal and following the prompts.
+    *Note on Hugging Face Access:* While `nuwandaa/ffhq128` is a public dataset, if you encounter access issues or plan to use other datasets, it's good practice to log in to the Hugging Face Hub. You can do this by running `huggingface-cli login` in your terminal and following the prompts.
 
 3.  **Update `IMAGE_DIR` in `train.py`:**
     Once the script completes, your thumbnail images will be in `project-eidolon/data/ffhq_thumbnails_128/`.
