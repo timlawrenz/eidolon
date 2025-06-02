@@ -31,7 +31,10 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 32
 NUM_EPOCHS = 50
-IMAGE_DIR = "path/to/your/face/dataset" # e.g., CelebA-HQ or FFHQ
+# IMAGE_DIR is no longer used by FaceDataset, replaced by HF_DATASET_NAME
+# IMAGE_DIR = "path/to/your/face/dataset" 
+HF_DATASET_NAME = "nuwandaa/ffhq128" # Dataset name on Hugging Face Hub
+HF_DATASET_SPLIT = "train"
 NUM_COEFFS = 227 # The number you chose for your encoder
 LOSS_WEIGHTS = {
     'pixel': 1.0,
@@ -47,11 +50,13 @@ encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
 loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
 optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
 
-print(f"Attempting to load dataset from: {IMAGE_DIR}")
-# It's good practice to ensure IMAGE_DIR exists before creating the dataset
-# For now, we'll let FaceDataset handle the error if the path is invalid.
-dataset = FaceDataset(image_dir=IMAGE_DIR)
-data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+print(f"Initializing FaceDataset with Hugging Face dataset: {HF_DATASET_NAME}")
+# FaceDataset now loads directly from Hugging Face
+dataset = FaceDataset(hf_dataset_name=HF_DATASET_NAME, hf_dataset_split=HF_DATASET_SPLIT)
+# For Hugging Face datasets, num_workers=0 is often safer to start with,
+# as the Dataset object itself might not be easily picklable for multiprocessing,
+# or it might handle its own parallelism.
+data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
 
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")

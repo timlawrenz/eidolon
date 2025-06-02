@@ -52,57 +52,38 @@ To run the main script, which loads the FLAME model, renders an average face, an
 
 ### Preparing an Image Dataset (Example: FFHQ Thumbnails via Hugging Face)
 
-To train the encoder, you need a dataset of face images. A reliable way to get the FFHQ dataset is through Hugging Face's `datasets` library. This method downloads the high-resolution images and then resizes them to create thumbnails.
+To train the encoder, you need a dataset of face images. The `FaceDataset` class in `src/dataset.py` is now configured to load datasets directly from the Hugging Face Hub.
 
 1.  **Install the `datasets` library:**
     If you haven't already, ensure your virtual environment is active and install the library:
     ```bash
     pip install datasets
     ```
-    This dependency has also been added to `requirements.txt`.
+    This dependency is also listed in `requirements.txt`.
 
-2.  **Run the Download and Processing Script:**
-    A script `scripts/download_ffhq_huggingface.py` is provided to download the FFHQ 128x128 thumbnail dataset and save the images to `data/ffhq_thumbnails_128/`.
-
-    First, ensure the `scripts` directory exists. Then, run the script from the root of your `project-eidolon` directory:
-    ```bash
-    python scripts/download_ffhq_huggingface.py
-    ```
-    This script will:
-    *   Download the FFHQ dataset (identified as `nuwandaa/ffhq128`) from Hugging Face. This dataset provides images pre-resized to 128x128 pixels.
-    *   Iterate through the dataset and save the images as PNG files in the `data/ffhq_thumbnails_128/` directory.
-
-    The target directory `data/ffhq_thumbnails_128/` will be created by the script if it doesn't exist.
-
-    *Note on Hugging Face Access:* While `nuwandaa/ffhq128` is a public dataset, if you encounter access issues or plan to use other datasets, it's good practice to log in to the Hugging Face Hub. You can do this by running `huggingface-cli login` in your terminal and following the prompts.
-
-3.  **Update `IMAGE_DIR` in `train.py`:**
-    Once the script completes, your thumbnail images will be in `project-eidolon/data/ffhq_thumbnails_128/`.
-    You should then update the `IMAGE_DIR` variable in `train.py` to point to this directory:
+2.  **Configure `train.py` for the dataset:**
+    The `train.py` script uses `FaceDataset` to load data. You need to ensure the `HF_DATASET_NAME` constant in `train.py` is set to the desired Hugging Face dataset. By default, it's set to `"nuwandaa/ffhq128"`:
     ```python
-    # In train.py, find and modify this line:
-    IMAGE_DIR = "data/ffhq_thumbnails_128" 
+    # In train.py:
+    HF_DATASET_NAME = "nuwandaa/ffhq128" 
+    HF_DATASET_SPLIT = "train"
     ```
+    When `train.py` is run for the first time, the `datasets` library will download and cache the specified dataset. This might take some time depending on the dataset size and your internet connection.
+
+    *Note on Hugging Face Access:* While many datasets are public, if you encounter access issues or plan to use private/gated datasets, it's good practice to log in to the Hugging Face Hub. You can do this by running `huggingface-cli login` in your terminal and following the prompts.
+
+    The script `scripts/download_ffhq_huggingface.py` is no longer necessary for preparing data for `FaceDataset` and can be deleted.
 
 ### Running the Training Script (Skeleton)
 
 The `train.py` script is a skeleton for training the `EidolonEncoder`. To run it:
 
-1.  Ensure you have completed all steps in the [Setup](#setup) section.
+1.  Ensure you have completed all steps in the [Setup](#setup) section and that `datasets` is installed.
 2.  Activate your virtual environment:
     ```bash
     source .venv/bin/activate
     ```
-3.  **Crucially, update the `IMAGE_DIR` variable in `train.py`** to point to the directory containing your face image dataset (e.g., CelebA-HQ, FFHQ, or a custom dataset).
-    ```python
-    # In train.py, find and modify this line:
-    IMAGE_DIR = "path/to/your/face/dataset" 
-    ```
-    For example, if you have images in `data/my_faces/`, change it to:
-    ```python
-    IMAGE_DIR = "data/my_faces"
-    ```
-    Ensure this directory contains `.png`, `.jpg`, or `.jpeg` image files.
+3.  Ensure the `HF_DATASET_NAME` in `train.py` is set to your desired dataset (default is `"nuwandaa/ffhq128"`).
 4.  Run the script from the root directory of the project:
     ```bash
     python train.py
