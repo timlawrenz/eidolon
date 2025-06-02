@@ -125,7 +125,8 @@ def lbs(v_shaped_expressed,
         neck_pose_params_ax,   # (B, 3) axis-angle
         jaw_pose_params_ax,    # (B, 3) axis-angle
         eye_pose_params_ax,    # (B, 6) axis-angle (left_eye_ax, right_eye_ax)
-        J_transformed_rest_lbs, # (B, num_lbs_joints, 3) Rest positions of LBS joints
+        v_template,            # (N_verts, 3) Unbatched template vertices
+        J_regressor_lbs,       # (num_lbs_joints, N_verts) LBS joint regressor
         parents_lbs, 
         lbs_weights, 
         posedirs, 
@@ -138,7 +139,8 @@ def lbs(v_shaped_expressed,
         neck_pose_params_ax (torch.Tensor): Neck pose axis-angle (B, 3).
         jaw_pose_params_ax (torch.Tensor): Jaw pose axis-angle (B, 3).
         eye_pose_params_ax (torch.Tensor): Eye poses axis-angle (B, 6).
-        J_transformed_rest_lbs (torch.Tensor): Rest joint locations for LBS joints (B, num_lbs_joints, 3).
+        v_template (torch.Tensor): Unbatched template vertices (N_verts, 3).
+        J_regressor_lbs (torch.Tensor): LBS joint regressor (num_lbs_joints, N_verts).
         parents_lbs (torch.Tensor): Parent indices for the LBS joints.
         lbs_weights (torch.Tensor): LBS weights.
         posedirs (torch.Tensor): Pose-dependent blendshapes.
@@ -169,18 +171,19 @@ def lbs(v_shaped_expressed,
         global_rot_mat, neck_rot_mat, jaw_rot_mat, eye_l_rot_mat, eye_r_rot_mat
     ], dim=1) # (B, 5, 3, 3)
 
-    # 2. (Removed) Calculation of J from v_shaped_expressed is no longer needed here.
-    #    J_transformed_rest_lbs (rest pose joint locations for LBS joints) is now passed as an argument.
+    # 2. Calculate rest-pose LBS joint locations
+    # v_template is (N_verts, 3), J_regressor_lbs is (num_lbs_joints, N_verts)
+    v_template_batched = v_template.unsqueeze(0).repeat(batch_size, 1, 1) # (B, N_verts, 3)
+    # J_rest_lbs will be (B, num_lbs_joints, 3)
+    J_rest_lbs = torch.einsum('JV,BVC->BJC', J_regressor_lbs, v_template_batched)
 
     # 3. Get global joint transformations A_global (B, num_lbs_joints, 4, 4)
-    #    using the rest pose joint locations for the LBS joints.
-    #    J_transformed_rest_lbs should be (B, num_lbs_joints, 3)
+    #    using the calculated rest_pose LBS joint locations.
+    #    J_rest_lbs is (B, num_lbs_joints, 3)
     #    rot_mats_lbs is (B, num_lbs_joints, 3, 3)
     #    parents_lbs is (num_lbs_joints)
-    #    The number of LBS joints is implicitly defined by the dimensions of these inputs,
-    #    e.g., J_transformed_rest_lbs.shape[1].
     
-    A_global = batch_rigid_transform(rot_mats_lbs, J_transformed_rest_lbs, parents_lbs, dtype=dtype)
+    A_global = batch_rigid_transform(rot_mats_lbs, J_rest_lbs, parents_lbs, dtype=dtype)
 
     # 4. Transform vertices by LBS
     T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, 5)
@@ -504,10 +507,8 @@ class FLAME(nn.Module):
         
         # Calculate rest-pose joint locations for the LBS joints
         # self.J_regressor is (num_lbs_joints, num_vertices), self.v_template is (num_vertices, 3)
-        # J_rest_lbs_no_batch will be (num_lbs_joints, 3)
-        J_rest_lbs_no_batch = torch.einsum('JV,VC->JC', self.J_regressor, self.v_template)
-        # Batch it for the lbs function
-        J_rest_lbs_batched = J_rest_lbs_no_batch.unsqueeze(0).repeat(batch_size, 1, 1)
+        # J_rest_lbs_no_batch will be (num_lbs_joints, 3) - This calculation is moved into lbs
+        # J_rest_lbs_batched = J_rest_lbs_no_batch.unsqueeze(0).repeat(batch_size, 1, 1)
 
         pred_verts_posed = lbs(
             v_shaped_expressed=v_expressed,
@@ -515,7 +516,8 @@ class FLAME(nn.Module):
             neck_pose_params_ax=neck_pose_params,      # (B, 3) axis-angle
             jaw_pose_params_ax=jaw_pose_params,        # (B, 3) axis-angle
             eye_pose_params_ax=eye_pose_params,        # (B, 6) axis-angle
-            J_transformed_rest_lbs=J_rest_lbs_batched, # Pass rest joint locations for LBS
+            v_template=self.v_template,                # Pass unbatched template vertices
+            J_regressor_lbs=self.J_regressor,          # Pass LBS joint regressor
             parents_lbs=self.parents_lbs,
             lbs_weights=self.lbs_weights,
             posedirs=self.posedirs,
