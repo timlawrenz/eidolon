@@ -92,19 +92,49 @@ for epoch in range(NUM_EPOCHS):
         gt_landmarks_list = fa.get_landmarks_from_batch(images_for_fa)
         
         # --- Process the batch to handle failures in landmark detection ---
-        valid_indices = [idx for idx, lms in enumerate(gt_landmarks_list) if lms is not None]
+        # gt_landmarks_list contains a list of numpy arrays (or None if no face detected)
+        # Each non-None element could be (68,2) for a single face, or (num_faces, 68,2) for multiple.
+        
+        processed_valid_landmarks = []
+        filtered_image_indices = [] # Store original batch indices of valid images
 
-        if not valid_indices:
-            print(f"Warning: No faces detected in batch step {i}. Skipping.")
+        # Standard landmark count for the 2D model used by face_alignment
+        EXPECTED_NUM_LANDMARKS = 68
+        EXPECTED_LANDMARK_DIM = 2
+
+        for batch_idx, lms_data in enumerate(gt_landmarks_list):
+            if lms_data is None:
+                continue  # Skip if no landmarks detected for this image
+
+            current_face_landmarks = None
+            if lms_data.ndim == 3: # Potentially multiple faces, shape (num_faces, num_landmarks, 2)
+                # Check if there's at least one face and its landmarks match expected shape
+                if lms_data.shape[0] > 0 and lms_data.shape[1:] == (EXPECTED_NUM_LANDMARKS, EXPECTED_LANDMARK_DIM):
+                    current_face_landmarks = lms_data[0] # Take the first face's landmarks
+                else:
+                    print(f"Warning: Image at batch index {batch_idx} had multi-face landmarks of unexpected shape {lms_data.shape}. Skipping.")
+            elif lms_data.ndim == 2: # Single face, shape (num_landmarks, 2)
+                if lms_data.shape == (EXPECTED_NUM_LANDMARKS, EXPECTED_LANDMARK_DIM):
+                    current_face_landmarks = lms_data
+                else:
+                    print(f"Warning: Image at batch index {batch_idx} had single-face landmarks of unexpected shape {lms_data.shape}. Skipping.")
+            else:
+                # Landmarks detected, but not in expected 2D or 3D array format
+                print(f"Warning: Image at batch index {batch_idx} had landmarks of unexpected ndim {lms_data.ndim} and shape {lms_data.shape}. Skipping.")
+
+            if current_face_landmarks is not None:
+                processed_valid_landmarks.append(current_face_landmarks)
+                filtered_image_indices.append(batch_idx)
+        
+        if not filtered_image_indices:
+            print(f"Warning: No faces with valid landmark format processed in batch step {i}. Skipping.")
             continue
             
-        # Filter the batch to only include images and landmarks that are valid
-        gt_images_filtered = gt_images[valid_indices]
-        valid_landmarks_list = [gt_landmarks_list[idx] for idx in valid_indices]
+        # Filter the original gt_images based on the indices for which we successfully processed landmarks
+        gt_images_filtered = gt_images[filtered_image_indices]
         
-        # Convert the clean list of landmarks to a tensor
-        # Use np.stack to ensure proper stacking of arrays into a new dimension
-        gt_landmarks_2d = torch.from_numpy(np.stack(valid_landmarks_list, axis=0)).float().to(DEVICE)
+        # Now, processed_valid_landmarks should contain only (EXPECTED_NUM_LANDMARKS, EXPECTED_LANDMARK_DIM) arrays
+        gt_landmarks_2d = torch.from_numpy(np.stack(processed_valid_landmarks, axis=0)).float().to(DEVICE)
 
         # --- Forward Pass (Encoder) ---
         optimizer.zero_grad()
