@@ -136,7 +136,7 @@ def lbs(v_shaped_expressed,
         neck_pose_params_ax,   # (B, 3) axis-angle
         jaw_pose_params_ax,    # (B, 3) axis-angle
         eye_pose_params_ax,    # (B, 6) axis-angle (left_eye_ax, right_eye_ax)
-        J_regressor, 
+        J_transformed_rest_lbs, # (B, num_lbs_joints, 3) Rest positions of LBS joints
         parents_lbs, 
         lbs_weights, 
         posedirs, 
@@ -149,8 +149,8 @@ def lbs(v_shaped_expressed,
         neck_pose_params_ax (torch.Tensor): Neck pose axis-angle (B, 3).
         jaw_pose_params_ax (torch.Tensor): Jaw pose axis-angle (B, 3).
         eye_pose_params_ax (torch.Tensor): Eye poses axis-angle (B, 6).
-        J_regressor (torch.Tensor): Joint regressor matrix.
-        parents_lbs (torch.Tensor): Parent indices for the 5 LBS joints.
+        J_transformed_rest_lbs (torch.Tensor): Rest joint locations for LBS joints (B, num_lbs_joints, 3).
+        parents_lbs (torch.Tensor): Parent indices for the LBS joints.
         lbs_weights (torch.Tensor): LBS weights.
         posedirs (torch.Tensor): Pose-dependent blendshapes.
     Returns:
@@ -180,34 +180,18 @@ def lbs(v_shaped_expressed,
         global_rot_mat, neck_rot_mat, jaw_rot_mat, eye_l_rot_mat, eye_r_rot_mat
     ], dim=1) # (B, 5, 3, 3)
 
-    # 2. Calculate initial joint locations J from v_shaped_expressed
-    J = torch.einsum('JV,BVC->BJC', J_regressor, v_shaped_expressed) # (B, num_total_joints, 3)
-    # For LBS, we need J corresponding to the 5 LBS joints.
-    # This assumes J_regressor maps to a skeleton where the first 5 joints correspond to these.
-    # Or, lbs_weights selects the correct columns from J if J is for the full skeleton.
-    # Given lbs_weights is (N_verts, 5), J should be (B, 5, 3) for the einsum with A_global.
-    # This implies J_regressor should be (5, N_verts) if used directly for these 5 joints.
-    # This is a simplification; typically J_regressor is for more joints.
-    # For now, assume J from full J_regressor is used, and batch_rigid_transform handles the 5 joints.
+    # 2. (Removed) Calculation of J from v_shaped_expressed is no longer needed here.
+    #    J_transformed_rest_lbs (rest pose joint locations for LBS joints) is now passed as an argument.
 
     # 3. Get global joint transformations A_global (B, num_lbs_joints, 4, 4)
-    # J_for_brt should be the rest pose of the 5 LBS joints.
-    # If J_regressor gives all joints, we need to select the 5 relevant ones.
-    # For simplicity, assume J_regressor used with v_template gives the rest pose for all joints,
-    # and batch_rigid_transform will use the first 5 of these with the 5 rot_mats_lbs.
-    # This requires J passed to batch_rigid_transform to be (B, 5, 3).
-    # If J_regressor is (num_flame_joints, num_verts), then J is (B, num_flame_joints, 3).
-    # We need to ensure J passed to batch_rigid_transform corresponds to the 5 joints in rot_mats_lbs.
-    # For now, let's assume J_regressor is for the 5 LBS joints directly, so J is (B, 5, 3).
-    # This is a strong assumption and likely needs refinement based on actual J_regressor.
-    if J.shape[1] != rot_mats_lbs.shape[1]: # If J has more joints than rot_mats_lbs
-        print(f"Warning: J shape {J.shape} has {J.shape[1]} joints, but rot_mats_lbs has {rot_mats_lbs.shape[1]}. "
-              "Using subset of J for batch_rigid_transform. Ensure J_regressor and parents_lbs align.")
-        J_for_brt = J[:, :rot_mats_lbs.shape[1], :] 
-    else:
-        J_for_brt = J
-
-    A_global = batch_rigid_transform(rot_mats_lbs, J_for_brt, parents_lbs, dtype=dtype)
+    #    using the rest pose joint locations for the LBS joints.
+    #    J_transformed_rest_lbs should be (B, num_lbs_joints, 3)
+    #    rot_mats_lbs is (B, num_lbs_joints, 3, 3)
+    #    parents_lbs is (num_lbs_joints)
+    #    The number of LBS joints is implicitly defined by the dimensions of these inputs,
+    #    e.g., J_transformed_rest_lbs.shape[1].
+    
+    A_global = batch_rigid_transform(rot_mats_lbs, J_transformed_rest_lbs, parents_lbs, dtype=dtype)
 
     # 4. Transform vertices by LBS
     T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, 5)
@@ -528,13 +512,21 @@ class FLAME(nn.Module):
         # A proper FLAME layer would handle this internally based on its design.
         
         # The lbs function now takes individual pose parameters and handles conversions internally.
+        
+        # Calculate rest-pose joint locations for the LBS joints
+        # self.J_regressor is (num_lbs_joints, num_vertices), self.v_template is (num_vertices, 3)
+        # J_rest_lbs_no_batch will be (num_lbs_joints, 3)
+        J_rest_lbs_no_batch = torch.einsum('JV,VC->JC', self.J_regressor, self.v_template)
+        # Batch it for the lbs function
+        J_rest_lbs_batched = J_rest_lbs_no_batch.unsqueeze(0).repeat(batch_size, 1, 1)
+
         pred_verts_posed = lbs(
             v_shaped_expressed=v_expressed,
             global_pose_params_6d=pose_params,         # (B, 6) from train.py
             neck_pose_params_ax=neck_pose_params,      # (B, 3) axis-angle
             jaw_pose_params_ax=jaw_pose_params,        # (B, 3) axis-angle
             eye_pose_params_ax=eye_pose_params,        # (B, 6) axis-angle
-            J_regressor=self.J_regressor,
+            J_transformed_rest_lbs=J_rest_lbs_batched, # Pass rest joint locations for LBS
             parents_lbs=self.parents_lbs,
             lbs_weights=self.lbs_weights,
             posedirs=self.posedirs,
