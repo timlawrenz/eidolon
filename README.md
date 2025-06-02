@@ -86,7 +86,15 @@ The `train.py` script trains the `EidolonEncoder`. It now uses pre-loaded images
     ```bash
     python train.py
     ```
-    This script will attempt to load data and start a training loop. It now includes a more complete forward pass, including calls to a placeholder `FLAME` model (from `src/model.py`) and a PyTorch3D renderer. For meaningful training that actually learns to reconstruct faces, the `FLAME` model in `src/model.py` needs to be fully implemented with the correct FLAME deformation logic. The script will print basic progress information based on the current (placeholder) outputs of the FLAME model. During training, it will also periodically save visual validation samples (ground truth vs. prediction with landmarks) to the `outputs/validation_images/` directory.
+    This script will attempt to load data and start a training loop. It now includes a more complete forward pass, including calls to a placeholder `FLAME` model (from `src/model.py`) and a PyTorch3D renderer. For meaningful training that actually learns to reconstruct faces, the `FLAME` model in `src/model.py` needs to be fully implemented with the correct FLAME deformation logic. 
+    
+    During training, the script will:
+    *   Print basic progress information (loss, batch size) to the console.
+    *   Periodically save visual validation samples (ground truth vs. prediction with landmarks) to the `outputs/validation_images/` directory.
+    *   Log training metrics (losses, learning rate) to TensorBoard in the `runs/project_eidolon_experiment1/` directory. You can view these logs by running `tensorboard --logdir runs` from the project root and opening the provided URL in your browser.
+    *   Log validation images to TensorBoard under the "Images" tab.
+    
+    Upon completion, the trained encoder model weights will be saved to `eidolon_encoder_final.pth` in the project root directory.
 
 ## References
 
