@@ -90,19 +90,31 @@ class FLAME(nn.Module):
         # expressedirs: (num_vertices, 3, num_expression_params) -> This might not exist in flame2023.pkl
         # For simplicity, if 'expressedirs' is not present, expression deformation will be zero for now.
         
-        self.register_buffer('shapedirs', torch.tensor(flame_model_data['shapedirs'][:,:,:n_shape], dtype=torch.float32))
+        num_vertices = self.v_template.shape[0]
+
+        # Load and reshape shapedirs
+        raw_shapedirs_np = flame_model_data['shapedirs'] # Expected shape: (num_vertices * 3, total_shape_coeffs)
+        num_total_shape_coeffs = raw_shapedirs_np.shape[1]
+        reshaped_sdirs_np = raw_shapedirs_np.reshape(num_vertices, 3, num_total_shape_coeffs)
+        self.register_buffer('shapedirs', torch.tensor(reshaped_sdirs_np[:, :, :n_shape], dtype=torch.float32))
         
         # Check if 'expressedirs' exists, otherwise expression won't deform
         if 'expressedirs' in flame_model_data:
-             self.register_buffer('expressedirs', torch.tensor(flame_model_data['expressedirs'][:,:,:n_exp], dtype=torch.float32))
+             raw_expressedirs_np = flame_model_data['expressedirs']
+             num_total_expr_coeffs = raw_expressedirs_np.shape[1]
+             reshaped_edirs_np = raw_expressedirs_np.reshape(num_vertices, 3, num_total_expr_coeffs)
+             self.register_buffer('expressedirs', torch.tensor(reshaped_edirs_np[:, :, :n_exp], dtype=torch.float32))
         else:
             # If no explicit expression blendshapes, register a zero tensor or handle appropriately
-            # This means expression_params will effectively do nothing if expressedirs is not present.
-            print("Warning: 'expressedirs' not found in FLAME model. Expression parameters will have no effect.")
-            self.register_buffer('expressedirs', torch.zeros((self.v_template.shape[0], 3, n_exp), dtype=torch.float32))
+            print("Warning: 'expressedirs' not found in FLAME model. Expression parameters will have no effect with current setup.")
+            self.register_buffer('expressedirs', torch.zeros((num_vertices, 3, n_exp), dtype=torch.float32, device=self.v_template.device))
 
-
-        self.register_buffer('posedirs', torch.tensor(flame_model_data['posedirs'], dtype=torch.float32))
+        # Load and reshape posedirs
+        raw_posedirs_np = flame_model_data['posedirs'] # Expected shape: (num_vertices * 3, num_pose_blendshapes)
+        num_total_pose_blendshapes = raw_posedirs_np.shape[1]
+        # The last dimension of reshaped posedirs will be num_total_pose_blendshapes
+        self.register_buffer('posedirs', torch.tensor(raw_posedirs_np.reshape(num_vertices, 3, num_total_pose_blendshapes), dtype=torch.float32))
+        
         self.register_buffer('J_regressor', torch.tensor(flame_model_data['J_regressor'], dtype=torch.float32))
         self.register_buffer('lbs_weights', torch.tensor(flame_model_data['weights'], dtype=torch.float32)) # LBS weights
         self.register_buffer('faces_idx', torch.tensor(flame_model_data['f'].astype(np.int64), dtype=torch.long))
