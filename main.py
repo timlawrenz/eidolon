@@ -13,13 +13,13 @@ flame_model_path = './data/flame_model/flame2023.pkl'
 # FLAME model pickle, imports these. We temporarily create these aliases.
 _original_np_attrs = {}
 aliases_to_create = {
-    'bool': np.bool_,
-    'int': np.int_,
-    'float': np.float_,
-    'complex': np.complex_,
-    'object': np.object_,
-    'unicode': np.unicode_,
-    'str': np.str_
+    'bool': np.bool8,        # np.bool_ was removed, use np.bool8 or Python's bool
+    'int': np.int64,         # np.int_ was removed, use np.int64 (platform C int, often 64-bit)
+    'float': np.float64,     # np.float_ was removed, use np.float64
+    'complex': np.complex128, # np.complex_ was removed, use np.complex128
+    'object': np.object0,      # np.object_ was removed, use np.object0 or Python's object
+    'unicode': np.str0,        # np.unicode_ was removed, use np.str0 (represents Python's str)
+    'str': np.bytes_         # np.str_ was removed, use np.bytes_ (represents Python's bytes)
 }
 
 for alias_name, target_type in aliases_to_create.items():
