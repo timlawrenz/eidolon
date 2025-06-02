@@ -355,3 +355,5 @@ print("Training finished (skeleton).")
 # --- Save the final model ---
 # torch.save(encoder.state_dict(), 'eidolon_encoder_final.pth')
 # print("Encoder model saved to eidolon_encoder_final.pth")
+
+writer.close() # Close the TensorBoard SummaryWriter
