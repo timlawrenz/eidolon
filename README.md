@@ -86,7 +86,7 @@ The `train.py` script trains the `EidolonEncoder`. It now uses pre-loaded images
     ```bash
     python train.py
     ```
-    This script will attempt to load data and start a training loop. Note that many parts of the forward pass and loss calculation are currently placeholders (marked with `TODO`) and will need to be implemented for meaningful training. The script will print basic progress information.
+    This script will attempt to load data and start a training loop. It now includes a more complete forward pass, including calls to a placeholder `FLAME` model (from `src/model.py`) and a PyTorch3D renderer. For meaningful training that actually learns to reconstruct faces, the `FLAME` model in `src/model.py` needs to be fully implemented with the correct FLAME deformation logic. The script will print basic progress information based on the current (placeholder) outputs of the FLAME model.
 
 ## References
 
