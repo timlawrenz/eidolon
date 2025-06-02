@@ -135,10 +135,12 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
 
 
 def lbs(v_shaped_expressed, 
-        rot_mats_lbs, # (B, num_lbs_joints, 3, 3) - e.g., for 5 main FLAME joints
-        pose_feature_vector_posedirs, # (B, num_posedirs_coeffs) - e.g., (B, 27)
+        global_pose_params_6d, # (B, 6)
+        neck_pose_params_ax,   # (B, 3) axis-angle
+        jaw_pose_params_ax,    # (B, 3) axis-angle
+        eye_pose_params_ax,    # (B, 6) axis-angle (left_eye_ax, right_eye_ax)
         J_regressor, 
-        parents_lbs, # Renamed to parents_lbs to be specific for the 5 LBS joints
+        parents_lbs, 
         lbs_weights, 
         posedirs, 
         dtype=torch.float32):
@@ -146,10 +148,12 @@ def lbs(v_shaped_expressed,
     Performs Linear Blend Skinning (LBS).
     Args:
         v_shaped_expressed (torch.Tensor): Vertices after shape and expression (B, N_verts, 3).
-        rot_mats_lbs (torch.Tensor): Rotation matrices for LBS joints (B, num_lbs_joints, 3, 3).
-        pose_feature_vector_posedirs (torch.Tensor): Feature vector for posedirs (B, num_posedirs_coeffs).
+        global_pose_params_6d (torch.Tensor): Global pose parameters (B, 6).
+        neck_pose_params_ax (torch.Tensor): Neck pose axis-angle (B, 3).
+        jaw_pose_params_ax (torch.Tensor): Jaw pose axis-angle (B, 3).
+        eye_pose_params_ax (torch.Tensor): Eye poses axis-angle (B, 6).
         J_regressor (torch.Tensor): Joint regressor matrix.
-        parents (torch.Tensor): Parent indices for each joint.
+        parents_lbs (torch.Tensor): Parent indices for the 5 LBS joints.
         lbs_weights (torch.Tensor): LBS weights.
         posedirs (torch.Tensor): Pose-dependent blendshapes.
     Returns:
@@ -158,65 +162,79 @@ def lbs(v_shaped_expressed,
     batch_size = v_shaped_expressed.shape[0]
     device = v_shaped_expressed.device
 
-    # 1. Calculate initial joint locations J from v_shaped_expressed
-    # J_regressor: (num_joints_in_skeleton, num_vertices)
-    # v_shaped_expressed: (B, num_vertices, 3)
-    # J: (B, num_joints_in_skeleton, 3)
-    J = torch.einsum('JV,BVC->BJC', J_regressor, v_shaped_expressed)
+    # 1. Convert pose parameters to rotation matrices for LBS joints
+    # Global Pose (from 6D to 3x3 Rotation Matrix)
+    if global_pose_params_6d.shape[1] == 6:
+        global_rot_mat = rotation_6d_to_matrix(global_pose_params_6d) # (B, 3, 3)
+    elif global_pose_params_6d.shape[1] == 3: # If global pose is already axis-angle
+        print("Warning: Global pose is 3D (axis-angle), converting to matrix. Consider 6D output from encoder.")
+        global_rot_mat = batch_rodrigues(global_pose_params_6d)
+    else:
+        print(f"Warning: Global pose_params have unexpected shape {global_pose_params_6d.shape}. Expected 3 or 6. Using identity for global rotation.")
+        global_rot_mat = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
 
-    # 2. Get global joint transformations A_global (B, J_skeleton, 4, 4)
-    # `rot_mats_lbs` are for a subset of joints (e.g., 5 main ones for FLAME).
-    # `batch_rigid_transform` needs to correctly map these to the full skeleton's `parents`
-    # and `J` (rest pose joint locations for the full skeleton).
-    # The current `batch_rigid_transform` is a placeholder and doesn't use `rot_mats_lbs` effectively.
-    A_global = batch_rigid_transform(rot_mats_lbs, J, parents_lbs, dtype=dtype) # Use parents_lbs
-    # For FLAME, J_transformed (from J_regressor) are the rest pose joints.
-    # The pose is applied to these.
+    neck_rot_mat = batch_rodrigues(neck_pose_params_ax)
+    jaw_rot_mat = batch_rodrigues(jaw_pose_params_ax)
+    eye_l_rot_mat = batch_rodrigues(eye_pose_params_ax[:, :3])
+    eye_r_rot_mat = batch_rodrigues(eye_pose_params_ax[:, 3:])
+
+    # Stack rotation matrices for the 5 main LBS joints: global, neck, jaw, left_eye, right_eye
+    rot_mats_lbs = torch.stack([
+        global_rot_mat, neck_rot_mat, jaw_rot_mat, eye_l_rot_mat, eye_r_rot_mat
+    ], dim=1) # (B, 5, 3, 3)
+
+    # 2. Calculate initial joint locations J from v_shaped_expressed
+    J = torch.einsum('JV,BVC->BJC', J_regressor, v_shaped_expressed) # (B, num_total_joints, 3)
+    # For LBS, we need J corresponding to the 5 LBS joints.
+    # This assumes J_regressor maps to a skeleton where the first 5 joints correspond to these.
+    # Or, lbs_weights selects the correct columns from J if J is for the full skeleton.
+    # Given lbs_weights is (N_verts, 5), J should be (B, 5, 3) for the einsum with A_global.
+    # This implies J_regressor should be (5, N_verts) if used directly for these 5 joints.
+    # This is a simplification; typically J_regressor is for more joints.
+    # For now, assume J from full J_regressor is used, and batch_rigid_transform handles the 5 joints.
+
+    # 3. Get global joint transformations A_global (B, num_lbs_joints, 4, 4)
+    # J_for_brt should be the rest pose of the 5 LBS joints.
+    # If J_regressor gives all joints, we need to select the 5 relevant ones.
+    # For simplicity, assume J_regressor used with v_template gives the rest pose for all joints,
+    # and batch_rigid_transform will use the first 5 of these with the 5 rot_mats_lbs.
+    # This requires J passed to batch_rigid_transform to be (B, 5, 3).
+    # If J_regressor is (num_flame_joints, num_verts), then J is (B, num_flame_joints, 3).
+    # We need to ensure J passed to batch_rigid_transform corresponds to the 5 joints in rot_mats_lbs.
+    # For now, let's assume J_regressor is for the 5 LBS joints directly, so J is (B, 5, 3).
+    # This is a strong assumption and likely needs refinement based on actual J_regressor.
+    if J.shape[1] != rot_mats_lbs.shape[1]: # If J has more joints than rot_mats_lbs
+        print(f"Warning: J shape {J.shape} has {J.shape[1]} joints, but rot_mats_lbs has {rot_mats_lbs.shape[1]}. "
+              "Using subset of J for batch_rigid_transform. Ensure J_regressor and parents_lbs align.")
+        J_for_brt = J[:, :rot_mats_lbs.shape[1], :] 
+    else:
+        J_for_brt = J
+
+    A_global = batch_rigid_transform(rot_mats_lbs, J_for_brt, parents_lbs, dtype=dtype)
 
     # 4. Transform vertices by LBS
-    # lbs_weights: (N_verts, num_joints)
-    # A_global: (B, num_joints, 4, 4)
-    # T: (B, N_verts, 4, 4)
-    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global)
-
+    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, 5)
     v_homo = torch.cat([v_shaped_expressed, torch.ones(batch_size, v_shaped_expressed.shape[1], 1, device=device, dtype=dtype)], dim=2)
-    v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3] # Keep only x,y,z
+    v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3]
 
     # 5. Add pose-corrective blendshapes (posedirs)
-    # posedirs: (N_verts, 3, num_pose_blendshape_coeffs)
-    # num_pose_blendshape_coeffs is typically (num_joints_for_posedirs - 1) * 9
-    # For FLAME, posedirs are (5023, 3, 27) -> 3 joints * 9 components each (e.g. jaw, neck, global effects)
-    # We need a pose_feature_vector from rot_mats (excluding identity for root)
-    # This is highly model-specific. For now, a placeholder.
-    # TODO: Create correct pose_feature_vector for FLAME's posedirs.
-    # `posedirs` (N_verts, 3, num_blendshape_coeffs, e.g., 27 for FLAME) are typically driven by
-    # the rotations of a subset of joints (e.g., global, neck, jaw).
-    # The `rot_mats` here are (B, num_flame_main_joints, 3, 3), e.g., (B, 5, 3, 3).
-    # Assuming the first 3 joints in `rot_mats` (global, neck, jaw) drive the 27 posedirs.
-    # (R_joint - Identity) reshaped and concatenated. (3 joints * 9 components/joint = 27).
+    # Create pose_feature_vector for posedirs
+    # Typically driven by neck, jaw, left eye, right eye rotations (excluding identity for each).
+    num_joints_for_posedirs = 4 # Neck, Jaw, Left Eye, Right Eye
+    # rot_mats_lbs is stacked as [global, neck, jaw, eye_l, eye_r]
+    # Select indices 1 (neck), 2 (jaw), 3 (eye_l), 4 (eye_r).
+    rot_mats_subset_for_posedirs = rot_mats_lbs[:, 1:1+num_joints_for_posedirs, :, :] # (B, 4, 3, 3)
+
+    ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) # (1,3,3)
+    pose_feature_vector_posedirs = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) # Should be (B, 4*9=36)
     
-    num_pose_blendshape_coeffs = posedirs.shape[2] # e.g., 27
-    
-    if num_pose_blendshape_coeffs > 0:
-        # Assume the first 3 joints in rot_mats (global, neck, jaw) drive these posedirs
-        # This is an assumption and might need adjustment based on FLAME specifics.
-        num_joints_for_posedirs = num_pose_blendshape_coeffs // 9 # Should be 3 if 27 coeffs
-        
-        if rot_mats_lbs.shape[1] >= num_joints_for_posedirs: # Use rot_mats_lbs here
-            rot_mats_for_posedirs = rot_mats_lbs[:, :num_joints_for_posedirs, :, :] # Use rot_mats_lbs here
-            ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).unsqueeze(0) # (1,1,3,3)
-            # pose_feature_vector should be (B, num_joints_for_posedirs * 9)
-            pose_feature_vector = (rot_mats_for_posedirs - ident).view(batch_size, -1) # (B, 27)
+    num_expected_posedirs_coeffs = posedirs.shape[2] # This should be 36
+    if pose_feature_vector_posedirs.shape[1] != num_expected_posedirs_coeffs:
+        print(f"Warning: Mismatch in pose_feature_vector_for_posedirs size. Expected {num_expected_posedirs_coeffs}, "
+              f"got {pose_feature_vector_posedirs.shape[1]}. Using zeros for posedirs effect.")
+        pose_feature_vector_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=dtype)
             
-            # Ensure the reshaped size matches num_pose_blendshape_coeffs
-            if pose_feature_vector.shape[1] != num_pose_blendshape_coeffs:
-                print(f"Warning: Mismatch in pose_feature_vector size for posedirs. Expected {num_pose_blendshape_coeffs}, got {pose_feature_vector.shape[1]}. Using zeros.")
-                pose_feature_vector = torch.zeros(batch_size, num_pose_blendshape_coeffs, device=device, dtype=dtype)
-        else:
-            print(f"Warning: Not enough rotation matrices for posedirs. Expected at least {num_joints_for_posedirs}. Using zeros for pose_feature_vector.")
-            pose_feature_vector = torch.zeros(batch_size, num_pose_blendshape_coeffs, device=device, dtype=dtype)
-            
-        pose_blendshapes = torch.einsum('BP,VCP->BVC', pose_feature_vector, posedirs)
+    pose_blendshapes = torch.einsum('BP,VCP->BVC', pose_feature_vector_posedirs, posedirs)
     else:
         pose_blendshapes = torch.zeros_like(v_shaped_expressed) # No posedirs to apply
 
