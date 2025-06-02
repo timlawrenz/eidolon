@@ -308,6 +308,25 @@ for epoch in range(NUM_EPOCHS):
                     num_images=num_val_samples 
                 )
 
+                # --- TensorBoard Logging for Images ---
+                # Unnormalize gt_images (assuming they are normalized like training data)
+                mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
+                std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
+                val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
+                
+                # Create a grid of images
+                # global_step is defined in the LOGGING_INTERVAL block, ensure it's available or define it here too
+                # For simplicity, let's use the same global_step as scalar logging,
+                # assuming VISUALIZATION_INTERVAL is a multiple of LOGGING_INTERVAL
+                current_global_step = epoch * len(data_loader) + i 
+                
+                img_grid_gt = torchvision.utils.make_grid(val_gt_images_unnorm_tb.clamp(0,1)) 
+                writer.add_image('Validation/ground_truth', img_grid_gt, current_global_step)
+                
+                # Rendered images are likely already in a good range [0,1] but clamp to be safe
+                img_grid_rendered = torchvision.utils.make_grid(val_rendered_images.clamp(0,1))
+                writer.add_image('Validation/prediction', img_grid_rendered, current_global_step)
+
             encoder.train() # Set model back to training mode
         
         if i % LOGGING_INTERVAL == 0:
