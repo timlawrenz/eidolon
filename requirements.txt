@@ -2,7 +2,7 @@
 torch==2.3.0
 torchvision==0.18.0
 torchaudio==2.3.0
-numpy
+numpy==1.23.5
 scipy
 jupyterlab
 matplotlib
