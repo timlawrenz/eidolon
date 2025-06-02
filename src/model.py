@@ -458,20 +458,24 @@ class FLAME(nn.Module):
         ], dim=1) # (B, 5, 3, 3)
 
         # Create pose_feature_vector for posedirs
-        # Typically driven by global, neck, jaw rotations (excluding identity)
-        # Assuming the first 3 matrices in rot_mats_for_lbs correspond to these.
-        num_joints_for_posedirs = 3 # Global, Neck, Jaw
-        ident = torch.eye(3, device=device, dtype=shape_params.dtype).unsqueeze(0) # (1,3,3) # Use shape_params.dtype
+        # Typically driven by neck, jaw, left eye, right eye rotations (excluding identity for each).
+        # FLAME posedirs (36 components) = 4 joints * 9 components each.
+        # rot_mats_for_lbs is stacked as [global, neck, jaw, eye_l, eye_r]
+        # We need indices 1 (neck), 2 (jaw), 3 (eye_l), 4 (eye_r).
+        num_joints_for_posedirs = 4 
+        # Select the rotation matrices for neck, jaw, left eye, right eye
+        rot_mats_subset_for_posedirs = rot_mats_for_lbs[:, 1:1+num_joints_for_posedirs, :, :] # (B, 4, 3, 3)
+
+        ident = torch.eye(3, device=device, dtype=shape_params.dtype).unsqueeze(0) # (1,3,3)
         
         # (B, num_joints_for_posedirs, 3, 3) -> (B, num_joints_for_posedirs*9)
-        pose_feature_vector_for_posedirs = (rot_mats_for_lbs[:, :num_joints_for_posedirs, :, :] - ident).view(batch_size, -1)
+        pose_feature_vector_for_posedirs = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) # Should be (B, 4*9=36)
         
-        # Ensure the size matches what posedirs expects (e.g., 27 for FLAME)
-        num_expected_posedirs_coeffs = self.posedirs.shape[2]
+        num_expected_posedirs_coeffs = self.posedirs.shape[2] # This should be 36
         if pose_feature_vector_for_posedirs.shape[1] != num_expected_posedirs_coeffs:
             print(f"Warning: Mismatch in pose_feature_vector_for_posedirs size. Expected {num_expected_posedirs_coeffs}, "
                   f"got {pose_feature_vector_for_posedirs.shape[1]}. Using zeros for posedirs effect.")
-            pose_feature_vector_for_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=shape_params.dtype) # Use shape_params.dtype
+            pose_feature_vector_for_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=shape_params.dtype)
 
 
         pred_verts_posed = lbs(v_expressed, 
