@@ -8,8 +8,7 @@ from PIL import Image # PIL is an alias for Pillow, which should be installed vi
 # Using a dataset that provides 128x128 thumbnails directly.
 DATASET_NAME = "nuwandaa/ffhq128" 
 SAVE_DIR = "data/ffhq_thumbnails_128"
-# IMAGE_SIZE is implicitly 128 from the dataset name, but good to keep for clarity if needed elsewhere.
-IMAGE_SIZE = 128 
+# Images from this dataset are expected to be 128x128.
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
