@@ -327,6 +327,24 @@ class FLAME(nn.Module):
             if hasattr(self, 'landmark_vertex_ids'): # Clean up if a previous logic path set this
                 del self.landmark_vertex_ids 
             self.register_buffer('landmark_vertex_ids', torch.empty(0, dtype=torch.long)) # For the forward pass logic
+        else: # Debug print if barycentric landmarks were successfully loaded
+            print("--- DEBUG: Barycentric Landmark Data ---")
+            print(f"self.landmark_face_idx shape: {self.landmark_face_idx.shape}")
+            if self.landmark_face_idx.numel() > 0: # Check if not empty before min/max
+                print(f"self.landmark_face_idx min: {self.landmark_face_idx.min()}, max: {self.landmark_face_idx.max()}") # Max should be < num_faces
+                print(f"self.landmark_face_idx[:5]: {self.landmark_face_idx[:5]}")
+            else:
+                print("self.landmark_face_idx is empty.")
+
+            print(f"self.landmark_b_coords shape: {self.landmark_b_coords.shape}")
+            if self.landmark_b_coords.numel() > 0: # Check if not empty
+                print(f"self.landmark_b_coords min: {self.landmark_b_coords.min()}, max: {self.landmark_b_coords.max()}") # Should be between 0 and 1
+                print(f"self.landmark_b_coords[:5]:\n{self.landmark_b_coords[:5]}")
+                print(f"Sum of barycentric coords for first 5 landmarks:\n{torch.sum(self.landmark_b_coords[:5], dim=1)}") # Should be close to 1.0
+            else:
+                print("self.landmark_b_coords is empty.")
+            print("--- END DEBUG ---")
+
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None, 
                   eye_pose_params=None, jaw_pose_params=None, neck_pose_params=None, transl=None, detail_params=None):
