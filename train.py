@@ -31,6 +31,7 @@ from src.utils import save_validation_images # Import the new utility function
 import pickle # For loading FLAME model faces
 from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
 import torchvision # For making image grids for TensorBoard
+import datetime # For timestamping log directories
 
 # PyTorch3D imports for renderer and camera
 from pytorch3d.structures import Meshes
@@ -40,9 +41,10 @@ from pytorch3d.renderer import (
 )
 
 # Initialize the SummaryWriter
-# This will create a directory 'runs/project_eidolon_experiment1' for your logs
-# You can change 'project_eidolon_experiment1' for different experiments
-writer = SummaryWriter('runs/project_eidolon_experiment1')
+timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
+log_dir_name = f'runs/project_eidolon_{timestamp}'
+writer = SummaryWriter(log_dir_name)
+print(f"TensorBoard logs will be saved to: {log_dir_name}")
 
 # --- Hyperparameters and Config ---
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
