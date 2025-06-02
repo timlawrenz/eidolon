@@ -106,11 +106,27 @@ for epoch in range(NUM_EPOCHS):
         pred_coeffs_vec = encoder(gt_images)
         
         # TODO: Deconstruct pred_coeffs_vec into a dictionary for your FLAME model
-        # Example: pred_coeffs_dict = {'shape': pred_coeffs_vec[:, :100], ... }
-        pred_coeffs_dict_dummy = {'shape': torch.zeros(gt_images.size(0), 100).to(DEVICE), 'expression': torch.zeros(gt_images.size(0), 50).to(DEVICE)} # Example
+        # For regularization loss, we need 'shape' and 'expression' parameters.
+        # Assuming NUM_COEFFS = 227, with:
+        #   Shape: first 100 coefficients
+        #   Expression: next 50 coefficients
+        #   (The rest are for pose, jaw, neck, etc., not used in current regularization)
         
-        # TODO: Instantiate FLAME model and pass coefficients to get 3D vertices and 3D landmarks
-        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict)
+        num_shape_coeffs = 100
+        num_expression_coeffs = 50
+        
+        shape_params = pred_coeffs_vec[:, :num_shape_coeffs]
+        expression_params = pred_coeffs_vec[:, num_shape_coeffs : num_shape_coeffs + num_expression_coeffs]
+        
+        # This dictionary will be used by the loss function for regularization
+        pred_coeffs_for_loss = {
+            'shape': shape_params,
+            'expression': expression_params
+            # Other params like pose, jaw, etc. can be added here if needed by other loss components later
+        }
+        
+        # TODO: Instantiate FLAME model and pass the full deconstructed pred_coeffs_dict
+        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict_full)
         pred_verts_dummy = torch.zeros(gt_images.size(0), 5023, 3).to(DEVICE) # Example
 
         # TODO: Project 3D landmarks to 2D screen space using the PyTorch3D camera
@@ -126,8 +142,9 @@ for epoch in range(NUM_EPOCHS):
         # --- C. Loss Calculation ---
         # Using dummy values for parts of the pipeline not yet fully implemented.
         # Replace dummy tensors with actual tensors as you complete the TODOs.
+        # Pass the actual predicted coefficients for regularization.
         total_loss, loss_dict = loss_fn(
-            pred_coeffs_dict_dummy,  # Replace with actual pred_coeffs_dict
+            pred_coeffs_for_loss,    # Using actual shape/expression params for regularization
             pred_verts_dummy,        # Replace with actual pred_verts
             pred_landmarks_2d_dummy, # Replace with actual pred_landmarks_2d
             rendered_images_dummy,   # Replace with actual rendered_images
