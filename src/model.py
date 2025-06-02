@@ -373,17 +373,18 @@ class FLAME(nn.Module):
         # This assumes a simplified hierarchy for these 5 joints for LBS purposes.
         # Global (0) is root. Neck (1) is child of Global. Jaw (2) is child of Neck.
         # Left Eye (3) and Right Eye (4) are children of Neck (simplified head).
-        parents_lbs_np = np.array([-1, 0, 1, 1, 1], dtype=np.int64)
+        parents_lbs_np = np.array([-1, 0, 1, 1, 1], dtype=np.int64) # Corresponds to global, neck, jaw, eyeL, eyeR
         self.register_buffer('parents_lbs', torch.tensor(parents_lbs_np, dtype=torch.long))
 
         # Assert consistency in the number of LBS joints
-        num_lbs_joints = self.parents_lbs.shape[0]
+        num_lbs_joints = self.parents_lbs.shape[0] # This will be 5
         assert self.J_regressor.shape[0] == num_lbs_joints, \
-            f"J_regressor joint count ({self.J_regressor.shape[0]}) does not match " \
-            f"parents_lbs joint count ({num_lbs_joints}). Expected J_regressor for LBS joints."
+            f"J_regressor joint count ({self.J_regressor.shape[0]}) from pkl does not match " \
+            f"expected LBS joint count ({num_lbs_joints}) defined by parents_lbs. " \
+            f"The J_regressor in flame2023.pkl is expected to be (5, num_vertices)."
         assert self.lbs_weights.shape[1] == num_lbs_joints, \
             f"lbs_weights joint count ({self.lbs_weights.shape[1]}) does not match " \
-            f"parents_lbs joint count ({num_lbs_joints}). Expected lbs_weights for LBS joints."
+            f"expected LBS joint count ({num_lbs_joints})."
 
         # --- Load DECA Landmark Data for 68 points ---
         # The argument `landmark_embedding_path` is now `deca_landmark_embedding_path`
