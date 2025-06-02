@@ -305,6 +305,8 @@ class FLAME(nn.Module):
 
         with open(flame_model_path, 'rb') as f:
             flame_model_data = pickle.load(f, encoding='latin1')
+        
+        print(f"DEBUG: FLAME model data keys: {list(flame_model_data.keys())}") # Print keys for debugging
 
         # FLAME components
         # Conditionally access .r to get NumPy arrays from potential chumpy objects
