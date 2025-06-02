@@ -1,3 +1,10 @@
+"""
+Defines the loss functions used for training the Eidolon FLAME encoder.
+
+This module includes the `TotalLoss` class, which combines various loss components
+such as pixel-wise loss, landmark alignment loss, and regularization losses
+to guide the training of the neural network that predicts FLAME parameters.
+"""
 
 import torch
 import torch.nn as nn
