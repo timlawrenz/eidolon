@@ -61,28 +61,22 @@ To train the encoder, you need a dataset of face images. As an example, here's h
     cd ffhq-dataset
     ```
 
-2.  **Download Thumbnails:**
-    The FFHQ repository provides a script to download different parts of the dataset. We'll download only the thumbnails.
-    First, create a directory where the downloaded images will be stored. It's often good practice to create this outside your project directory initially.
-    ```bash
-    # Example: From your project-eidolon directory's parent
-    mkdir ../ffhq_data 
-    ```
-    Now, run the download script from within the cloned `ffhq-dataset` directory, pointing the output to your newly created folder:
-    ```bash
-    # Ensure you are inside the ffhq-dataset directory
-    python download_ffhq.py --tasks thumbnails --outdir ../ffhq_data/thumbnails
-    ```
-    This script will download all 70,000 thumbnail images (128x128 pixels) and can take some time.
+2.  **Download Thumbnails Directly to Project:**
+    The FFHQ repository provides a script to download different parts of the dataset. We'll download only the thumbnails directly into your project's data directory.
 
-3.  **Organize Your Data:**
-    Once the download is complete, you'll have a folder (e.g., `../ffhq_data/thumbnails`) full of images. For use with this project, it's recommended to move or copy these images into the `project-eidolon/data/` directory.
+    First, create the target directory within your `project-eidolon` structure:
     ```bash
     # From your project-eidolon root directory:
     mkdir -p data/ffhq_thumbnails
-    mv ../ffhq_data/thumbnails/* data/ffhq_thumbnails/
     ```
-    Your images should now be located in `project-eidolon/data/ffhq_thumbnails/`. You can then set `IMAGE_DIR = "data/ffhq_thumbnails"` in `train.py`.
+    Now, run the download script from within the cloned `ffhq-dataset` directory. You'll need to provide the correct path to `--outdir`. If you cloned `ffhq-dataset` as a sibling to your `project-eidolon` directory (e.g., both are in `~/dev/`), the relative path would be `../project-eidolon/data/ffhq_thumbnails`. Adjust this path if your directory structure is different, or use an absolute path.
+    ```bash
+    # Ensure you are inside the ffhq-dataset directory
+    # Adjust the --outdir path as necessary for your setup
+    python download_ffhq.py --tasks thumbnails --outdir ../project-eidolon/data/ffhq_thumbnails 
+    ```
+    This script will download all 70,000 thumbnail images (128x128 pixels) directly into `project-eidolon/data/ffhq_thumbnails/` and can take some time.
+    Your images will now be located in `project-eidolon/data/ffhq_thumbnails/`. You can then set `IMAGE_DIR = "data/ffhq_thumbnails"` in `train.py`.
 
 ### Running the Training Script (Skeleton)
 
