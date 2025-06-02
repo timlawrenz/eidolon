@@ -302,7 +302,7 @@ for epoch in range(NUM_EPOCHS):
 
             encoder.train() # Set model back to training mode
         
-        if i % 10 == 0:
+        if i % LOGGING_INTERVAL == 0:
             current_loss = total_loss.item()
             print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], "
                   f"Batch Size: {current_batch_size}, Loss: {current_loss:.4f}")
