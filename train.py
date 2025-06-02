@@ -19,6 +19,8 @@ for full functionality. The IMAGE_DIR constant must be set to a valid dataset pa
 # 1. Imports and Setup
 import torch
 from torch.utils.data import DataLoader
+import numpy as np # For image unnormalization
+import face_alignment # For landmark detection
 # Assuming src.dataset, src.model, src.loss are in the Python path
 # If train.py is in the root, and src is a subdirectory:
 from src.dataset import FaceDataset
@@ -46,9 +48,16 @@ LOSS_WEIGHTS = {
 # 2. Initialize everything
 encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
 # flame = FLAME().to(DEVICE) # Assuming your FLAME class is also an nn.Module
-# renderer = ... # Your PyTorch3D renderer
+# renderer = ... # Your PyTorch3D renderer, needed for projecting landmarks
+# cameras = ... # Your PyTorch3D camera, needed for projecting landmarks
 loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
 optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
+
+# Initialize the landmark detector. This will load its own model.
+# Using '2d' for 2D landmarks. It will use DEVICE.
+print("Initializing landmark detector...")
+fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, device=str(DEVICE))
+print("Landmark detector initialized.")
 
 print(f"Initializing FaceDataset with Hugging Face dataset: {HF_DATASET_NAME}")
 # FaceDataset now loads directly from Hugging Face
@@ -66,47 +75,66 @@ for epoch in range(NUM_EPOCHS):
     for i, batch in enumerate(data_loader):
         gt_images = batch['image'].to(DEVICE)
         
-        # --- Forward Pass ---
+        # --- A. Get Ground Truth 2D Landmarks from the input image ---
+        # Unnormalize images for face_alignment: (B,C,H,W) tensor to (B,H,W,C) numpy [0,255]
+        unnormalized_images_np = gt_images.cpu().numpy().transpose(0, 2, 3, 1)
+        # These are standard ImageNet mean/std used in FaceDataset transforms
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        unnormalized_images_np = (unnormalized_images_np * std + mean) * 255
+        unnormalized_images_np = unnormalized_images_np.astype(np.uint8)
+
+        # Get landmarks for the entire batch.
+        # gt_landmarks_list contains a list of numpy arrays (or None if no face detected)
+        gt_landmarks_list = fa.get_landmarks_from_batch(unnormalized_images_np)
+        
+        # TODO: Convert gt_landmarks_list to a stacked torch.Tensor `gt_landmarks_2d`.
+        # Handle cases where landmarks are not detected (gt_landmarks_list[j] is None).
+        # This might involve:
+        # 1. Filtering the batch: only keep images/coeffs where landmarks were found.
+        #    This means `gt_images`, `pred_coeffs_vec` etc. would need to be filtered accordingly.
+        # 2. Using a placeholder or skipping landmark loss for those samples.
+        # For now, we'll continue to use a dummy tensor for gt_landmarks_2d in the loss.
+        gt_landmarks_2d_dummy = torch.zeros(gt_images.size(0), 68, 2).to(DEVICE) # Dummy ground truth
+
+
+        # --- Forward Pass (Encoder) ---
         optimizer.zero_grad()
         pred_coeffs_vec = encoder(gt_images)
+        
         # TODO: Deconstruct pred_coeffs_vec into a dictionary for your FLAME model
-        # pred_coeffs_dict = deconstruct_vector(pred_coeffs_vec) 
-        
-        # TODO: Instantiate FLAME model and pass coefficients
-        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict)
-
-        # TODO: Project 3D landmarks to 2D
-        # pred_landmarks_2d = project_landmarks(pred_landmarks_3d, camera) # camera needs to be defined
-
-        # TODO: Render the image using the predicted vertices
-        # rendered_images = renderer(pred_verts, ...) # renderer needs to be defined
-        
-        # --- Loss Calculation ---
-        # For now, let's assume dummy values for placeholders to avoid errors
-        # Replace these with actual values as you implement the TODOs
+        # Example: pred_coeffs_dict = {'shape': pred_coeffs_vec[:, :100], ... }
         pred_coeffs_dict_dummy = {'shape': torch.zeros(gt_images.size(0), 100).to(DEVICE), 'expression': torch.zeros(gt_images.size(0), 50).to(DEVICE)} # Example
-        pred_verts_dummy = torch.zeros(gt_images.size(0), 5023, 3).to(DEVICE) # Example: num_vertices for FLAME
-        pred_landmarks_2d_dummy = torch.zeros(gt_images.size(0), 68, 2).to(DEVICE) # Example: 68 2D landmarks
-        rendered_images_dummy = torch.zeros_like(gt_images) # Dummy rendered image
-        gt_landmarks_2d_dummy = torch.zeros(gt_images.size(0), 68, 2).to(DEVICE) # Dummy ground truth landmarks
-
-
-        # TODO: Get ground-truth landmarks for the batch
-        # gt_landmarks_2d = ...
         
-        # Use dummy values for now in the loss function call
+        # TODO: Instantiate FLAME model and pass coefficients to get 3D vertices and 3D landmarks
+        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict)
+        pred_verts_dummy = torch.zeros(gt_images.size(0), 5023, 3).to(DEVICE) # Example
+
+        # TODO: Project 3D landmarks to 2D screen space using the PyTorch3D camera
+        # Ensure `cameras` is defined and available here (likely from main.py or a similar setup)
+        # pred_landmarks_2d = cameras.transform_points_screen(pred_landmarks_3d_from_flame)[:, :, :2] # Keep only x, y
+        pred_landmarks_2d_dummy = torch.zeros(gt_images.size(0), 68, 2).to(DEVICE) # Example
+
+        # TODO: Render the image using the predicted vertices and a renderer
+        # Ensure `renderer` is defined and available here
+        # rendered_images = renderer(pred_verts_for_renderer, ...)
+        rendered_images_dummy = torch.zeros_like(gt_images) # Dummy rendered image
+        
+        # --- C. Loss Calculation ---
+        # Using dummy values for parts of the pipeline not yet fully implemented.
+        # Replace dummy tensors with actual tensors as you complete the TODOs.
         total_loss, loss_dict = loss_fn(
-            pred_coeffs_dict_dummy,  # pred_coeffs_dict,
-            pred_verts_dummy,        # pred_verts,
-            pred_landmarks_2d_dummy, # pred_landmarks_2d,
-            rendered_images_dummy,   # rendered_images,
+            pred_coeffs_dict_dummy,  # Replace with actual pred_coeffs_dict
+            pred_verts_dummy,        # Replace with actual pred_verts
+            pred_landmarks_2d_dummy, # Replace with actual pred_landmarks_2d
+            rendered_images_dummy,   # Replace with actual rendered_images
             gt_images,
-            gt_landmarks_2d_dummy    # gt_landmarks_2d
+            gt_landmarks_2d_dummy    # Replace with actual gt_landmarks_2d (from processed gt_landmarks_list)
         )
 
         # --- Backward Pass ---
-        # total_loss.backward() # This will error until all inputs to loss_fn are real tensors requiring grad
-        # optimizer.step()
+        total_loss.backward() 
+        optimizer.step()
         
         if i % 10 == 0:
             # Ensure total_loss is a scalar tensor for .item()
