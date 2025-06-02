@@ -29,6 +29,8 @@ from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
 from src.utils import save_validation_images # Import the new utility function
 import pickle # For loading FLAME model faces
+from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
+import torchvision # For making image grids for TensorBoard
 
 # PyTorch3D imports for renderer and camera
 from pytorch3d.structures import Meshes
@@ -37,6 +39,10 @@ from pytorch3d.renderer import (
     MeshRenderer, MeshRasterizer, SoftPhongShader, TexturesVertex
 )
 
+# Initialize the SummaryWriter
+# This will create a directory 'runs/project_eidolon_experiment1' for your logs
+# You can change 'project_eidolon_experiment1' for different experiments
+writer = SummaryWriter('runs/project_eidolon_experiment1')
 
 # --- Hyperparameters and Config ---
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
