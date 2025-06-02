@@ -37,7 +37,18 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
 
 ## Usage
 
-(Add instructions on how to run your project here)
+To run the main script, which loads the FLAME model, renders an average face, and performs a basic test of the `EidolonEncoder` (downloading ResNet-50 weights if not already cached):
+
+1.  Ensure you have completed all steps in the [Setup](#setup) section.
+2.  Activate your virtual environment:
+    ```bash
+    source .venv/bin/activate
+    ```
+3.  Run the script from the root directory of the project:
+    ```bash
+    python main.py
+    ```
+    The first time you run this, it may take a few moments to download the pre-trained ResNet-50 model weights. A plot window showing the rendered average face should appear.
 
 ## Running the Notebooks
 
