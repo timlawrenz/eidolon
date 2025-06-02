@@ -5,14 +5,153 @@ from torchvision.models import resnet50, ResNet50_Weights
 import numpy as np
 import pickle
 
-# Helper function for LBS (will be part of the TODO for full FLAME)
-def lbs(betas, pose, v_template, shapedirs, posedirs, J_regressor, parents, lbs_weights, dtype=torch.float32):
-    # Placeholder for LBS: returns posedirs applied with zero pose for now
-    # TODO: Implement full LBS
-    # For now, we just return a zero deformation due to pose to make the model runnable
-    batch_size = betas.shape[0]
-    device = betas.device
-    return torch.zeros_like(v_template).unsqueeze(0).repeat(batch_size, 1, 1)
+# --- LBS Helper Functions ---
+
+def batch_rodrigues(rot_vecs, epsilon=1e-8):
+    ''' Converts a batch of axis-angle vectors to rotation matrices.
+    Args:
+        rot_vecs: (B, 3) axis-angle vectors.
+    Returns:
+        (B, 3, 3) rotation matrices.
+    '''
+    batch_size = rot_vecs.shape[0]
+    device = rot_vecs.device
+    dtype = rot_vecs.dtype
+
+    angle = torch.norm(rot_vecs + epsilon, dim=1, keepdim=True)
+    rot_dir = rot_vecs / angle
+
+    cos = torch.cos(angle).unsqueeze(1)
+    sin = torch.sin(angle).unsqueeze(1)
+
+    # Bx1 arrays
+    rx, ry, rz = torch.split(rot_dir, 1, dim=1)
+    zeros = torch.zeros((batch_size, 1), dtype=dtype, device=device)
+    K = torch.cat([zeros, -rz, ry, rz, zeros, -rx, -ry, rx, zeros], dim=1) \
+        .view((batch_size, 3, 3))
+
+    ident = torch.eye(3, dtype=dtype, device=device).unsqueeze(dim=0)
+    rot_mats = ident + sin * K + (1 - cos) * torch.bmm(K, K)
+    return rot_mats
+
+def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
+    """
+    Applies rigid transformations to the joints based on the kinematic tree.
+    Args:
+        rot_mats (torch.Tensor): Batch of rotation matrices (B, J, 3, 3).
+        joints (torch.Tensor): Batch of initial joint locations (B, J, 3).
+        parents (torch.Tensor): Parent indices for each joint (J).
+    Returns:
+        A_global (torch.Tensor): Batch of global transformation matrices (B, J, 4, 4).
+    """
+    # TODO: Implement the full kinematic chain transformation.
+    # This involves iterating through joints from root to leaves,
+    # composing local transformations with parent's global transformation.
+    #
+    # For now, returning identity transformations for each joint.
+    # This means no actual posing will occur from LBS joint rotations.
+    batch_size = rot_mats.shape[0]
+    num_joints = joints.shape[1]
+    device = rot_mats.device
+
+    # Placeholder: Return identity transformations
+    A_global = torch.eye(4, dtype=dtype, device=device).unsqueeze(0).unsqueeze(0).repeat(batch_size, num_joints, 1, 1)
+    # To make it a valid (though incorrect) transformation, set translation part from joints
+    A_global[:, :, :3, 3] = joints 
+    return A_global
+
+
+def lbs(v_shaped_expressed, pose_params_all, J_regressor, parents, lbs_weights, posedirs, dtype=torch.float32):
+    """
+    Performs Linear Blend Skinning (LBS).
+    Args:
+        v_shaped_expressed (torch.Tensor): Vertices after shape and expression (B, N_verts, 3).
+        pose_params_all (torch.Tensor): Concatenated pose parameters for all relevant joints (B, J*3).
+                                     (e.g., global, jaw, neck, etc. as axis-angle)
+        J_regressor (torch.Tensor): Joint regressor matrix.
+        parents (torch.Tensor): Parent indices for each joint.
+        lbs_weights (torch.Tensor): LBS weights.
+        posedirs (torch.Tensor): Pose-dependent blendshapes.
+    Returns:
+        v_posed (torch.Tensor): Posed vertices.
+    """
+    batch_size = v_shaped_expressed.shape[0]
+    device = v_shaped_expressed.device
+
+    # 1. Calculate initial joint locations J from v_shaped_expressed
+    # J_regressor: (num_joints, num_vertices)
+    # v_shaped_expressed: (B, num_vertices, 3)
+    # J: (B, num_joints, 3)
+    J = torch.einsum('JV,BVC->BJC', J_regressor, v_shaped_expressed)
+
+    # 2. Convert pose_params_all to rotation matrices
+    # pose_params_all is (B, num_total_pose_coeffs), e.g., (B, 18) for 6 joints (global, jaw, neck, 2 eyes)
+    # Reshape to (B * num_joints_posed, 3) for batch_rodrigues
+    # num_joints_posed should correspond to the joints whose rotations are in pose_params_all
+    # For FLAME, this typically includes global, jaw, neck, and eyes.
+    # Let's assume pose_params_all is (B, num_flame_main_joints * 3)
+    num_flame_main_joints = lbs_weights.shape[1] # Should be 5 for FLAME (global, neck, jaw, L_eye, R_eye)
+    
+    # Ensure pose_params_all has the correct number of parameters for these joints
+    # Example: if 5 joints, then 5*3=15 pose parameters.
+    # The current deconstruction in train.py gives 18 (global=6, jaw=3, neck=3, eyes=6).
+    # This needs careful alignment. For now, assume pose_params_all is (B, num_flame_main_joints, 3)
+    # This part requires careful handling of how pose_params from encoder map to FLAME joints.
+    # For this placeholder, we'll assume pose_params_all is correctly shaped (B, num_flame_main_joints, 3)
+    # If pose_params_all is (B, 18), and we need (B,5,3) for 5 joints, a split/map is needed.
+    # For now, let's take the first 5*3=15 parameters if pose_params_all is longer.
+    
+    if pose_params_all.shape[1] > num_flame_main_joints * 3:
+        # This is a temporary hack if pose_params_all has more than needed for LBS joints
+        # e.g. if global pose is 6D (rot_mat_log) but rodrigues needs 3D axis-angle
+        # Or if eye poses are included but not used for mesh LBS in the same way.
+        # For FLAME, global (3), neck (3), jaw (3) are primary for LBS. Eyes are separate.
+        # Let's assume pose_params_all contains [global_rot(3), neck_rot(3), jaw_rot(3), eye_L(3), eye_R(3)]
+        # Total 15 parameters for 5 joints.
+        # If train.py provides 18 (e.g. 6D global), this needs adjustment.
+        # For now, assuming it's (B, 15) and reshaping to (B, 5, 3)
+        # This is a MAJOR simplification/placeholder.
+        pose_params_for_rodrigues = pose_params_all[:, :(num_flame_main_joints * 3)].reshape(batch_size * num_flame_main_joints, 3)
+    elif pose_params_all.shape[1] == num_flame_main_joints * 3:
+        pose_params_for_rodrigues = pose_params_all.reshape(batch_size * num_flame_main_joints, 3)
+    else:
+        # Fallback if dimensions don't match, LBS will be effectively identity
+        print(f"Warning: pose_params_all shape {pose_params_all.shape} not compatible with {num_flame_main_joints} LBS joints. Using identity rotations for LBS.")
+        pose_params_for_rodrigues = torch.zeros(batch_size * num_flame_main_joints, 3, device=device, dtype=dtype)
+
+    rot_mats = batch_rodrigues(pose_params_for_rodrigues)
+    rot_mats = rot_mats.view(batch_size, num_flame_main_joints, 3, 3)
+
+    # 3. Get global joint transformations A_global (B, J, 4, 4)
+    A_global = batch_rigid_transform(rot_mats, J, parents, dtype=dtype)
+    # For FLAME, J_transformed (from J_regressor) are the rest pose joints.
+    # The pose is applied to these.
+
+    # 4. Transform vertices by LBS
+    # lbs_weights: (N_verts, num_joints)
+    # A_global: (B, num_joints, 4, 4)
+    # T: (B, N_verts, 4, 4)
+    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global)
+
+    v_homo = torch.cat([v_shaped_expressed, torch.ones(batch_size, v_shaped_expressed.shape[1], 1, device=device, dtype=dtype)], dim=2)
+    v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3] # Keep only x,y,z
+
+    # 5. Add pose-corrective blendshapes (posedirs)
+    # posedirs: (N_verts, 3, num_pose_blendshape_coeffs)
+    # num_pose_blendshape_coeffs is typically (num_joints_for_posedirs - 1) * 9
+    # For FLAME, posedirs are (5023, 3, 27) -> 3 joints * 9 components each (e.g. jaw, neck, global effects)
+    # We need a pose_feature_vector from rot_mats (excluding identity for root)
+    # This is highly model-specific. For now, a placeholder.
+    # TODO: Create correct pose_feature_vector for FLAME's posedirs.
+    # This vector should be (B, num_pose_blendshape_coeffs), e.g. (B, 27) for FLAME.
+    # It's derived from (rot_mats - Identity) of relevant joints.
+    num_pose_blendshape_coeffs = posedirs.shape[2]
+    pose_feature_vector = torch.zeros(batch_size, num_pose_blendshape_coeffs, device=device, dtype=dtype) # Placeholder
+
+    pose_blendshapes = torch.einsum('BP,VCP->BVC', pose_feature_vector, posedirs)
+    
+    v_posed = v_posed_lbs + pose_blendshapes
+    return v_posed
 
 
 class EidolonEncoder(nn.Module):
@@ -242,12 +381,57 @@ class FLAME(nn.Module):
         
         # For the placeholder LBS, we pass dummy betas and pose.
         # The actual LBS would use the various pose_params.
-        pose_blendshapes = lbs(shape_params, pose_params, self.v_template, self.shapedirs, 
-                               self.posedirs, self.J_regressor, self.parents, self.lbs_weights,
+        # Concatenate relevant pose parameters for LBS.
+        # FLAME LBS typically uses global rotation, jaw, neck, and eye rotations.
+        # The order and exact number of parameters depend on the LBS implementation.
+        # Assuming pose_params (global), jaw_pose_params, neck_pose_params, eye_pose_params are axis-angle (3 params each).
+        # Global pose from deconstruct_flame_coeffs is (B,6). If it's 6D log-matrix, it needs conversion to 3D axis-angle first for rodrigues.
+        # This is a major simplification point. Assuming pose_params is (B,3) for global axis-angle for now.
+        # If pose_params is (B,6) (e.g. from SMPL), it needs to be handled.
+        # For FLAME, it's common to have global (3), jaw (3), neck (3), eyes (6). Total 15.
+        # The deconstruction in train.py gives:
+        # pose_params (global, 6), jaw (3), neck (3), eyes (6).
+        # The LBS function expects axis-angle. If global_pose is 6D, it needs conversion.
+        # For now, let's assume the first 3 of global_pose are axis-angle.
+        
+        # This is a placeholder for how poses are combined.
+        # A proper FLAME layer would handle this internally based on its design.
+        # For now, we'll take the first 3 of global_pose, and then jaw, neck, and eyes.
+        # This makes 3 (global) + 3 (jaw) + 3 (neck) + 6 (eyes) = 15 parameters for 5 joints.
+        # This part is highly dependent on the specific LBS implementation details.
+        if pose_params.shape[1] == 6: # Assuming 6D global pose, take first 3 as simplified axis-angle
+            print("Warning: Using first 3 params of 6D global_pose as axis-angle for LBS placeholder.")
+            global_pose_axis_angle = pose_params[:, :3]
+        else: # Assuming it's already 3D axis-angle
+            global_pose_axis_angle = pose_params
+
+        # This forms a (B, 15) tensor, then reshaped to (B, 5, 3) inside lbs if needed.
+        # This order (global, neck, jaw, eyeL, eyeR) is common for FLAME lbs_weights.
+        # The eye rotations primarily affect eyeballs, not the facial mesh via LBS weights/posedirs.
+        # For facial mesh LBS, usually global, neck, jaw are key.
+        # The `lbs_weights` has 5 columns, so 5 joints.
+        # The `posedirs` has 27 columns, so (3 joints - 1)*9 or similar.
+        # This indicates a mismatch or simplification in the current placeholder.
+        
+        # For the LBS function, we need to provide pose parameters for the joints
+        # that lbs_weights and posedirs correspond to.
+        # Let's assume pose_params_all for LBS should be (B, num_lbs_joints * 3)
+        # For FLAME, lbs_weights has 5 joints. So, (B, 15).
+        # Global (3), Neck (3), Jaw (3), EyeL (3), EyeR (3)
+        # Eye poses are split: eye_pose_params is (B,6) -> eye_L (B,3), eye_R (B,3)
+        
+        pose_params_for_lbs = torch.cat([
+            global_pose_axis_angle, # (B,3)
+            neck_pose_params,       # (B,3)
+            jaw_pose_params,        # (B,3)
+            eye_pose_params[:, :3], # Left eye (B,3)
+            eye_pose_params[:, 3:]  # Right eye (B,3)
+        ], dim=1) # Results in (B, 15)
+
+        pred_verts_posed = lbs(v_expressed, pose_params_for_lbs,
+                               self.J_regressor, self.parents, self.lbs_weights, self.posedirs,
                                dtype=self.v_template.dtype)
         
-        pred_verts_posed = v_expressed + pose_blendshapes # With placeholder LBS, pose_blendshapes is zero
-
         # 4. Apply global translation
         if transl is not None:
             pred_verts = pred_verts_posed + transl.unsqueeze(1)
