@@ -215,34 +215,37 @@ def lbs(v_shaped_expressed,
     v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3]
 
     # 5. Add pose-corrective blendshapes (posedirs)
-    # Create pose_feature_vector for posedirs
-    # Typically driven by neck, jaw, left eye, right eye rotations (excluding identity for each).
-    num_joints_for_posedirs = 4 # Neck, Jaw, Left Eye, Right Eye
+    # Create pose_feature_vector for posedirs.
+    # As per user request, using global, neck, and jaw rotations.
+    num_joints_for_posedirs = 3 # Global, Neck, Jaw
     # rot_mats_lbs is stacked as [global, neck, jaw, eye_l, eye_r]
-    # Select indices 1 (neck), 2 (jaw), 3 (eye_l), 4 (eye_r).
-    rot_mats_subset_for_posedirs = rot_mats_lbs[:, 1:1+num_joints_for_posedirs, :, :] # (B, 4, 3, 3)
+    # Select indices 0 (global), 1 (neck), 2 (jaw).
+    rot_mats_subset_for_posedirs = rot_mats_lbs[:, 0:num_joints_for_posedirs, :, :] # (B, 3, 3, 3)
 
     ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) # (1,3,3)
-    # pose_feature_vector_from_4_joints will be (B, 4*9=36)
-    pose_feature_vector_from_4_joints = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) 
+    # pose_feature_vector_from_3_joints will be (B, 3*9=27)
+    pose_feature_vector_from_3_joints = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) 
     
-    # After permutation in FLAME.__init__, posedirs is (V, P, 3).
-    # So, P (number of pose features) is posedirs.shape[1]. For FLAME, P=207.
+    # posedirs (loaded and permuted in FLAME.__init__) has shape (V, P, 3).
+    # P (number of pose features) is posedirs.shape[1].
+    # For the loaded flame2023.pkl, P is 36 (from neck, jaw, eye_l, eye_r).
     num_features_expected_by_posedirs = posedirs.shape[1]
     
-    current_pose_feature_vector = pose_feature_vector_from_4_joints
+    current_pose_feature_vector = pose_feature_vector_from_3_joints # (B, 27)
 
     if current_pose_feature_vector.shape[1] != num_features_expected_by_posedirs:
-        print(f"Warning: The calculated pose feature vector (from 4 joints) has {current_pose_feature_vector.shape[1]} features, "
+        # This warning will likely trigger if flame2023.pkl's posedirs expect 36 features
+        # and we are providing 27 features (from global, neck, jaw).
+        print(f"Warning: The calculated pose feature vector (from {num_joints_for_posedirs} joints: global, neck, jaw) "
+              f"has {current_pose_feature_vector.shape[1]} features, "
               f"but the 'posedirs' tensor expects {num_features_expected_by_posedirs} features. "
-              f"This will likely result in an incorrect or zero pose-corrective blendshape effect. "
-              f"To use full posedirs, ensure the lbs function receives and processes the "
-              f"rotations for all {num_features_expected_by_posedirs // 9} joints that drive posedirs.")
-        # To prevent a runtime error in einsum and apply a zero effect:
+              f"This mismatch will result in a zero pose-corrective blendshape effect. "
+              f"Ensure the 'posedirs' data matches the {num_joints_for_posedirs} driving joints if a non-zero effect is desired.")
+        # To prevent a runtime error in einsum and apply a zero effect due to mismatch:
         current_pose_feature_vector = torch.zeros(batch_size, num_features_expected_by_posedirs, device=device, dtype=dtype)
             
-    # Einsum: current_pose_feature_vector (B, P), posedirs (V, P, C) -> pose_blendshapes (B, V, C)
-    # Here C=3 (for x,y,z offsets), P is num_features_expected_by_posedirs.
+    # Einsum: current_pose_feature_vector (B, P_expected), posedirs (V, P_expected, C) -> pose_blendshapes (B, V, C)
+    # Here C=3 (for x,y,z offsets), P_expected is num_features_expected_by_posedirs.
     pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs)
 
     v_posed = v_posed_lbs + pose_blendshapes
