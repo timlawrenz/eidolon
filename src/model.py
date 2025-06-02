@@ -63,7 +63,7 @@ class FLAME(nn.Module):
     This model will take FLAME parameters (shape, expression, pose, etc.)
     and output 3D vertices and 3D landmarks.
     """
-    def __init__(self, flame_model_path, landmark_embedding_path, n_shape, n_exp):
+    def __init__(self, flame_model_path, deca_landmark_embedding_path, n_shape, n_exp): # Changed parameter name
         super().__init__()
 
         with open(flame_model_path, 'rb') as f:
@@ -141,6 +141,7 @@ class FLAME(nn.Module):
         self.using_barycentric_landmarks = False
         NUM_EXPECTED_LANDMARKS = 68
         try:
+            # deca_landmark_embedding_path is now the correct variable name from the signature
             deca_lmk_data_container = np.load(deca_landmark_embedding_path, allow_pickle=True)
             # Check if the loaded data is a scalar object array containing a dict
             if deca_lmk_data_container.shape == () and deca_lmk_data_container.dtype == object:
