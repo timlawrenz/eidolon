@@ -50,6 +50,40 @@ To run the main script, which loads the FLAME model, renders an average face, an
     ```
     The first time you run this, it may take a few moments to download the pre-trained ResNet-50 model weights. A plot window showing the rendered average face should appear.
 
+### Preparing an Image Dataset (Example: FFHQ Thumbnails)
+
+To train the encoder, you need a dataset of face images. As an example, here's how to download the FFHQ thumbnail dataset:
+
+1.  **Clone the FFHQ repository:**
+    Clone the official FFHQ dataset repository into a temporary location (e.g., outside of your `project-eidolon` directory to avoid nested git repositories).
+    ```bash
+    git clone https://github.com/NVlabs/ffhq-dataset.git
+    cd ffhq-dataset
+    ```
+
+2.  **Download Thumbnails:**
+    The FFHQ repository provides a script to download different parts of the dataset. We'll download only the thumbnails.
+    First, create a directory where the downloaded images will be stored. It's often good practice to create this outside your project directory initially.
+    ```bash
+    # Example: From your project-eidolon directory's parent
+    mkdir ../ffhq_data 
+    ```
+    Now, run the download script from within the cloned `ffhq-dataset` directory, pointing the output to your newly created folder:
+    ```bash
+    # Ensure you are inside the ffhq-dataset directory
+    python download_ffhq.py --tasks thumbnails --outdir ../ffhq_data/thumbnails
+    ```
+    This script will download all 70,000 thumbnail images (128x128 pixels) and can take some time.
+
+3.  **Organize Your Data:**
+    Once the download is complete, you'll have a folder (e.g., `../ffhq_data/thumbnails`) full of images. For use with this project, it's recommended to move or copy these images into the `project-eidolon/data/` directory.
+    ```bash
+    # From your project-eidolon root directory:
+    mkdir -p data/ffhq_thumbnails
+    mv ../ffhq_data/thumbnails/* data/ffhq_thumbnails/
+    ```
+    Your images should now be located in `project-eidolon/data/ffhq_thumbnails/`. You can then set `IMAGE_DIR = "data/ffhq_thumbnails"` in `train.py`.
+
 ### Running the Training Script (Skeleton)
 
 The `train.py` script is a skeleton for training the `EidolonEncoder`. To run it:
