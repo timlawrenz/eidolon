@@ -20,12 +20,14 @@ for full functionality. The IMAGE_DIR constant must be set to a valid dataset pa
 import torch
 from torch.utils.data import DataLoader
 import numpy as np # For image unnormalization
-import face_alignment # For landmark detection
+# import face_alignment # No longer needed for on-the-fly detection
+import os # For os.makedirs and os.path.join
 # Assuming src.dataset, src.model, src.loss are in the Python path
 # If train.py is in the root, and src is a subdirectory:
 from src.dataset import FaceDataset
 from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
+from src.utils import save_validation_images # Import the new utility function
 import pickle # For loading FLAME model faces
 
 # PyTorch3D imports for renderer and camera
@@ -289,16 +291,17 @@ for epoch in range(NUM_EPOCHS):
                 val_rendered_images = renderer(val_meshes_batch) # (B, H, W, C)
                 val_rendered_images = val_rendered_images.permute(0, 3, 1, 2)[:, :3, :, :] # (B, C, H, W), RGB
 
-                # TODO: Create a function to save these images side-by-side
-                # Example:
-                # output_dir = "outputs/validation_images"
-                # os.makedirs(output_dir, exist_ok=True)
-                # save_validation_images(
-                #     val_gt_images, val_rendered_images, 
-                #     val_gt_landmarks, val_pred_landmarks_2d_model,
-                #     os.path.join(output_dir, f"epoch_{epoch+1}_step_{i+1}.png")
-                # )
-                print(f"--- Validation images generated for epoch {epoch+1}, step {i+1} (TODO: save them) ---")
+                output_dir = "outputs/validation_images"
+                os.makedirs(output_dir, exist_ok=True)
+                save_path_prefix = os.path.join(output_dir, f"epoch_{epoch+1}_step_{i+1}")
+                
+                save_validation_images(
+                    val_gt_images, val_rendered_images, 
+                    val_gt_landmarks, val_pred_landmarks_2d_model,
+                    save_path_prefix, # Pass the prefix, function will append _sample_idx.png
+                    num_images=num_val_samples 
+                )
+                # print(f"--- Validation images generated for epoch {epoch+1}, step {i+1} (TODO: save them) ---") # Replaced by save function's print
 
             encoder.train() # Set model back to training mode
         
