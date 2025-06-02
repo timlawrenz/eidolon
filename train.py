@@ -114,8 +114,6 @@ data_loader = DataLoader(
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
 
-# 3. The Training Loop
-for epoch in range(NUM_EPOCHS):
 # Helper function to deconstruct the coefficient vector
 # This needs to match how your FLAME model expects its parameters
 # and the order/size defined by NUM_SHAPE_COEFFS, etc.
