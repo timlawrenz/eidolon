@@ -172,12 +172,26 @@ def lbs(v_shaped_expressed,
     ], dim=1) # (B, 5, 3, 3)
 
     # 2. Calculate rest-pose LBS joint locations
-    # v_template is (N_verts, 3), J_regressor_lbs is (num_lbs_joints, N_verts)
-    v_template_batched = v_template.unsqueeze(0).repeat(batch_size, 1, 1) # (B, N_verts, 3)
-    # J_rest_lbs will be (B, num_lbs_joints, 3)
-    J_rest_lbs = torch.einsum('JV,BVC->BJC', J_regressor_lbs, v_template_batched)
+    # Ensure J_regressor_lbs corresponds to the number of joints in rot_mats_lbs (expected to be 5)
+    num_lbs_joints_expected = rot_mats_lbs.shape[1]
+    
+    if J_regressor_lbs.shape[0] > num_lbs_joints_expected:
+        # This assumes the first `num_lbs_joints_expected` in J_regressor_lbs correspond to the LBS joints
+        print(f"Warning: J_regressor_lbs (shape {J_regressor_lbs.shape}) has more than the expected "
+              f"{num_lbs_joints_expected} LBS joints. Using the first {num_lbs_joints_expected} rows.")
+        J_regressor_lbs_for_kinematics = J_regressor_lbs[:num_lbs_joints_expected, :]
+    elif J_regressor_lbs.shape[0] < num_lbs_joints_expected:
+        raise ValueError(f"J_regressor_lbs (shape {J_regressor_lbs.shape}) has fewer than the expected "
+                         f"{num_lbs_joints_expected} LBS joints. Cannot proceed.")
+    else:
+        J_regressor_lbs_for_kinematics = J_regressor_lbs
 
-    # 3. Get global joint transformations A_global (B, num_lbs_joints, 4, 4)
+    # v_template is (N_verts, 3), J_regressor_lbs_for_kinematics is (num_lbs_joints_expected, N_verts)
+    v_template_batched = v_template.unsqueeze(0).repeat(batch_size, 1, 1) # (B, N_verts, 3)
+    # J_rest_lbs will be (B, num_lbs_joints_expected, 3)
+    J_rest_lbs = torch.einsum('JV,BVC->BJC', J_regressor_lbs_for_kinematics, v_template_batched)
+
+    # 3. Get global joint transformations A_global (B, num_lbs_joints_expected, 4, 4)
     #    using the calculated rest_pose LBS joint locations.
     #    J_rest_lbs is (B, num_lbs_joints, 3)
     #    rot_mats_lbs is (B, num_lbs_joints, 3, 3)
