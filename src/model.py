@@ -70,57 +70,44 @@ class FLAME(nn.Module):
             flame_model_data = pickle.load(f, encoding='latin1')
 
         # FLAME components
-        self.register_buffer('v_template', torch.tensor(flame_model_data['v_template'], dtype=torch.float32))
-        
-        # shapedirs contains both shape and expression components.
-        # Shape: first n_shape components. Expression: next n_exp components.
-        # Total components in shapedirs: n_shape + n_exp
-        # Ensure shapedirs has enough components. Often it's (N_verts, 3, N_shape_total)
-        # For FLAME, shapedirs is often (N_verts, 3, 300 for shape) and expressions are separate or added.
-        # The provided pkl might have 'shapedirs' for shape and 'posedirs' for pose-driven shapes.
-        # Let's assume 'shapedirs' is for shape and we'll need an 'expressedirs' or similar for expressions.
-        # If 'expressedirs' is not in the pkl, this part needs adjustment.
-        # For now, we'll assume shapedirs is (N_verts, 3, N_shape_coeffs + N_expr_coeffs)
-        # Or, more commonly, shape and expression are separate bases.
-        # The FLAME paper uses `shapedirs` for shape and `posedirs` for pose-dependent blendshapes.
-        # Expression blendshapes are often separate or part of a combined shape/expression space.
-        # Given the pkl structure is not fully known beyond v_template and f,
-        # we'll make a common assumption:
-        # shapedirs: (num_vertices, 3, num_shape_params)
-        # expressedirs: (num_vertices, 3, num_expression_params) -> This might not exist in flame2023.pkl
-        # For simplicity, if 'expressedirs' is not present, expression deformation will be zero for now.
-        
-        num_vertices = self.v_template.shape[0]
+        # Access .r to get NumPy arrays from chumpy objects
+        v_template_np = flame_model_data['v_template'].r
+        self.register_buffer('v_template', torch.tensor(v_template_np, dtype=torch.float32))
+        num_vertices = v_template_np.shape[0]
 
-        # Load and reshape shapedirs
-        raw_shapedirs_np = flame_model_data['shapedirs'] # Expected shape: (num_vertices * 3, total_shape_coeffs)
-        num_total_shape_coeffs = raw_shapedirs_np.shape[1]
-        reshaped_sdirs_np = raw_shapedirs_np.reshape(num_vertices, 3, num_total_shape_coeffs)
-        self.register_buffer('shapedirs', torch.tensor(reshaped_sdirs_np[:, :, :n_shape], dtype=torch.float32))
+        # Shapedirs: Expected shape from .r is (num_vertices, 3, total_shape_coeffs)
+        shapedirs_data_np = flame_model_data['shapedirs'].r
+        self.register_buffer('shapedirs', torch.tensor(shapedirs_data_np[:, :, :n_shape], dtype=torch.float32))
         
-        # Check if 'expressedirs' exists, otherwise expression won't deform
-        if 'expressedirs' in flame_model_data:
-             raw_expressedirs_np = flame_model_data['expressedirs']
-             num_total_expr_coeffs = raw_expressedirs_np.shape[1]
-             reshaped_edirs_np = raw_expressedirs_np.reshape(num_vertices, 3, num_total_expr_coeffs)
-             self.register_buffer('expressedirs', torch.tensor(reshaped_edirs_np[:, :, :n_exp], dtype=torch.float32))
+        # Expressedirs: Check if exists, access .r if it does
+        if 'expressedirs' in flame_model_data and flame_model_data['expressedirs'] is not None:
+             expressedirs_data_np = flame_model_data['expressedirs'].r
+             self.register_buffer('expressedirs', torch.tensor(expressedirs_data_np[:, :, :n_exp], dtype=torch.float32))
         else:
-            # If no explicit expression blendshapes, register a zero tensor or handle appropriately
-            print("Warning: 'expressedirs' not found in FLAME model. Expression parameters will have no effect with current setup.")
+            print("Warning: 'expressedirs' not found or is None in FLAME model. Expression parameters will have no effect.")
             self.register_buffer('expressedirs', torch.zeros((num_vertices, 3, n_exp), dtype=torch.float32, device=self.v_template.device))
 
-        # Load and reshape posedirs
-        raw_posedirs_np = flame_model_data['posedirs'] # Expected shape: (num_vertices * 3, num_pose_blendshapes)
-        num_total_pose_blendshapes = raw_posedirs_np.shape[1]
-        # The last dimension of reshaped posedirs will be num_total_pose_blendshapes
-        self.register_buffer('posedirs', torch.tensor(raw_posedirs_np.reshape(num_vertices, 3, num_total_pose_blendshapes), dtype=torch.float32))
+        # Posedirs: Expected shape from .r is (num_vertices, 3, total_pose_blendshapes)
+        posedirs_data_np = flame_model_data['posedirs'].r
+        self.register_buffer('posedirs', torch.tensor(posedirs_data_np, dtype=torch.float32)) # Use all pose blendshapes
         
-        self.register_buffer('J_regressor', torch.tensor(flame_model_data['J_regressor'], dtype=torch.float32))
-        self.register_buffer('lbs_weights', torch.tensor(flame_model_data['weights'], dtype=torch.float32)) # LBS weights
-        self.register_buffer('faces_idx', torch.tensor(flame_model_data['f'].astype(np.int64), dtype=torch.long))
+        # J_regressor: Typically a sparse matrix
+        j_regressor_data = flame_model_data['J_regressor']
+        if hasattr(j_regressor_data, 'toarray'): # Check for sparse matrix
+            j_regressor_np = j_regressor_data.toarray()
+        else: # Assume it might be a chumpy object if not sparse (less common for J_regressor)
+            j_regressor_np = j_regressor_data.r 
+        self.register_buffer('J_regressor', torch.tensor(j_regressor_np, dtype=torch.float32))
+        
+        # LBS weights
+        lbs_weights_np = flame_model_data['weights'].r
+        self.register_buffer('lbs_weights', torch.tensor(lbs_weights_np, dtype=torch.float32))
+        
+        # Faces (typically already a NumPy array)
+        faces_np = flame_model_data['f'].astype(np.int64)
+        self.register_buffer('faces_idx', torch.tensor(faces_np, dtype=torch.long))
         
         # Kinematic tree (parents of joints)
-        # self.register_buffer('parents', torch.tensor(flame_model_data['kintree_table'][0].astype(np.int64), dtype=torch.long))
         # The FLAME pkl might store parents differently, e.g., flame_model_data['parent']
         # For now, LBS is a TODO, so parents are not immediately critical.
         # We'll use a placeholder if not found, but a real LBS implementation needs correct parents.
