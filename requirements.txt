@@ -13,3 +13,4 @@ opencv-python
 pytorch3d==0.7.6
 chumpy
 face_alignment
+datasets

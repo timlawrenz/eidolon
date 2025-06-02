@@ -50,33 +50,38 @@ To run the main script, which loads the FLAME model, renders an average face, an
     ```
     The first time you run this, it may take a few moments to download the pre-trained ResNet-50 model weights. A plot window showing the rendered average face should appear.
 
-### Preparing an Image Dataset (Example: FFHQ Thumbnails)
+### Preparing an Image Dataset (Example: FFHQ Thumbnails via Hugging Face)
 
-To train the encoder, you need a dataset of face images. As an example, here's how to download the FFHQ thumbnail dataset:
+To train the encoder, you need a dataset of face images. A reliable way to get the FFHQ dataset is through Hugging Face's `datasets` library. This method downloads the high-resolution images and then resizes them to create thumbnails.
 
-1.  **Clone the FFHQ repository:**
-    Clone the official FFHQ dataset repository into a temporary location (e.g., outside of your `project-eidolon` directory to avoid nested git repositories).
+1.  **Install the `datasets` library:**
+    If you haven't already, ensure your virtual environment is active and install the library:
     ```bash
-    git clone https://github.com/NVlabs/ffhq-dataset.git
-    cd ffhq-dataset
+    pip install datasets
     ```
+    This dependency has also been added to `requirements.txt`.
 
-2.  **Download Thumbnails Directly to Project:**
-    The FFHQ repository provides a script to download different parts of the dataset. We'll download only the thumbnails directly into your project's data directory.
+2.  **Run the Download and Processing Script:**
+    A script `scripts/download_ffhq_huggingface.py` is provided to download the FFHQ dataset, resize images to 128x128 thumbnails, and save them to `data/ffhq_thumbnails_128/`.
 
-    First, create the target directory within your `project-eidolon` structure:
+    First, ensure the `scripts` directory exists (it will be created if you're applying these changes via the bot). Then, run the script from the root of your `project-eidolon` directory:
     ```bash
-    # From your project-eidolon root directory:
-    mkdir -p data/ffhq_thumbnails
+    python scripts/download_ffhq_huggingface.py
     ```
-    Now, run the download script from within the cloned `ffhq-dataset` directory. You'll need to provide the correct path to `--outdir`. If you cloned `ffhq-dataset` as a sibling to your `project-eidolon` directory (e.g., both are in `~/dev/`), the relative path would be `../project-eidolon/data/ffhq_thumbnails`. Adjust this path if your directory structure is different, or use an absolute path.
-    ```bash
-    # Ensure you are inside the ffhq-dataset directory
-    # Adjust the --outdir path as necessary for your setup
-    python download_ffhq.py --tasks thumbnails --outdir ../project-eidolon/data/ffhq_thumbnails 
+    This script will:
+    *   Download the FFHQ dataset from Hugging Face (this can be large and take a significant amount of time, as it initially fetches high-resolution images).
+    *   Iterate through the dataset, resize each image to 128x128 pixels.
+    *   Save the thumbnails as PNG files in the `data/ffhq_thumbnails_128/` directory.
+
+    The target directory `data/ffhq_thumbnails_128/` will be created by the script if it doesn't exist.
+
+3.  **Update `IMAGE_DIR` in `train.py`:**
+    Once the script completes, your thumbnail images will be in `project-eidolon/data/ffhq_thumbnails_128/`.
+    You should then update the `IMAGE_DIR` variable in `train.py` to point to this directory:
+    ```python
+    # In train.py, find and modify this line:
+    IMAGE_DIR = "data/ffhq_thumbnails_128" 
     ```
-    This script will download all 70,000 thumbnail images (128x128 pixels) directly into `project-eidolon/data/ffhq_thumbnails/` and can take some time.
-    Your images will now be located in `project-eidolon/data/ffhq_thumbnails/`. You can then set `IMAGE_DIR = "data/ffhq_thumbnails"` in `train.py`.
 
 ### Running the Training Script (Skeleton)
 
