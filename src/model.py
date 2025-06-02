@@ -216,27 +216,26 @@ def lbs(v_shaped_expressed,
 
     # 5. Add pose-corrective blendshapes (posedirs)
     # Create pose_feature_vector for posedirs.
-    # As per user request, using global, neck, and jaw rotations.
-    num_joints_for_posedirs = 3 # Global, Neck, Jaw
+    # Standard FLAME posedirs (36 features) are typically driven by neck, jaw, left eye, and right eye rotations.
+    num_joints_for_posedirs = 4 # Neck, Jaw, Left Eye, Right Eye
     # rot_mats_lbs is stacked as [global, neck, jaw, eye_l, eye_r]
-    # Select indices 0 (global), 1 (neck), 2 (jaw).
-    rot_mats_subset_for_posedirs = rot_mats_lbs[:, 0:num_joints_for_posedirs, :, :] # (B, 3, 3, 3)
+    # Select indices 1 (neck), 2 (jaw), 3 (eye_l), 4 (eye_r).
+    rot_mats_subset_for_posedirs = rot_mats_lbs[:, 1:1+num_joints_for_posedirs, :, :] # (B, 4, 3, 3)
 
     ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) # (1,3,3)
-    # pose_feature_vector_from_3_joints will be (B, 3*9=27)
-    pose_feature_vector_from_3_joints = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) 
+    # pose_feature_vector_from_4_joints will be (B, 4*9=36)
+    pose_feature_vector_from_4_joints = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) 
     
     # posedirs (loaded and permuted in FLAME.__init__) has shape (V, P, 3).
     # P (number of pose features) is posedirs.shape[1].
-    # For the loaded flame2023.pkl, P is 36 (from neck, jaw, eye_l, eye_r).
+    # For the loaded flame2023.pkl, P is 36.
     num_features_expected_by_posedirs = posedirs.shape[1]
     
-    current_pose_feature_vector = pose_feature_vector_from_3_joints # (B, 27)
+    current_pose_feature_vector = pose_feature_vector_from_4_joints # (B, 36)
 
     if current_pose_feature_vector.shape[1] != num_features_expected_by_posedirs:
-        # This warning will likely trigger if flame2023.pkl's posedirs expect 36 features
-        # and we are providing 27 features (from global, neck, jaw).
-        print(f"Warning: The calculated pose feature vector (from {num_joints_for_posedirs} joints: global, neck, jaw) "
+        # This warning should ideally not trigger if num_features_expected_by_posedirs is 36.
+        print(f"Warning: The calculated pose feature vector (from {num_joints_for_posedirs} joints: neck, jaw, eyes) "
               f"has {current_pose_feature_vector.shape[1]} features, "
               f"but the 'posedirs' tensor expects {num_features_expected_by_posedirs} features. "
               f"This mismatch will result in a zero pose-corrective blendshape effect. "
