@@ -1,6 +1,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F # Added for DECA's LBS components
 from torchvision.models import resnet50, ResNet50_Weights
 import numpy as np
 import pickle
@@ -35,6 +36,19 @@ def batch_rodrigues(rot_vecs, epsilon=1e-8):
     rot_mats = ident + sin * K + (1 - cos) * torch.bmm(K, K)
     return rot_mats
 
+# DECA's helper function for batch_rigid_transform
+def transform_mat(R, t):
+    ''' Creates a batch of transformation matrices
+        Args:
+            - R: Bx3x3 array of a batch of rotation matrices
+            - t: Bx3x1 array of a batch of translation vectors
+        Returns:
+            - T: Bx4x4 Transformation matrix
+    '''
+    # No padding left or right, only add an extra row
+    return torch.cat([F.pad(R, [0, 0, 0, 1]),
+                      F.pad(t, [0, 0, 0, 1], value=1)], dim=2)
+
 def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     """
     Applies rigid transformations to the joints based on the kinematic tree.
@@ -45,79 +59,67 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     Returns:
         A_global (torch.Tensor): Batch of global transformation matrices (B, J, 4, 4).
     """
-    # Args:
+    # Args: (Kept from original for reference, DECA's args are compatible)
     #   rot_mats (torch.Tensor): Batch of rotation matrices for LBS joints (B, num_lbs_joints, 3, 3).
     #   joints (torch.Tensor): Batch of LBS joint locations (B, num_lbs_joints, 3).
-    #                          These are typically the rest-pose joint locations, J_transformed_rest.
+    #                          These are typically the rest-pose joint locations.
     #   parents (torch.Tensor): Parent indices for LBS joints (num_lbs_joints), root parent is -1.
-    #   dtype (torch.dtype): Data type for new tensors. (This is an argument to the function)
+    #                           DECA's code expects parents[0] to be a valid index for transform_chain,
+    #                           but the loop `for i in range(1, parents.shape[0])` means parents[0]
+    #                           is used for transform_chain[parents[0]] only if parents[0] is a parent of another joint.
+    #                           Effectively, parents[0] is the root. My parents_lbs is [-1,0,1,1,1].
+    #                           DECA's `rel_joints[:, 1:] -= joints[:, parents[1:]]` uses parents[1:].
+    #   dtype (torch.dtype): Data type for new tensors.
 
-    batch_size = rot_mats.shape[0]
-    num_lbs_joints = joints.shape[1] 
-    device = rot_mats.device
-    # `dtype` is passed as an argument to the function and should be used.
+    # DECA's batch_rigid_transform implementation:
+    # joints is (B, N, 3), rot_mats is (B, N, 3, 3), parents is (N)
+    _joints = torch.unsqueeze(joints, dim=-1) # (B, N, 3, 1)
 
-    # Calculate relative joint positions. These define the translation part of local transforms.
-    # For the root joint (parent_idx == -1), its local translation is its absolute position in `joints`.
-    # For other joints, it's the vector from parent to child in the `joints` configuration.
-    rel_joints = torch.zeros_like(joints) # (B, num_lbs_joints, 3)
+    _rel_joints = _joints.clone()
+    # parents[0] is -1 (root), so parents[1:] are valid indices [0,1,1,1] for the 5 LBS joints.
+    # This correctly calculates relative joint positions for children joints.
+    if parents.shape[0] > 1: # Ensure there are child joints
+        _rel_joints[:, 1:] -= _joints[:, parents[1:]]
+
+    # transforms_mat is (B, N, 4, 4)
+    transforms_mat = transform_mat(
+        rot_mats.reshape(-1, 3, 3), # view is also fine here
+        _rel_joints.reshape(-1, 3, 1)).reshape(-1, joints.shape[1], 4, 4)
+
+    transform_chain = [transforms_mat[:, 0]]
+    for i in range(1, parents.shape[0]):
+        # parents[i] is the index of the parent joint.
+        # transform_chain[parents[i]] is the global transform of the parent.
+        curr_res = torch.matmul(transform_chain[parents[i]],
+                                transforms_mat[:, i])
+        transform_chain.append(curr_res)
+
+    transforms = torch.stack(transform_chain, dim=1) # (B, N, 4, 4), these are G_j
+
+    # The last column of the transformations contains the posed joints
+    posed_joints = transforms[:, :, :3, 3] # J_transformed
+
+    # Calculate skinning matrices A_j = G_j @ inv(T_j_rest)
+    # where T_j_rest = [I | J_j_rest; 0 | 1]
+    # inv(T_j_rest) = [I | -J_j_rest; 0 | 1]
+    # So, A_j_rot = G_j_rot
+    #     A_j_trans = G_j_trans - G_j_rot @ J_j_rest
+    # This is equivalent to DECA's: rel_transforms = transforms - F.pad(torch.matmul(transforms, joints_homogen), ...)
     
-    if num_lbs_joints > 0:
-        # Root joint's local translation is its position in `joints`
-        rel_joints[:, 0] = joints[:, 0] 
-    
-        for j_idx in range(1, num_lbs_joints):
-            parent_idx = parents[j_idx]
-            # Ensure parent_idx is valid for indexing `joints`
-            if parent_idx >= 0 and parent_idx < num_lbs_joints:
-                 rel_joints[:, j_idx] = joints[:, j_idx] - joints[:, parent_idx]
-            else:
-                 # This case implies an issue with the parents array if parent_idx is out of bounds
-                 # or -1 for a non-root joint.
-                 print(f"Warning: batch_rigid_transform encountered unexpected parent_idx {parent_idx} for joint {j_idx} "
-                       f"during relative joint calculation. Using absolute joint position as relative.")
-                 rel_joints[:, j_idx] = joints[:, j_idx] # Fallback
+    # joints_homogen is (B, N, 4, 1)
+    joints_homogen = F.pad(_joints, [0, 0, 0, 1]) # Pad the 3x1 joint vectors to 4x1
 
-    # Create local transformation matrices (T_local_j_relative_to_parent)
-    # Each matrix transforms from the parent's coordinate system to the child's coordinate system.
-    # T_local_j = [ R_j | rel_joint_translation_j ]
-    #             [  0  |            1            ]
-    transforms_local_list = []
-    for j_idx in range(num_lbs_joints):
-        R_j = rot_mats[:, j_idx]  # (B, 3, 3)
-        t_j_local = rel_joints[:, j_idx] # (B, 3)
-        
-        T_j_local = torch.eye(4, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1) # (B, 4, 4)
-        T_j_local[:, :3, :3] = R_j
-        T_j_local[:, :3, 3] = t_j_local
-        transforms_local_list.append(T_j_local)
+    # rel_transforms are the skinning matrices A
+    # G_j - [0 | G_j @ J_j_rest_homo]
+    # This results in: rel_transforms_rot = G_j_rot
+    #                 rel_transforms_trans = G_j_trans - (G_j @ J_j_rest_homo)_trans
+    #                                      = G_j_trans - (G_j_rot @ J_j_rest + G_j_trans)
+    #                                      = - G_j_rot @ J_j_rest
+    # This is [R | -R*J_rest], which is the standard skinning matrix.
+    rel_transforms = transforms - F.pad(
+        torch.matmul(transforms, joints_homogen), [3, 0, 0, 0, 0, 0, 0, 0])
 
-    # Compute global transformations by iterating through the kinematic chain
-    # A_global_j = A_global_parent(j) @ T_local_j_relative_to_parent
-    A_global_computed_list = [] 
-    
-    if num_lbs_joints > 0:
-        # The global transform of the root is its local transform
-        A_global_computed_list.append(transforms_local_list[0])
-
-        for j_idx in range(1, num_lbs_joints):
-            parent_idx = parents[j_idx]
-            # parent_idx must be a valid index for A_global_computed_list (i.e., < current length)
-            # This holds if parents are ordered correctly (parent_idx < j_idx for non-root)
-            if parent_idx >= 0 and parent_idx < len(A_global_computed_list):
-                A_j_global = torch.bmm(A_global_computed_list[parent_idx], transforms_local_list[j_idx])
-                A_global_computed_list.append(A_j_global)
-            else:
-                # This indicates a problem with the kinematic tree structure
-                print(f"Warning: batch_rigid_transform found invalid parent_idx {parent_idx} for joint {j_idx} "
-                      f"during global transform assembly. Appending local transform as global.")
-                A_global_computed_list.append(transforms_local_list[j_idx]) # Fallback
-        
-        A_global = torch.stack(A_global_computed_list, dim=1) # (B, num_lbs_joints, 4, 4)
-    else: # Handle case of no joints
-        A_global = torch.empty(batch_size, 0, 4, 4, device=device, dtype=dtype)
-
-    return A_global
+    return posed_joints, rel_transforms
 
 
 def lbs(v_shaped_expressed, 
@@ -179,10 +181,14 @@ def lbs(v_shaped_expressed,
     #    rot_mats_lbs is (B, num_lbs_joints, 3, 3)
     #    parents_lbs is (num_lbs_joints)
     
-    A_global = batch_rigid_transform(rot_mats_lbs, J_transformed_rest_lbs, parents_lbs, dtype=dtype)
+    # batch_rigid_transform (DECA's version) returns:
+    # posed_joints (J_transformed_deca): (B, num_lbs_joints, 3)
+    # rel_transforms (A_global_deca): (B, num_lbs_joints, 4, 4) - These are the skinning matrices
+    _, A_global = batch_rigid_transform(rot_mats_lbs, J_transformed_rest_lbs, parents_lbs, dtype=dtype)
+    # We use A_global (rel_transforms) for skinning. posed_joints is not directly used here for skinning v_shaped_expressed.
 
     # 4. Transform vertices by LBS
-    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, 5)
+    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, num_lbs_joints)
     v_homo = torch.cat([v_shaped_expressed, torch.ones(batch_size, v_shaped_expressed.shape[1], 1, device=device, dtype=dtype)], dim=2)
     v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3]
 
