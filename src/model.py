@@ -4,9 +4,14 @@ import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
 
 class EidolonEncoder(nn.Module):
+    """
+    An encoder model that processes an input image using a pre-trained ResNet-50
+    backbone and outputs a vector of coefficients, intended to represent
+    FLAME model parameters (shape, expression, pose, etc.).
+    """
     def __init__(self, num_coeffs):
         """
-        The Encoder model that takes an image and outputs FLAME coefficients.
+        Initializes the EidolonEncoder.
 
         Args:
             num_coeffs (int): The total number of parameters to predict.

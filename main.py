@@ -8,6 +8,7 @@ from pytorch3d.renderer import (
     look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
     MeshRenderer, MeshRasterizer, SoftPhongShader
 )
+from src.model import EidolonEncoder # Import the new encoder
 
 # --- 1. Define the path to your FLAME model file ---
 # UPDATE THIS PATH to the actual .pkl file you found
@@ -96,4 +97,34 @@ plt.figure(figsize=(8, 8))
 plt.imshow(images[0, ..., :3].cpu().numpy())
 plt.axis("off")
 plt.title("Success! The Rendered Average Face")
-plt.show()
+# plt.show() # Comment out or remove if running in a non-interactive environment for checks
+
+# --- 4. Basic Test for EidolonEncoder ---
+print("\n--- Testing EidolonEncoder ---")
+try:
+    # Define number of FLAME coefficients to predict (example values)
+    # 100 shape + 50 expression + 6 global pose (axis-angle) + 3 translation = 159
+    # Or use the example from the prompt: 227
+    num_flame_coeffs = 159 
+    encoder = EidolonEncoder(num_coeffs=num_flame_coeffs)
+    encoder.to(device) # Move encoder to the same device as other operations
+    
+    # Create a dummy input image (batch_size=1, channels=3, height=224, width=224)
+    # ResNet-50 typically expects 224x224 images
+    dummy_image = torch.randn(1, 3, 224, 224).to(device)
+    
+    # Perform a forward pass
+    predicted_coeffs = encoder(dummy_image)
+    
+    print(f"EidolonEncoder instantiated successfully on {device}.")
+    print(f"Performed a dummy forward pass. Output shape: {predicted_coeffs.shape}")
+    assert predicted_coeffs.shape == (1, num_flame_coeffs)
+    print("EidolonEncoder basic check passed.")
+except Exception as e:
+    print(f"Error during EidolonEncoder test: {e}")
+    import traceback
+    traceback.print_exc()
+
+# If plt.show() was commented out above for non-interactive checks, you might want to re-enable it
+# for interactive sessions or remove this comment.
+plt.show() 
