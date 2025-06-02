@@ -68,7 +68,7 @@ NUM_TRANSLATION_COEFFS = 3 # Global translation
 NUM_DETAIL_COEFFS = 56 
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
-LANDMARK_EMBEDDING_PATH = './data/flame_model/flame_static_embedding.pkl' # Updated path
+DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' # Updated path for DECA landmarks
 
 VISUALIZATION_INTERVAL = 500 # Steps between generating validation images
 LOGGING_INTERVAL = 10 # Steps between printing loss
@@ -98,7 +98,7 @@ optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
 # Pass paths and parameter dimensions to the FLAME model constructor
 flame_model = FLAME(
     flame_model_path=FLAME_MODEL_PKL_PATH,
-    landmark_embedding_path=LANDMARK_EMBEDDING_PATH,
+    deca_landmark_embedding_path=DECA_LANDMARK_EMBEDDING_PATH, # Updated argument name
     n_shape=NUM_SHAPE_COEFFS,
     n_exp=NUM_EXPRESSION_COEFFS
 ).to(DEVICE)
