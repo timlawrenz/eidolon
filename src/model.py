@@ -45,17 +45,6 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     Returns:
         A_global (torch.Tensor): Batch of global transformation matrices (B, J, 4, 4).
     """
-    # TODO: Implement the full kinematic chain transformation for LBS.
-    # This function should take per-joint rotation matrices `rot_mats` (e.g., for 5-16 FLAME joints)
-    # and the rest-pose joint locations `joints`, and the `parents` kinematic tree.
-    # It should output `A_global`: the world transformation matrix (4x4) for each joint.
-    # This involves:
-    # 1. Creating local transformation matrices for each joint using its rotation and relative
-    #    translation from its parent in the rest pose.
-    # 2. Iterating through the kinematic tree (root to leaves) and composing these local
-    #    transformations to get the global transformation for each joint:
-    #    A_global[j] = A_global[parent[j]] @ A_local_relative_to_parent[j]
-    #
     # Args:
     #   rot_mats (torch.Tensor): Batch of rotation matrices for LBS joints (B, num_lbs_joints, 3, 3).
     #   joints (torch.Tensor): Batch of LBS joint locations (B, num_lbs_joints, 3).
