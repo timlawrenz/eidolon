@@ -47,3 +47,21 @@ print(f"Data parsed: {num_vertices} vertices, {num_triangles} triangles.")
 # We create one color (e.g., gray) and repeat it for all vertices.
 generic_color = torch.tensor([0.7, 0.7, 0.7]) # A nice medium gray
 vertex_colors = generic_color.view(1, 3).expand(num_vertices, 3)
+
+# Part B (New Version for FLAME)
+
+from pytorch3d.structures import Meshes
+
+# We use our new variables to create the mesh.
+# The texture is now our generic gray color per vertex.
+# We need to add a batch dimension for PyTorch3D -> (1, num_vertices, 3)
+verts_rgb = vertex_colors.unsqueeze(0)
+textures = verts_rgb
+
+# Create the Meshes object
+average_face_mesh = Meshes(
+    verts=[mean_shape], # Use the mean_shape directly
+    faces=[triangles],
+    textures=textures
+)
+print("PyTorch3D Meshes object created with FLAME 2023 model.")
