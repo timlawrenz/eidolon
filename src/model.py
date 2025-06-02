@@ -226,17 +226,27 @@ def lbs(v_shaped_expressed,
     rot_mats_subset_for_posedirs = rot_mats_lbs[:, 1:1+num_joints_for_posedirs, :, :] # (B, 4, 3, 3)
 
     ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) # (1,3,3)
-    pose_feature_vector_posedirs = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) # Should be (B, 4*9=36)
+    # pose_feature_vector_from_4_joints will be (B, 4*9=36)
+    pose_feature_vector_from_4_joints = (rot_mats_subset_for_posedirs - ident).view(batch_size, -1) 
     
-    num_expected_posedirs_coeffs = posedirs.shape[2] # This should be 36
-    if pose_feature_vector_posedirs.shape[1] != num_expected_posedirs_coeffs:
-        print(f"Warning: Mismatch in pose_feature_vector_for_posedirs size. Expected {num_expected_posedirs_coeffs}, "
-              f"got {pose_feature_vector_posedirs.shape[1]}. Using zeros for posedirs effect.")
-        pose_feature_vector_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=dtype)
+    # After permutation in FLAME.__init__, posedirs is (V, P, 3).
+    # So, P (number of pose features) is posedirs.shape[1]. For FLAME, P=207.
+    num_features_expected_by_posedirs = posedirs.shape[1]
+    
+    current_pose_feature_vector = pose_feature_vector_from_4_joints
+
+    if current_pose_feature_vector.shape[1] != num_features_expected_by_posedirs:
+        print(f"Warning: The calculated pose feature vector (from 4 joints) has {current_pose_feature_vector.shape[1]} features, "
+              f"but the 'posedirs' tensor expects {num_features_expected_by_posedirs} features. "
+              f"This will likely result in an incorrect or zero pose-corrective blendshape effect. "
+              f"To use full posedirs, ensure the lbs function receives and processes the "
+              f"rotations for all {num_features_expected_by_posedirs // 9} joints that drive posedirs.")
+        # To prevent a runtime error in einsum and apply a zero effect:
+        current_pose_feature_vector = torch.zeros(batch_size, num_features_expected_by_posedirs, device=device, dtype=dtype)
             
-    pose_blendshapes = torch.einsum('BP,VCP->BVC', pose_feature_vector_posedirs, posedirs)
-    else:
-        pose_blendshapes = torch.zeros_like(v_shaped_expressed) # No posedirs to apply
+    # Einsum: current_pose_feature_vector (B, P), posedirs (V, P, C) -> pose_blendshapes (B, V, C)
+    # Here C=3 (for x,y,z offsets), P is num_features_expected_by_posedirs.
+    pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs)
 
     v_posed = v_posed_lbs + pose_blendshapes
     return v_posed
@@ -321,7 +331,17 @@ class FLAME(nn.Module):
         # Posedirs: Expected shape after .r is (num_vertices, 3, total_pose_blendshapes)
         posedirs_data = flame_model_data['posedirs']
         posedirs_np = posedirs_data.r if hasattr(posedirs_data, 'r') else posedirs_data
-        self.register_buffer('posedirs', torch.tensor(posedirs_np, dtype=torch.float32)) # Use all pose blendshapes
+        # posedirs_np is often (num_vertices, 3, total_pose_blendshapes) e.g. (V, 3, 207)
+        # For einsum 'BP,VPC->BVC', P is the feature dim, C is coordinate dim (3 for x,y,z)
+        # So, we need posedirs to be (V, P, 3). Permute if necessary.
+        # Assuming posedirs_np from pickle is (V, 3, P_dim)
+        if posedirs_np.shape[1] == 3 and posedirs_np.shape[2] != 3: # Likely (V, 3, P_dim)
+            posedirs_permuted_np = np.transpose(posedirs_np, (0, 2, 1)) # Convert to (V, P_dim, 3)
+            print(f"Permuted posedirs from {posedirs_np.shape} to {posedirs_permuted_np.shape}")
+        else: # Assuming it's already (V, P_dim, 3) or other configuration
+            posedirs_permuted_np = posedirs_np
+            print(f"Using posedirs with shape: {posedirs_permuted_np.shape} (no permutation applied or shape is not (V,3,P))")
+        self.register_buffer('posedirs', torch.tensor(posedirs_permuted_np, dtype=torch.float32))
         
         # J_regressor: Typically a sparse matrix
         j_regressor_data = flame_model_data['J_regressor']
