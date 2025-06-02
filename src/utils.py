@@ -32,7 +32,21 @@ def save_validation_images(gt_images, rendered_images, gt_landmarks, pred_landma
     mean = torch.tensor([0.485, 0.456, 0.406], device=gt_images_cpu.device).view(1, 3, 1, 1)
     std = torch.tensor([0.229, 0.224, 0.225], device=gt_images_cpu.device).view(1, 3, 1, 1)
     gt_images_unnorm = gt_images_cpu * std + mean
-    gt_images_unnorm = gt_images_unnorm.permute(0, 2, 3, 1).numpy().clip(0, 1) # (num_images, H, W, C)
+    # gt_images_unnorm are now (num_images, C, H, W) in range [0,1]
+    # For plotting, permute to (num_images, H, W, C)
+    gt_images_display = gt_images_unnorm.permute(0, 2, 3, 1).numpy().clip(0, 1)
+
+    # Scale ground truth landmarks from original image size (e.g., 128x128) to display size (e.g., 224x224)
+    # The gt_images were resized from 128 (assumed original for landmarks) to 224 by FaceDataset.
+    original_landmark_img_size = 128.0 # The size of images landmarks were detected on
+    display_img_size = float(gt_images_display.shape[1]) # Should be 224
+    
+    if display_img_size != original_landmark_img_size:
+        scale_factor = display_img_size / original_landmark_img_size
+        gt_landmarks_cpu_scaled = gt_landmarks_cpu * scale_factor
+    else:
+        gt_landmarks_cpu_scaled = gt_landmarks_cpu
+
 
     # Permute rendered images for display
     rendered_images_display = rendered_images_cpu.permute(0, 2, 3, 1).numpy().clip(0, 1) # (num_images, H, W, C)
@@ -42,8 +56,8 @@ def save_validation_images(gt_images, rendered_images, gt_landmarks, pred_landma
         fig, axs = plt.subplots(1, 2, figsize=(10, 5)) # Create a new figure for each sample
         
         # Ground Truth
-        axs[0].imshow(gt_images_unnorm[i])
-        axs[0].scatter(gt_landmarks_cpu[i, :, 0], gt_landmarks_cpu[i, :, 1], s=10, c='r', marker='.')
+        axs[0].imshow(gt_images_display[i])
+        axs[0].scatter(gt_landmarks_cpu_scaled[i, :, 0], gt_landmarks_cpu_scaled[i, :, 1], s=10, c='r', marker='.')
         axs[0].set_title("Ground Truth")
         axs[0].axis('off')
 
