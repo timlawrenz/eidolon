@@ -145,10 +145,38 @@ class FLAME(nn.Module):
             # This will likely cause issues downstream if not corrected.
             # Consider raising an error if this key is critical.
             landmark_indices_np = np.array([], dtype=np.int64) 
+            num_loaded_landmarks = 0
         else:
             landmark_indices_np = landmark_data['landmark_indices']
+            num_loaded_landmarks = landmark_indices_np.shape[0]
 
-        self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_np, dtype=torch.long))
+        # Assuming ground truth landmarks are 68 points.
+        # If the loaded landmark_indices provide a different number (e.g., 105),
+        # we take a subset for now to match the common 68-point convention.
+        # This is a placeholder: a proper mapping or a 68-point specific embedding should be used.
+        NUM_GT_LANDMARKS = 68 # As per face_alignment default and common usage
+        if num_loaded_landmarks != NUM_GT_LANDMARKS:
+            print(f"Warning: Loaded landmark_indices from NPZ have {num_loaded_landmarks} points, "
+                  f"but ground truth is expected to have {NUM_GT_LANDMARKS} points.")
+            print(f"Taking the first {NUM_GT_LANDMARKS} landmark indices from the NPZ file as a placeholder.")
+            # This assumes the first NUM_GT_LANDMARKS points from the NPZ have some correspondence.
+            # This might not be accurate for meaningful landmark loss.
+            if num_loaded_landmarks > NUM_GT_LANDMARKS:
+                landmark_indices_to_use = landmark_indices_np[:NUM_GT_LANDMARKS]
+            else: # If NPZ has fewer than 68, this will also be problematic.
+                landmark_indices_to_use = landmark_indices_np 
+                # This will lead to an error later if landmark_indices_to_use has < 68 points
+                # and gt_landmarks still has 68. For now, let's assume NPZ has >= 68.
+                if num_loaded_landmarks < NUM_GT_LANDMARKS and num_loaded_landmarks > 0 :
+                     print(f"Critical Warning: NPZ file has only {num_loaded_landmarks} landmarks, less than the expected {NUM_GT_LANDMARKS}. Landmark loss will be problematic.")
+                elif num_loaded_landmarks == 0:
+                     print(f"Critical Warning: No landmark indices loaded from NPZ. Landmark prediction will be empty.")
+
+
+        else:
+            landmark_indices_to_use = landmark_indices_np
+            
+        self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_to_use, dtype=torch.long))
 
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None, 
