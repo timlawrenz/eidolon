@@ -136,50 +136,74 @@ class FLAME(nn.Module):
             self.register_buffer('parents', torch.full((num_joints,), -1, dtype=torch.long))
 
 
-        # Load 3D landmark embedding
-        landmark_data = np.load(landmark_embedding_path, allow_pickle=True)
-        
+        # Load 3D landmark embedding from the new .pkl file
+        try:
+            with open(landmark_embedding_path, 'rb') as f:
+                landmark_data = pickle.load(f, encoding='latin1')
+        except FileNotFoundError:
+            print(f"ERROR: Landmark embedding file not found: {landmark_embedding_path}")
+            landmark_data = {} # Ensure landmark_data is a dict to avoid further errors
+        except Exception as e:
+            print(f"ERROR: Could not load landmark embedding file {landmark_embedding_path}: {e}")
+            landmark_data = {}
+
         NUM_EXPECTED_LANDMARKS = 68 # Standard 68 landmarks
         self.using_barycentric_landmarks = False
+        found_vertex_ids = False
 
+        # 1. Try to load 68-point barycentric coordinates
         if 'lmk_face_idx' in landmark_data and 'lmk_b_coords' in landmark_data:
             lmk_face_idx_np = landmark_data['lmk_face_idx']
             lmk_b_coords_np = landmark_data['lmk_b_coords']
-            if lmk_face_idx_np.shape == (NUM_EXPECTED_LANDMARKS,) and \
+            if isinstance(lmk_face_idx_np, np.ndarray) and isinstance(lmk_b_coords_np, np.ndarray) and \
+               lmk_face_idx_np.shape == (NUM_EXPECTED_LANDMARKS,) and \
                lmk_b_coords_np.shape == (NUM_EXPECTED_LANDMARKS, 3):
                 self.register_buffer('landmark_face_idx', torch.tensor(lmk_face_idx_np, dtype=torch.long))
                 self.register_buffer('landmark_b_coords', torch.tensor(lmk_b_coords_np, dtype=torch.float32))
                 self.using_barycentric_landmarks = True
-                print("Using 68 barycentric landmarks for FLAME.")
+                print(f"Using 68 barycentric landmarks from {landmark_embedding_path}.")
             else:
-                print(f"Warning: Barycentric landmark data ('lmk_face_idx', 'lmk_b_coords') found but shapes are not for {NUM_EXPECTED_LANDMARKS} points. "
-                      f"lmk_face_idx shape: {lmk_face_idx_np.shape}, lmk_b_coords shape: {lmk_b_coords_np.shape}. "
-                      "Falling back to 'landmark_indices'.")
+                print(f"Warning: Barycentric landmark data in {landmark_embedding_path} ('lmk_face_idx', 'lmk_b_coords') "
+                      f"found but shapes are not for {NUM_EXPECTED_LANDMARKS} points. "
+                      f"lmk_face_idx shape: {getattr(lmk_face_idx_np, 'shape', 'N/A')}, "
+                      f"lmk_b_coords shape: {getattr(lmk_b_coords_np, 'shape', 'N/A')}. "
+                      "Will try other keys for vertex IDs.")
         
+        # 2. If barycentric not used, try to find direct 68 vertex IDs
         if not self.using_barycentric_landmarks:
-            print("Attempting to use 'landmark_indices' for vertex-based landmarks.")
-            if 'landmark_indices' not in landmark_data:
-                print(f"ERROR: Key 'landmark_indices' not found in {landmark_embedding_path}.")
-                print(f"Available keys: {list(landmark_data.keys())}")
-                landmark_indices_np = np.array([], dtype=np.int64)
-            else:
-                landmark_indices_np = landmark_data['landmark_indices']
+            # Try specific keys for 68 static landmarks first
+            possible_vertex_id_keys = ['static_landmark_vertex_ids', 'vertex_ids_68', 'landmark_vertex_ids', 'landmark_indices']
+            landmark_indices_np = None
             
-            num_loaded_vertex_landmarks = landmark_indices_np.shape[0]
+            for key in possible_vertex_id_keys:
+                if key in landmark_data:
+                    data_candidate = landmark_data[key]
+                    if isinstance(data_candidate, np.ndarray):
+                        if data_candidate.shape == (NUM_EXPECTED_LANDMARKS,):
+                            landmark_indices_np = data_candidate
+                            print(f"Using {NUM_EXPECTED_LANDMARKS} vertex-based landmarks from key '{key}' in {landmark_embedding_path}.")
+                            found_vertex_ids = True
+                            break
+                        elif key == 'landmark_indices' and data_candidate.shape[0] > NUM_EXPECTED_LANDMARKS:
+                            # Fallback for 'landmark_indices' if it's longer (e.g. 105 points)
+                            print(f"Warning: Key '{key}' found with {data_candidate.shape[0]} points. "
+                                  f"Taking the first {NUM_EXPECTED_LANDMARKS} as a placeholder.")
+                            landmark_indices_np = data_candidate[:NUM_EXPECTED_LANDMARKS]
+                            found_vertex_ids = True
+                            break
+                        elif key == 'landmark_indices' and data_candidate.shape[0] < NUM_EXPECTED_LANDMARKS and data_candidate.shape[0] > 0:
+                             print(f"Critical Warning: Key '{key}' has {data_candidate.shape[0]} points, "
+                                   f"less than the expected {NUM_EXPECTED_LANDMARKS}. Landmark prediction will be problematic.")
+                             landmark_indices_np = data_candidate
+                             found_vertex_ids = True
+                             break
             
-            if num_loaded_vertex_landmarks == NUM_EXPECTED_LANDMARKS:
-                landmark_indices_to_use = landmark_indices_np
-                print(f"Using {NUM_EXPECTED_LANDMARKS} vertex-based landmarks from 'landmark_indices'.")
-            elif num_loaded_vertex_landmarks > NUM_EXPECTED_LANDMARKS:
-                print(f"Warning: 'landmark_indices' from NPZ have {num_loaded_vertex_landmarks} points. "
-                      f"Taking the first {NUM_EXPECTED_LANDMARKS} as a placeholder.")
-                landmark_indices_to_use = landmark_indices_np[:NUM_EXPECTED_LANDMARKS]
-            else: # num_loaded_vertex_landmarks < NUM_EXPECTED_LANDMARKS (includes 0)
-                print(f"Critical Warning: 'landmark_indices' has {num_loaded_vertex_landmarks} points, "
-                      f"less than the expected {NUM_EXPECTED_LANDMARKS}. Landmark prediction will be problematic or empty.")
-                landmark_indices_to_use = landmark_indices_np # Use as is, might be empty
-            
-            self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_to_use, dtype=torch.long))
+            if not found_vertex_ids:
+                print(f"ERROR: Could not find a suitable {NUM_EXPECTED_LANDMARKS}-point vertex ID array in {landmark_embedding_path} "
+                      f"using keys {possible_vertex_id_keys}. Available keys: {list(landmark_data.keys())}")
+                landmark_indices_np = np.array([], dtype=np.int64) # Default to empty if nothing suitable found
+
+            self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_np, dtype=torch.long))
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None, 
                   eye_pose_params=None, jaw_pose_params=None, neck_pose_params=None, transl=None, detail_params=None):

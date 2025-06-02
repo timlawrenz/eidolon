@@ -68,7 +68,7 @@ NUM_TRANSLATION_COEFFS = 3 # Global translation
 NUM_DETAIL_COEFFS = 56 
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
-LANDMARK_EMBEDDING_PATH = './data/flame_model/mediapipe_landmark_embedding.npz'
+LANDMARK_EMBEDDING_PATH = './data/flame_model/flame_static_embedding.pkl' # Updated path
 
 VISUALIZATION_INTERVAL = 500 # Steps between generating validation images
 LOGGING_INTERVAL = 10 # Steps between printing loss
