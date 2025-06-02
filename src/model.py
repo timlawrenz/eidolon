@@ -358,6 +358,14 @@ class FLAME(nn.Module):
         parents_lbs_np = np.array([-1, 0, 1, 1, 1], dtype=np.int64)
         self.register_buffer('parents_lbs', torch.tensor(parents_lbs_np, dtype=torch.long))
 
+        # Assert consistency in the number of LBS joints
+        num_lbs_joints = self.parents_lbs.shape[0]
+        assert self.J_regressor.shape[0] == num_lbs_joints, \
+            f"J_regressor joint count ({self.J_regressor.shape[0]}) does not match " \
+            f"parents_lbs joint count ({num_lbs_joints}). Expected J_regressor for LBS joints."
+        assert self.lbs_weights.shape[1] == num_lbs_joints, \
+            f"lbs_weights joint count ({self.lbs_weights.shape[1]}) does not match " \
+            f"parents_lbs joint count ({num_lbs_joints}). Expected lbs_weights for LBS joints."
 
         # --- Load DECA Landmark Data for 68 points ---
         # The argument `landmark_embedding_path` is now `deca_landmark_embedding_path`
