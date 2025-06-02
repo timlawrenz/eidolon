@@ -56,81 +56,78 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     #    transformations to get the global transformation for each joint:
     #    A_global[j] = A_global[parent[j]] @ A_local_relative_to_parent[j]
     #
-    # The current placeholder returns identity rotations with joint translations,
-    # which means no actual articulated posing will occur from LBS joint rotations.
-    # The `rot_mats` input to this placeholder might also be for a subset of joints
-    # (e.g., 5 main joints) while `joints` and `parents` might be for the full skeleton (e.g., 16 joints).
-    # A full implementation needs to handle this mapping correctly.
+    # Args:
+    #   rot_mats (torch.Tensor): Batch of rotation matrices for LBS joints (B, num_lbs_joints, 3, 3).
+    #   joints (torch.Tensor): Batch of LBS joint locations (B, num_lbs_joints, 3).
+    #                          These are typically the rest-pose joint locations, J_transformed_rest.
+    #   parents (torch.Tensor): Parent indices for LBS joints (num_lbs_joints), root parent is -1.
+    #   dtype (torch.dtype): Data type for new tensors. (This is an argument to the function)
 
     batch_size = rot_mats.shape[0]
-    # num_joints should correspond to the number of joints in the `parents` array and `J_regressor` output.
-    num_joints_in_skeleton = joints.shape[1] 
+    num_lbs_joints = joints.shape[1] 
     device = rot_mats.device
+    # `dtype` is passed as an argument to the function and should be used.
 
-    # Placeholder: Return identity rotations, but use translations from input joints.
-    # This means A_global effectively translates each joint to its rest position without rotation.
-    A_global = torch.eye(4, dtype=dtype, device=device).unsqueeze(0).unsqueeze(0).repeat(batch_size, num_joints_in_skeleton, 1, 1)
-    A_global[:, :, :3, 3] = joints # joints are (B, num_joints_in_skeleton, 3)
+    # Calculate relative joint positions. These define the translation part of local transforms.
+    # For the root joint (parent_idx == -1), its local translation is its absolute position in `joints`.
+    # For other joints, it's the vector from parent to child in the `joints` configuration.
+    rel_joints = torch.zeros_like(joints) # (B, num_lbs_joints, 3)
     
-    # If rot_mats are provided for a subset of these joints (e.g., 5 main ones),
-    # a proper implementation would map these to the correct indices in the full A_global
-    # and then perform the kinematic chain update.
-    # For this placeholder, we are not using rot_mats to modify the rotation part of A_global.
+    if num_lbs_joints > 0:
+        # Root joint's local translation is its position in `joints`
+        rel_joints[:, 0] = joints[:, 0] 
     
-    # --- Start of actual batch_rigid_transform implementation ---
-    # `rot_mats` here are for the joints in the `parents` array (e.g., 5 LBS joints)
-    # `joints` are the rest-pose locations for these same joints.
-    
-    dtype = rot_mats.dtype # Infer dtype from rot_mats
-    
-    # Calculate relative joint locations
-    # `parents` array uses -1 for the root. For PyTorch indexing, root's parent can be set to 0
-    # but care must be taken not to subtract J[0] from J[0].
-    # A common way is to compute J_transformed_local which is J for root, and J_child - J_parent for others.
-    
-    # Initialize A_global with local transformations for each joint in its own coordinate system
-    # (rotation from rot_mats, translation is the relative offset from parent)
-    # Then compose them.
+        for j_idx in range(1, num_lbs_joints):
+            parent_idx = parents[j_idx]
+            # Ensure parent_idx is valid for indexing `joints`
+            if parent_idx >= 0 and parent_idx < num_lbs_joints:
+                 rel_joints[:, j_idx] = joints[:, j_idx] - joints[:, parent_idx]
+            else:
+                 # This case implies an issue with the parents array if parent_idx is out of bounds
+                 # or -1 for a non-root joint.
+                 print(f"Warning: batch_rigid_transform encountered unexpected parent_idx {parent_idx} for joint {j_idx} "
+                       f"during relative joint calculation. Using absolute joint position as relative.")
+                 rel_joints[:, j_idx] = joints[:, j_idx] # Fallback
 
-    # Create a list of 4x4 local transformation matrices
-    # T_local_j = [ R_j | (J_j - J_parent(j)) ]
-    #             [  0  |          1         ]
-    # For root (j=0), translation is J_0
-    
-    num_joints = joints.shape[1] # Should be 5 for the LBS joints
-    
-    # Pad joints to homogeneous coordinates for simpler matrix multiplication later
-    # J_homo = torch.cat([joints, torch.zeros(batch_size, num_joints, 1, device=device, dtype=dtype)], dim=2)
-    # This is not needed if we construct 4x4 matrices directly.
-
-    # Calculate relative joint positions for local transformations
-    rel_joints = torch.zeros_like(joints)
-    rel_joints[:, 0] = joints[:, 0] # Root joint's position is its own translation
-    for j_idx in range(1, num_joints):
-        parent_idx = parents[j_idx]
-        rel_joints[:, j_idx] = joints[:, j_idx] - joints[:, parent_idx]
-
-    # Create local transformation matrices (rotation + relative translation)
-    # These are transforms from parent's coordinate system to child's coordinate system
+    # Create local transformation matrices (T_local_j_relative_to_parent)
+    # Each matrix transforms from the parent's coordinate system to the child's coordinate system.
+    # T_local_j = [ R_j | rel_joint_translation_j ]
+    #             [  0  |            1            ]
     transforms_local_list = []
-    for j_idx in range(num_joints):
+    for j_idx in range(num_lbs_joints):
+        R_j = rot_mats[:, j_idx]  # (B, 3, 3)
+        t_j_local = rel_joints[:, j_idx] # (B, 3)
+        
         T_j_local = torch.eye(4, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1) # (B, 4, 4)
-        T_j_local[:, :3, :3] = rot_mats[:, j_idx]
-        T_j_local[:, :3, 3] = rel_joints[:, j_idx]
+        T_j_local[:, :3, :3] = R_j
+        T_j_local[:, :3, 3] = t_j_local
         transforms_local_list.append(T_j_local)
 
     # Compute global transformations by iterating through the kinematic chain
-    A_global_list = [transforms_local_list[0]] # Global transform of root is its local transform
-
-    for j_idx in range(1, num_joints):
-        parent_idx = parents[j_idx]
-        # A_world_j = A_world_parent(j) @ T_local_j
-        A_j_world = torch.bmm(A_global_list[parent_idx], transforms_local_list[j_idx])
-        A_global_list.append(A_j_world)
-        
-    A_global = torch.stack(A_global_list, dim=1) # (B, num_joints, 4, 4)
-    # --- End of actual batch_rigid_transform implementation ---
+    # A_global_j = A_global_parent(j) @ T_local_j_relative_to_parent
+    A_global_computed_list = [] 
     
+    if num_lbs_joints > 0:
+        # The global transform of the root is its local transform
+        A_global_computed_list.append(transforms_local_list[0])
+
+        for j_idx in range(1, num_lbs_joints):
+            parent_idx = parents[j_idx]
+            # parent_idx must be a valid index for A_global_computed_list (i.e., < current length)
+            # This holds if parents are ordered correctly (parent_idx < j_idx for non-root)
+            if parent_idx >= 0 and parent_idx < len(A_global_computed_list):
+                A_j_global = torch.bmm(A_global_computed_list[parent_idx], transforms_local_list[j_idx])
+                A_global_computed_list.append(A_j_global)
+            else:
+                # This indicates a problem with the kinematic tree structure
+                print(f"Warning: batch_rigid_transform found invalid parent_idx {parent_idx} for joint {j_idx} "
+                      f"during global transform assembly. Appending local transform as global.")
+                A_global_computed_list.append(transforms_local_list[j_idx]) # Fallback
+        
+        A_global = torch.stack(A_global_computed_list, dim=1) # (B, num_lbs_joints, 4, 4)
+    else: # Handle case of no joints
+        A_global = torch.empty(batch_size, 0, 4, 4, device=device, dtype=dtype)
+
     return A_global
 
 
