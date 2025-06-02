@@ -91,65 +91,63 @@ for epoch in range(NUM_EPOCHS):
         # gt_landmarks_list contains a list of numpy arrays (or None if no face detected)
         gt_landmarks_list = fa.get_landmarks_from_batch(images_for_fa)
         
-        # TODO: Convert gt_landmarks_list to a stacked torch.Tensor `gt_landmarks_2d`.
-        # Handle cases where landmarks are not detected (gt_landmarks_list[j] is None).
-        # This might involve:
-        # 1. Filtering the batch: only keep images/coeffs where landmarks were found.
-        #    This means `gt_images`, `pred_coeffs_vec` etc. would need to be filtered accordingly.
-        # 2. Using a placeholder or skipping landmark loss for those samples.
-        # For now, we'll continue to use a dummy tensor for gt_landmarks_2d in the loss.
-        gt_landmarks_2d_dummy = torch.zeros(gt_images.size(0), 68, 2).to(DEVICE) # Dummy ground truth
+        # --- Process the batch to handle failures in landmark detection ---
+        valid_indices = [idx for idx, lms in enumerate(gt_landmarks_list) if lms is not None]
 
+        if not valid_indices:
+            print(f"Warning: No faces detected in batch step {i}. Skipping.")
+            continue
+            
+        # Filter the batch to only include images and landmarks that are valid
+        gt_images_filtered = gt_images[valid_indices]
+        valid_landmarks_list = [gt_landmarks_list[idx] for idx in valid_indices]
+        
+        # Convert the clean list of landmarks to a tensor
+        gt_landmarks_2d = torch.from_numpy(np.array(valid_landmarks_list)).float().to(DEVICE)
 
         # --- Forward Pass (Encoder) ---
         optimizer.zero_grad()
-        pred_coeffs_vec = encoder(gt_images)
+        # Pass only the valid images to the encoder
+        pred_coeffs_vec = encoder(gt_images_filtered) 
         
-        # TODO: Deconstruct pred_coeffs_vec into a dictionary for your FLAME model
-        # For regularization loss, we need 'shape' and 'expression' parameters.
-        # Assuming NUM_COEFFS = 227, with:
-        #   Shape: first 100 coefficients
-        #   Expression: next 50 coefficients
-        #   (The rest are for pose, jaw, neck, etc., not used in current regularization)
-        
-        num_shape_coeffs = 100
+        # Deconstruct pred_coeffs_vec for regularization loss (based on filtered batch)
+        num_shape_coeffs = 100  # Assuming these are defined or known
         num_expression_coeffs = 50
         
         shape_params = pred_coeffs_vec[:, :num_shape_coeffs]
         expression_params = pred_coeffs_vec[:, num_shape_coeffs : num_shape_coeffs + num_expression_coeffs]
         
-        # This dictionary will be used by the loss function for regularization
         pred_coeffs_for_loss = {
             'shape': shape_params,
             'expression': expression_params
-            # Other params like pose, jaw, etc. can be added here if needed by other loss components later
         }
         
+        # --- Dummy tensors for unimplemented parts of the pipeline ---
+        # These should be adjusted to match the filtered batch size
+        current_batch_size = gt_images_filtered.size(0)
+        
         # TODO: Instantiate FLAME model and pass the full deconstructed pred_coeffs_dict
-        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict_full)
-        pred_verts_dummy = torch.zeros(gt_images.size(0), 5023, 3).to(DEVICE) # Example
+        # pred_verts, pred_landmarks_3d = flame(**pred_coeffs_dict_full) # pred_coeffs_dict_full from filtered pred_coeffs_vec
+        pred_verts_dummy = torch.zeros(current_batch_size, 5023, 3).to(DEVICE)
 
         # TODO: Project 3D landmarks to 2D screen space using the PyTorch3D camera
-        # Ensure `cameras` is defined and available here (likely from main.py or a similar setup)
-        # pred_landmarks_2d = cameras.transform_points_screen(pred_landmarks_3d_from_flame)[:, :, :2] # Keep only x, y
-        pred_landmarks_2d_dummy = torch.zeros(gt_images.size(0), 68, 2).to(DEVICE) # Example
+        # pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d_from_flame)[:, :, :2]
+        pred_landmarks_2d_model_dummy = torch.zeros(current_batch_size, 68, 2).to(DEVICE)
 
         # TODO: Render the image using the predicted vertices and a renderer
-        # Ensure `renderer` is defined and available here
         # rendered_images = renderer(pred_verts_for_renderer, ...)
-        rendered_images_dummy = torch.zeros_like(gt_images) # Dummy rendered image
+        rendered_images_dummy = torch.zeros_like(gt_images_filtered) # Match filtered batch
         
         # --- C. Loss Calculation ---
-        # Using dummy values for parts of the pipeline not yet fully implemented.
-        # Replace dummy tensors with actual tensors as you complete the TODOs.
-        # Pass the actual predicted coefficients for regularization.
+        # Now using real gt_landmarks_2d and gt_images_filtered.
+        # Other inputs are still dummies but sized for the filtered batch.
         total_loss, loss_dict = loss_fn(
-            pred_coeffs_for_loss,    # Using actual shape/expression params for regularization
-            pred_verts_dummy,        # Replace with actual pred_verts
-            pred_landmarks_2d_dummy, # Replace with actual pred_landmarks_2d
-            rendered_images_dummy,   # Replace with actual rendered_images
-            gt_images,
-            gt_landmarks_2d_dummy    # Replace with actual gt_landmarks_2d (from processed gt_landmarks_list)
+            pred_coeffs_for_loss,       # Actual shape/expression params from filtered batch
+            pred_verts_dummy,           # Dummy, but sized for filtered batch
+            pred_landmarks_2d_model_dummy, # Dummy, but sized for filtered batch
+            rendered_images_dummy,      # Dummy, but sized for filtered batch
+            gt_images_filtered,         # Filtered ground-truth images
+            gt_landmarks_2d             # Real, filtered ground-truth landmarks
         )
 
         # --- Backward Pass ---
@@ -157,9 +155,9 @@ for epoch in range(NUM_EPOCHS):
         optimizer.step()
         
         if i % 10 == 0:
-            # Ensure total_loss is a scalar tensor for .item()
-            current_loss = total_loss.item() if torch.is_tensor(total_loss) else total_loss 
-            print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], Loss: {current_loss:.4f}")
+            current_loss = total_loss.item()
+            print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], "
+                  f"Batch Size (valid): {current_batch_size}, Loss: {current_loss:.4f}")
             # TODO: Log individual losses from loss_dict
             # print(f"    Losses: {loss_dict}") # Example logging
 
