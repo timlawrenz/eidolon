@@ -136,74 +136,57 @@ class FLAME(nn.Module):
             self.register_buffer('parents', torch.full((num_joints,), -1, dtype=torch.long))
 
 
-        # Load 3D landmark embedding from the new .pkl file
-        try:
-            with open(landmark_embedding_path, 'rb') as f:
-                landmark_data = pickle.load(f, encoding='latin1')
-        except FileNotFoundError:
-            print(f"ERROR: Landmark embedding file not found: {landmark_embedding_path}")
-            landmark_data = {} # Ensure landmark_data is a dict to avoid further errors
-        except Exception as e:
-            print(f"ERROR: Could not load landmark embedding file {landmark_embedding_path}: {e}")
-            landmark_data = {}
-
-        NUM_EXPECTED_LANDMARKS = 68 # Standard 68 landmarks
+        # --- Load DECA Landmark Data for 68 points ---
+        # The argument `landmark_embedding_path` is now `deca_landmark_embedding_path`
         self.using_barycentric_landmarks = False
-        found_vertex_ids = False
-
-        # 1. Try to load 68-point barycentric coordinates
-        if 'lmk_face_idx' in landmark_data and 'lmk_b_coords' in landmark_data:
-            lmk_face_idx_np = landmark_data['lmk_face_idx']
-            lmk_b_coords_np = landmark_data['lmk_b_coords']
-            if isinstance(lmk_face_idx_np, np.ndarray) and isinstance(lmk_b_coords_np, np.ndarray) and \
-               lmk_face_idx_np.shape == (NUM_EXPECTED_LANDMARKS,) and \
-               lmk_b_coords_np.shape == (NUM_EXPECTED_LANDMARKS, 3):
-                self.register_buffer('landmark_face_idx', torch.tensor(lmk_face_idx_np, dtype=torch.long))
-                self.register_buffer('landmark_b_coords', torch.tensor(lmk_b_coords_np, dtype=torch.float32))
-                self.using_barycentric_landmarks = True
-                print(f"Using 68 barycentric landmarks from {landmark_embedding_path}.")
+        NUM_EXPECTED_LANDMARKS = 68
+        try:
+            deca_lmk_data_container = np.load(deca_landmark_embedding_path, allow_pickle=True)
+            # Check if the loaded data is a scalar object array containing a dict
+            if deca_lmk_data_container.shape == () and deca_lmk_data_container.dtype == object:
+                deca_lmk_data = deca_lmk_data_container.item() 
+            elif isinstance(deca_lmk_data_container, dict): # If it's already a dict (e.g. from a .npz file loaded as dict)
+                deca_lmk_data = deca_lmk_data_container
             else:
-                print(f"Warning: Barycentric landmark data in {landmark_embedding_path} ('lmk_face_idx', 'lmk_b_coords') "
-                      f"found but shapes are not for {NUM_EXPECTED_LANDMARKS} points. "
-                      f"lmk_face_idx shape: {getattr(lmk_face_idx_np, 'shape', 'N/A')}, "
-                      f"lmk_b_coords shape: {getattr(lmk_b_coords_np, 'shape', 'N/A')}. "
-                      "Will try other keys for vertex IDs.")
-        
-        # 2. If barycentric not used, try to find direct 68 vertex IDs
-        if not self.using_barycentric_landmarks:
-            # Try specific keys for 68 static landmarks first
-            possible_vertex_id_keys = ['static_landmark_vertex_ids', 'vertex_ids_68', 'landmark_vertex_ids', 'landmark_indices']
-            landmark_indices_np = None
-            
-            for key in possible_vertex_id_keys:
-                if key in landmark_data:
-                    data_candidate = landmark_data[key]
-                    if isinstance(data_candidate, np.ndarray):
-                        if data_candidate.shape == (NUM_EXPECTED_LANDMARKS,):
-                            landmark_indices_np = data_candidate
-                            print(f"Using {NUM_EXPECTED_LANDMARKS} vertex-based landmarks from key '{key}' in {landmark_embedding_path}.")
-                            found_vertex_ids = True
-                            break
-                        elif key == 'landmark_indices' and data_candidate.shape[0] > NUM_EXPECTED_LANDMARKS:
-                            # Fallback for 'landmark_indices' if it's longer (e.g. 105 points)
-                            print(f"Warning: Key '{key}' found with {data_candidate.shape[0]} points. "
-                                  f"Taking the first {NUM_EXPECTED_LANDMARKS} as a placeholder.")
-                            landmark_indices_np = data_candidate[:NUM_EXPECTED_LANDMARKS]
-                            found_vertex_ids = True
-                            break
-                        elif key == 'landmark_indices' and data_candidate.shape[0] < NUM_EXPECTED_LANDMARKS and data_candidate.shape[0] > 0:
-                             print(f"Critical Warning: Key '{key}' has {data_candidate.shape[0]} points, "
-                                   f"less than the expected {NUM_EXPECTED_LANDMARKS}. Landmark prediction will be problematic.")
-                             landmark_indices_np = data_candidate
-                             found_vertex_ids = True
-                             break
-            
-            if not found_vertex_ids:
-                print(f"ERROR: Could not find a suitable {NUM_EXPECTED_LANDMARKS}-point vertex ID array in {landmark_embedding_path} "
-                      f"using keys {possible_vertex_id_keys}. Available keys: {list(landmark_data.keys())}")
-                landmark_indices_np = np.array([], dtype=np.int64) # Default to empty if nothing suitable found
+                raise ValueError(f"DECA landmark file {deca_landmark_embedding_path} does not contain an expected dictionary structure.")
 
-            self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_indices_np, dtype=torch.long))
+
+            # Use the 'full' keys for 68 landmarks from DECA embedding
+            if 'full_lmk_faces_idx' in deca_lmk_data and 'full_lmk_bary_coords' in deca_lmk_data:
+                lmk_faces_idx_68_np = deca_lmk_data['full_lmk_faces_idx']
+                lmk_bary_coords_68_np = deca_lmk_data['full_lmk_bary_coords']
+
+                # Squeeze if they have an unnecessary leading dimension of 1
+                if lmk_faces_idx_68_np.ndim == 2 and lmk_faces_idx_68_np.shape[0] == 1:
+                    lmk_faces_idx_68_np = lmk_faces_idx_68_np.squeeze(0)
+                if lmk_bary_coords_68_np.ndim == 3 and lmk_bary_coords_68_np.shape[0] == 1:
+                    lmk_bary_coords_68_np = lmk_bary_coords_68_np.squeeze(0)
+                
+                if lmk_faces_idx_68_np.shape == (NUM_EXPECTED_LANDMARKS,) and \
+                   lmk_bary_coords_68_np.shape == (NUM_EXPECTED_LANDMARKS, 3):
+                    self.register_buffer('landmark_face_idx', torch.tensor(lmk_faces_idx_68_np, dtype=torch.long))
+                    self.register_buffer('landmark_b_coords', torch.tensor(lmk_bary_coords_68_np, dtype=torch.float32))
+                    self.using_barycentric_landmarks = True
+                    print(f"Successfully loaded 68 barycentric landmarks from DECA embedding: {deca_landmark_embedding_path}.")
+                else:
+                    print(f"Warning: DECA 'full_lmk_faces_idx' or 'full_lmk_bary_coords' have unexpected shapes after squeeze. "
+                          f"Faces shape: {lmk_faces_idx_68_np.shape}, Coords shape: {lmk_bary_coords_68_np.shape}")
+            else:
+                print(f"Warning: Keys 'full_lmk_faces_idx' or 'full_lmk_bary_coords' not found in DECA embedding: {deca_landmark_embedding_path}.")
+
+        except Exception as e:
+            print(f"ERROR loading or processing DECA landmark embedding from {deca_landmark_embedding_path}: {e}")
+        
+        if not self.using_barycentric_landmarks:
+            print("Critical Warning: Could not load 68-point barycentric landmarks from DECA embedding. "
+                  "Landmark prediction will be zeros. Ensure the DECA file and keys are correct.")
+            # Ensure dummy buffers exist if barycentric loading fails, to prevent errors in forward pass
+            self.register_buffer('landmark_face_idx', torch.empty(0, dtype=torch.long)) 
+            self.register_buffer('landmark_b_coords', torch.empty(0, dtype=torch.float32))
+            # Also ensure landmark_vertex_ids is empty or non-existent if not using vertex based
+            if hasattr(self, 'landmark_vertex_ids'): # Clean up if a previous logic path set this
+                del self.landmark_vertex_ids 
+            self.register_buffer('landmark_vertex_ids', torch.empty(0, dtype=torch.long)) # For the forward pass logic
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None, 
                   eye_pose_params=None, jaw_pose_params=None, neck_pose_params=None, transl=None, detail_params=None):
