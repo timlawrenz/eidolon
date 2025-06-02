@@ -1,4 +1,20 @@
-# In train.py (or main.py)
+"""
+Main training script for the Eidolon Encoder model.
+
+This script orchestrates the training process, including:
+- Setting up the device (CPU/GPU).
+- Defining hyperparameters and configurations.
+- Initializing the EidolonEncoder model, FLAME model (placeholder), loss function, and optimizer.
+- Creating a FaceDataset and DataLoader for image data.
+- Running the training loop over a specified number of epochs.
+- Performing forward and backward passes (currently with placeholders for some components).
+- Printing loss information.
+- (Placeholder for saving the trained model).
+
+Note: This script is a skeleton and requires further implementation of FLAME model
+integration, landmark projection, rendering, and ground-truth landmark loading
+for full functionality. The IMAGE_DIR constant must be set to a valid dataset path.
+"""
 
 # 1. Imports and Setup
 import torch

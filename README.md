@@ -50,6 +50,31 @@ To run the main script, which loads the FLAME model, renders an average face, an
     ```
     The first time you run this, it may take a few moments to download the pre-trained ResNet-50 model weights. A plot window showing the rendered average face should appear.
 
+### Running the Training Script (Skeleton)
+
+The `train.py` script is a skeleton for training the `EidolonEncoder`. To run it:
+
+1.  Ensure you have completed all steps in the [Setup](#setup) section.
+2.  Activate your virtual environment:
+    ```bash
+    source .venv/bin/activate
+    ```
+3.  **Crucially, update the `IMAGE_DIR` variable in `train.py`** to point to the directory containing your face image dataset (e.g., CelebA-HQ, FFHQ, or a custom dataset).
+    ```python
+    # In train.py, find and modify this line:
+    IMAGE_DIR = "path/to/your/face/dataset" 
+    ```
+    For example, if you have images in `data/my_faces/`, change it to:
+    ```python
+    IMAGE_DIR = "data/my_faces"
+    ```
+    Ensure this directory contains `.png`, `.jpg`, or `.jpeg` image files.
+4.  Run the script from the root directory of the project:
+    ```bash
+    python train.py
+    ```
+    This script will attempt to load data and start a training loop. Note that many parts of the forward pass and loss calculation are currently placeholders (marked with `TODO`) and will need to be implemented for meaningful training. The script will print basic progress information.
+
 ## References
 
 This project utilizes the FLAME model:
