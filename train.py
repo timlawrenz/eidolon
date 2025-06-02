@@ -247,6 +247,58 @@ for epoch in range(NUM_EPOCHS):
         total_loss.backward() 
         optimizer.step()
         
+        # Visual validation step
+        if i % 500 == 0: # Every 500 steps
+            encoder.eval() # Set model to evaluation mode
+            with torch.no_grad(): # No gradients needed for validation
+                # Take a few images from the current batch for visualization
+                # Ensure there are enough images in the batch, otherwise take all
+                num_val_samples = min(4, gt_images.shape[0]) 
+                val_gt_images = gt_images[:num_val_samples]
+                val_gt_landmarks = gt_landmarks_2d[:num_val_samples]
+
+                val_pred_coeffs_vec = encoder(val_gt_images)
+                val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
+                
+                val_pred_verts, val_pred_landmarks_3d = flame_model(
+                    shape_params=val_pred_coeffs_dict['shape_params'],
+                    expression_params=val_pred_coeffs_dict['expression_params'],
+                    pose_params=val_pred_coeffs_dict['pose_params'],
+                    jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'],
+                    eye_pose_params=val_pred_coeffs_dict['eye_pose_params'],
+                    neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
+                    transl=val_pred_coeffs_dict['transl']
+                )
+                # image_size_for_projection is defined in the main loop scope
+                val_pred_landmarks_2d_model = cameras.transform_points_screen(
+                    val_pred_landmarks_3d, image_size=image_size_for_projection
+                )[:, :, :2]
+                
+                # Create Meshes for visualization
+                val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7 # Gray
+                val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
+                
+                val_meshes_batch = Meshes(
+                    verts=list(val_pred_verts), # List of (N,3) tensors
+                    faces=[flame_faces_tensor] * val_pred_verts.shape[0], # Repeat faces for each mesh
+                    textures=val_textures_batch
+                )
+                val_rendered_images = renderer(val_meshes_batch) # (B, H, W, C)
+                val_rendered_images = val_rendered_images.permute(0, 3, 1, 2)[:, :3, :, :] # (B, C, H, W), RGB
+
+                # TODO: Create a function to save these images side-by-side
+                # Example:
+                # output_dir = "outputs/validation_images"
+                # os.makedirs(output_dir, exist_ok=True)
+                # save_validation_images(
+                #     val_gt_images, val_rendered_images, 
+                #     val_gt_landmarks, val_pred_landmarks_2d_model,
+                #     os.path.join(output_dir, f"epoch_{epoch+1}_step_{i+1}.png")
+                # )
+                print(f"--- Validation images generated for epoch {epoch+1}, step {i+1} (TODO: save them) ---")
+
+            encoder.train() # Set model back to training mode
+        
         if i % 10 == 0:
             current_loss = total_loss.item()
             print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], "
