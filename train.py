@@ -201,7 +201,9 @@ for epoch in range(NUM_EPOCHS):
         
         # TODO 3: Project 3D landmarks to 2D screen space
         # cameras.transform_points_screen outputs (x, y, z_ndc), we only need x, y
-        pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d)[:, :, :2]
+        # The image_size should match the rasterizer's image_size.
+        image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
+        pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size_for_projection)[:, :, :2]
 
         # TODO 4: Render the image using the predicted vertices
         # Create a batch of Meshes
