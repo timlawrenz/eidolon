@@ -183,11 +183,12 @@ for epoch in range(NUM_EPOCHS):
         
         pred_coeffs_vec = encoder(gt_images)
         
-        # TODO 1: Deconstruct pred_coeffs_vec into a dictionary for FLAME
+        # Deconstruct the predicted coefficient vector into a dictionary for FLAME
         pred_coeffs_dict = deconstruct_flame_coeffs(pred_coeffs_vec)
         
-        # TODO 2: Run the FLAME model to get 3D vertices and landmarks
-        # Pass parameters to FLAME model. Ensure keys match FLAME model's forward method.
+        # Run the FLAME model to get 3D vertices and 3D landmarks
+        # Note: The FLAME model used here is currently a placeholder (src/model.py)
+        # and needs to be implemented with actual FLAME deformation logic.
         pred_verts, pred_landmarks_3d = flame_model(
             shape_params=pred_coeffs_dict['shape_params'],
             expression_params=pred_coeffs_dict['expression_params'],
@@ -199,16 +200,15 @@ for epoch in range(NUM_EPOCHS):
             # detail_params are deconstructed but not used by the FLAME placeholder model yet
         )
         
-        # TODO 3: Project 3D landmarks to 2D screen space
-        # cameras.transform_points_screen outputs (x, y, z_ndc), we only need x, y
-        # The image_size should match the rasterizer's image_size.
+        # Project 3D landmarks to 2D screen space
+        # cameras.transform_points_screen outputs (x, y, z_ndc), we only need x, y.
         image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
         pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size_for_projection)[:, :, :2]
 
-        # TODO 4: Render the image using the predicted vertices
-        # Create a batch of Meshes
-        # For textures, use a generic gray color for now, or a placeholder texture
-        # Ensure pred_verts is (B, N, 3) and flame_faces_tensor is (F, 3)
+        # Render the image using the predicted vertices
+        # Create a batch of Meshes.
+        # For textures, a generic gray color is used.
+        # Ensure pred_verts is (B, N, 3) and flame_faces_tensor is (F, 3).
         # We need to repeat faces for each item in the batch if rendering multiple meshes
         # Or, if renderer supports batched Meshes with shared topology, that's simpler.
         # PyTorch3D Meshes can take a list of verts and faces.
