@@ -57,6 +57,9 @@ NUM_TRANSLATION_COEFFS = 3
 # 227 - (100 + 50 + 6 + 3 + 6 + 3 + 3) = 227 - 171 = 56
 NUM_DETAIL_COEFFS = 56 
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
+VISUALIZATION_INTERVAL = 500 # Steps between generating validation images
+LOGGING_INTERVAL = 10 # Steps between printing loss
+
 LOSS_WEIGHTS = {
     'pixel': 1.0,
     'landmark': 1e-4, # Landmarks are sensitive, start with a small weight
@@ -248,7 +251,7 @@ for epoch in range(NUM_EPOCHS):
         optimizer.step()
         
         # Visual validation step
-        if i % 500 == 0: # Every 500 steps
+        if i % VISUALIZATION_INTERVAL == 0: # Every VISUALIZATION_INTERVAL steps
             encoder.eval() # Set model to evaluation mode
             with torch.no_grad(): # No gradients needed for validation
                 # Take a few images from the current batch for visualization
