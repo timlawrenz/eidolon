@@ -50,20 +50,6 @@ To run the main script, which loads the FLAME model, renders an average face, an
     ```
     The first time you run this, it may take a few moments to download the pre-trained ResNet-50 model weights. A plot window showing the rendered average face should appear.
 
-## Running the Notebooks
-
-1.  Ensure you have completed all steps in the [Setup](#setup) section, including installing dependencies and downloading FLAME assets.
-2.  Activate your virtual environment:
-    ```bash
-    source .venv/bin/activate
-    ```
-3.  Start JupyterLab from the root directory of the project:
-    ```bash
-    jupyter lab
-    ```
-4.  JupyterLab will open in your web browser. Navigate to the `notebooks/` directory and open `01_exploration_and_rendering.ipynb`.
-5.  Run the cells in the notebook sequentially.
-
 ## References
 
 This project utilizes the FLAME model:
