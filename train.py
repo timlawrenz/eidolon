@@ -301,7 +301,6 @@ for epoch in range(NUM_EPOCHS):
                     save_path_prefix, # Pass the prefix, function will append _sample_idx.png
                     num_images=num_val_samples 
                 )
-                # print(f"--- Validation images generated for epoch {epoch+1}, step {i+1} (TODO: save them) ---") # Replaced by save function's print
 
             encoder.train() # Set model back to training mode
         
