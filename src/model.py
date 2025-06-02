@@ -147,8 +147,8 @@ def lbs(v_shaped_expressed,
         # This is an assumption and might need adjustment based on FLAME specifics.
         num_joints_for_posedirs = num_pose_blendshape_coeffs // 9 # Should be 3 if 27 coeffs
         
-        if rot_mats.shape[1] >= num_joints_for_posedirs:
-            rot_mats_for_posedirs = rot_mats[:, :num_joints_for_posedirs, :, :]
+        if rot_mats_lbs.shape[1] >= num_joints_for_posedirs: # Use rot_mats_lbs here
+            rot_mats_for_posedirs = rot_mats_lbs[:, :num_joints_for_posedirs, :, :] # Use rot_mats_lbs here
             ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).unsqueeze(0) # (1,1,3,3)
             # pose_feature_vector should be (B, num_joints_for_posedirs * 9)
             pose_feature_vector = (rot_mats_for_posedirs - ident).view(batch_size, -1) # (B, 27)
@@ -438,7 +438,7 @@ class FLAME(nn.Module):
             global_rot_mat = batch_rodrigues(pose_params)
         else:
             print(f"Warning: Global pose_params have unexpected shape {pose_params.shape}. Expected 3 or 6. Using identity for global rotation.")
-            global_rot_mat = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
+            global_rot_mat = torch.eye(3, device=device, dtype=shape_params.dtype).unsqueeze(0).repeat(batch_size, 1, 1) # Use shape_params.dtype
 
         # Convert other poses (axis-angle) to 3x3 rotation matrices
         neck_rot_mat = batch_rodrigues(neck_pose_params)
@@ -460,7 +460,7 @@ class FLAME(nn.Module):
         # Typically driven by global, neck, jaw rotations (excluding identity)
         # Assuming the first 3 matrices in rot_mats_for_lbs correspond to these.
         num_joints_for_posedirs = 3 # Global, Neck, Jaw
-        ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) # (1,3,3)
+        ident = torch.eye(3, device=device, dtype=shape_params.dtype).unsqueeze(0) # (1,3,3) # Use shape_params.dtype
         
         # (B, num_joints_for_posedirs, 3, 3) -> (B, num_joints_for_posedirs*9)
         pose_feature_vector_for_posedirs = (rot_mats_for_lbs[:, :num_joints_for_posedirs, :, :] - ident).view(batch_size, -1)
@@ -470,7 +470,7 @@ class FLAME(nn.Module):
         if pose_feature_vector_for_posedirs.shape[1] != num_expected_posedirs_coeffs:
             print(f"Warning: Mismatch in pose_feature_vector_for_posedirs size. Expected {num_expected_posedirs_coeffs}, "
                   f"got {pose_feature_vector_for_posedirs.shape[1]}. Using zeros for posedirs effect.")
-            pose_feature_vector_for_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=dtype)
+            pose_feature_vector_for_posedirs = torch.zeros(batch_size, num_expected_posedirs_coeffs, device=device, dtype=shape_params.dtype) # Use shape_params.dtype
 
 
         pred_verts_posed = lbs(v_expressed, 
