@@ -314,7 +314,21 @@ for epoch in range(NUM_EPOCHS):
             current_loss = total_loss.item()
             print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], "
                   f"Batch Size: {current_batch_size}, Loss: {current_loss:.4f}")
-            # TODO: Log individual losses from loss_dict
+            
+            # --- TensorBoard Logging for Scalars ---
+            global_step = epoch * len(data_loader) + i
+            writer.add_scalar('Loss/train_total', total_loss.item(), global_step)
+            
+            # Log individual losses from loss_dict
+            for loss_name, loss_value in loss_dict.items():
+                if loss_name != 'total' and hasattr(loss_value, 'item'): # Ensure it's a tensor
+                    writer.add_scalar(f'Loss/train_{loss_name}', loss_value.item(), global_step)
+                elif loss_name != 'total': # if it's already a float/int
+                     writer.add_scalar(f'Loss/train_{loss_name}', loss_value, global_step)
+            
+            # Log learning rate
+            writer.add_scalar('Hyperparameters/learning_rate', LEARNING_RATE, global_step)
+            # TODO: Log individual losses from loss_dict to console if desired
             # print(f"    Losses: {loss_dict}") # Example logging
 
 print("Training finished (skeleton).")
