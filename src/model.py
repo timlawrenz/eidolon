@@ -70,41 +70,50 @@ class FLAME(nn.Module):
             flame_model_data = pickle.load(f, encoding='latin1')
 
         # FLAME components
-        # The .pkl file seems to load directly as NumPy arrays, not chumpy objects.
-        v_template_np = flame_model_data['v_template']
+        # Conditionally access .r to get NumPy arrays from potential chumpy objects
+        
+        v_template_data = flame_model_data['v_template']
+        v_template_np = v_template_data.r if hasattr(v_template_data, 'r') else v_template_data
         self.register_buffer('v_template', torch.tensor(v_template_np, dtype=torch.float32))
         num_vertices = v_template_np.shape[0]
 
-        # Shapedirs: Expected shape is (num_vertices, 3, total_shape_coeffs)
-        shapedirs_data_np = flame_model_data['shapedirs']
-        self.register_buffer('shapedirs', torch.tensor(shapedirs_data_np[:, :, :n_shape], dtype=torch.float32))
+        # Shapedirs: Expected shape after .r is (num_vertices, 3, total_shape_coeffs)
+        shapedirs_data = flame_model_data['shapedirs']
+        shapedirs_np = shapedirs_data.r if hasattr(shapedirs_data, 'r') else shapedirs_data
+        self.register_buffer('shapedirs', torch.tensor(shapedirs_np[:, :, :n_shape], dtype=torch.float32))
         
-        # Expressedirs: Check if exists
+        # Expressedirs: Check if exists and access .r if it does
         if 'expressedirs' in flame_model_data and flame_model_data['expressedirs'] is not None:
-             expressedirs_data_np = flame_model_data['expressedirs']
-             self.register_buffer('expressedirs', torch.tensor(expressedirs_data_np[:, :, :n_exp], dtype=torch.float32))
+             expressedirs_data = flame_model_data['expressedirs']
+             expressedirs_np = expressedirs_data.r if hasattr(expressedirs_data, 'r') else expressedirs_data
+             self.register_buffer('expressedirs', torch.tensor(expressedirs_np[:, :, :n_exp], dtype=torch.float32))
         else:
             print("Warning: 'expressedirs' not found or is None in FLAME model. Expression parameters will have no effect.")
             self.register_buffer('expressedirs', torch.zeros((num_vertices, 3, n_exp), dtype=torch.float32, device=self.v_template.device))
 
-        # Posedirs: Expected shape is (num_vertices, 3, total_pose_blendshapes)
-        posedirs_data_np = flame_model_data['posedirs']
-        self.register_buffer('posedirs', torch.tensor(posedirs_data_np, dtype=torch.float32)) # Use all pose blendshapes
+        # Posedirs: Expected shape after .r is (num_vertices, 3, total_pose_blendshapes)
+        posedirs_data = flame_model_data['posedirs']
+        posedirs_np = posedirs_data.r if hasattr(posedirs_data, 'r') else posedirs_data
+        self.register_buffer('posedirs', torch.tensor(posedirs_np, dtype=torch.float32)) # Use all pose blendshapes
         
         # J_regressor: Typically a sparse matrix
         j_regressor_data = flame_model_data['J_regressor']
-        if hasattr(j_regressor_data, 'toarray'): # Check for sparse matrix
+        if hasattr(j_regressor_data, 'toarray'): # Check for sparse matrix (e.g., scipy.sparse)
             j_regressor_np = j_regressor_data.toarray()
+        elif hasattr(j_regressor_data, 'r'): # Check for chumpy object
+            j_regressor_np = j_regressor_data.r
         else: # Assume it's already a NumPy array
             j_regressor_np = j_regressor_data
         self.register_buffer('J_regressor', torch.tensor(j_regressor_np, dtype=torch.float32))
         
         # LBS weights
-        lbs_weights_np = flame_model_data['weights']
+        lbs_weights_data = flame_model_data['weights']
+        lbs_weights_np = lbs_weights_data.r if hasattr(lbs_weights_data, 'r') else lbs_weights_data
         self.register_buffer('lbs_weights', torch.tensor(lbs_weights_np, dtype=torch.float32))
         
-        # Faces (typically already a NumPy array)
-        faces_np = flame_model_data['f'].astype(np.int64)
+        # Faces (typically already a NumPy array in the pkl)
+        faces_data = flame_model_data['f']
+        faces_np = faces_data.astype(np.int64) if isinstance(faces_data, np.ndarray) else np.array(faces_data, dtype=np.int64)
         self.register_buffer('faces_idx', torch.tensor(faces_np, dtype=torch.long))
         
         # Kinematic tree (parents of joints)
