@@ -8,7 +8,7 @@ from PIL import Image # PIL is an alias for Pillow, which should be installed vi
 # This will download the 1024x1024 version. We will resize it.
 # Hugging Face doesn't have the 128x128 thumbnail version pre-packaged,
 # so we'll create our own thumbnails.
-DATASET_NAME = "ffhq" 
+DATASET_NAME = "huggan/FFHQ" # More specific path for FFHQ on Hugging Face Hub
 SAVE_DIR = "data/ffhq_thumbnails_128"
 IMAGE_SIZE = 128
 
