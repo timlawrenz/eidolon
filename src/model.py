@@ -169,7 +169,7 @@ def lbs(v_shaped_expressed,
     # `batch_rigid_transform` needs to correctly map these to the full skeleton's `parents`
     # and `J` (rest pose joint locations for the full skeleton).
     # The current `batch_rigid_transform` is a placeholder and doesn't use `rot_mats_lbs` effectively.
-    A_global = batch_rigid_transform(rot_mats_lbs, J, parents, dtype=dtype)
+    A_global = batch_rigid_transform(rot_mats_lbs, J, parents_lbs, dtype=dtype) # Use parents_lbs
     # For FLAME, J_transformed (from J_regressor) are the rest pose joints.
     # The pose is applied to these.
 
