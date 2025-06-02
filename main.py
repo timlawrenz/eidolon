@@ -102,10 +102,10 @@ plt.title("Success! The Rendered Average Face")
 # --- 4. Basic Test for EidolonEncoder ---
 print("\n--- Testing EidolonEncoder ---")
 try:
-    # Define number of FLAME coefficients to predict (example values)
-    # 100 shape + 50 expression + 6 global pose (axis-angle) + 3 translation = 159
-    # Or use the example from the prompt: 227
-    num_flame_coeffs = 159 
+    # Define number of FLAME coefficients to predict.
+    # This should match NUM_COEFFS used in train.py for consistency.
+    # train.py currently uses 227.
+    num_flame_coeffs = 227 
     encoder = EidolonEncoder(num_coeffs=num_flame_coeffs)
     encoder.to(device) # Move encoder to the same device as other operations
     
