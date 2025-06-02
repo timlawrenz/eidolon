@@ -1,5 +1,7 @@
 import torch
 import torchvision
+import matplotlib
+matplotlib.use('Agg') # Set non-interactive backend BEFORE importing pyplot
 import matplotlib.pyplot as plt
 from tqdm import tqdm # Import tqdm
 import numpy as np
