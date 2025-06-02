@@ -3,7 +3,7 @@ import numpy as np
 try:
     # Update this path to where you saved the downloaded file
     deca_landmark_path = './data/flame_model/deca_landmark_embedding.npy' 
-    landmark_data = np.load(deca_landmark_path)
+    landmark_data = np.load(deca_landmark_path, allow_pickle=True) # Added allow_pickle=True
 
     print(f"Successfully loaded: {deca_landmark_path}")
     print(f"Data type: {type(landmark_data)}")
