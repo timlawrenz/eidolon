@@ -147,6 +147,20 @@ def lbs(v_shaped_expressed,
     Returns:
         v_posed (torch.Tensor): Posed vertices.
     """
+    print(f"--- ENTERING LBS FUNCTION (batch_size={v_shaped_expressed.shape[0]}) ---") # VERY FIRST LINE
+    print(f"--- DEBUG lbs input: v_shaped_expressed[0] Stats ---")
+    if v_shaped_expressed.numel() > 0 and v_shaped_expressed.shape[0] > 0:
+        print(f"  Shape: {v_shaped_expressed.shape}")
+        print(f"  X: mean={v_shaped_expressed[0, :, 0].mean().item():.4f}, std={v_shaped_expressed[0, :, 0].std().item():.4f}, "
+              f"min={v_shaped_expressed[0, :, 0].min().item():.4f}, max={v_shaped_expressed[0, :, 0].max().item():.4f}")
+        print(f"  Y: mean={v_shaped_expressed[0, :, 1].mean().item():.4f}, std={v_shaped_expressed[0, :, 1].std().item():.4f}, "
+              f"min={v_shaped_expressed[0, :, 1].min().item():.4f}, max={v_shaped_expressed[0, :, 1].max().item():.4f}")
+        print(f"  Z: mean={v_shaped_expressed[0, :, 2].mean().item():.4f}, std={v_shaped_expressed[0, :, 2].std().item():.4f}, "
+              f"min={v_shaped_expressed[0, :, 2].min().item():.4f}, max={v_shaped_expressed[0, :, 2].max().item():.4f}")
+    else:
+        print("  v_shaped_expressed is empty or has zero batch size.")
+    print(f"----------------------------------------------------")
+
     batch_size = v_shaped_expressed.shape[0]
     device = v_shaped_expressed.device
 
