@@ -549,16 +549,24 @@ class FLAME(nn.Module):
         # Batch it for the lbs function
         J_rest_lbs_batched = J_rest_lbs_no_batch.unsqueeze(0).repeat(batch_size, 1, 1)
 
+        # --- DEBUGGING LBS: Temporarily neutralize non-global poses before passing to lbs ---
+        # The lbs function itself also has internal debugging to force identity rotations
+        # for non-global parts and zero posedirs. This ensures inputs are also zeroed out.
+        debug_neck_pose = torch.zeros_like(neck_pose_params)
+        debug_jaw_pose = torch.zeros_like(jaw_pose_params)
+        debug_eye_pose = torch.zeros_like(eye_pose_params)
+        # --- END DEBUGGING LBS ---
+
         pred_verts_posed = lbs(
             v_shaped_expressed=v_expressed,
-            global_pose_params_6d=pose_params,         # (B, 6) from train.py
-            neck_pose_params_ax=neck_pose_params,      # (B, 3) axis-angle
-            jaw_pose_params_ax=jaw_pose_params,        # (B, 3) axis-angle
-            eye_pose_params_ax=eye_pose_params,        # (B, 6) axis-angle
+            global_pose_params_6d=pose_params,         # Keep this active
+            neck_pose_params_ax=debug_neck_pose,       # Use zero neck pose
+            jaw_pose_params_ax=debug_jaw_pose,         # Use zero jaw pose
+            eye_pose_params_ax=debug_eye_pose,         # Use zero eye pose
             J_transformed_rest_lbs=J_rest_lbs_batched, # Pass pre-computed rest LBS joint locations
             parents_lbs=self.parents_lbs,
             lbs_weights=self.lbs_weights,
-            posedirs=self.posedirs,
+            posedirs=self.posedirs, # lbs internal debugging will zero out posedirs effect
             dtype=self.v_template.dtype
         )
         
