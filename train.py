@@ -292,6 +292,17 @@ for epoch in range(NUM_EPOCHS):
 
                 val_pred_coeffs_vec = encoder(val_gt_images)
                 val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
+
+                # --- Debug: Print Pose Parameter Magnitudes ---
+                print(f"\n--- Validation Pose Params (Epoch {epoch+1}, Step {i+1}) ---")
+                for pname in ['pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
+                    if pname in val_pred_coeffs_dict:
+                        p_tensor = val_pred_coeffs_dict[pname]
+                        print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
+                              f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
+                        # print(f"    First sample values: {p_tensor[0].cpu().numpy()}") # Uncomment for more detail
+                print("--------------------------------------------------")
+                # --- End Debug ---
                 
                 val_pred_verts, val_pred_landmarks_3d = flame_model(
                     shape_params=val_pred_coeffs_dict['shape_params'],
