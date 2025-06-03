@@ -539,13 +539,11 @@ class FLAME(nn.Module):
         
         # The lbs function now takes individual pose parameters and handles conversions internally.
         
-        # Calculate rest-pose joint locations for the LBS joints
-        # self.J_regressor is (num_lbs_joints, num_vertices), self.v_template is (num_vertices, 3)
-        # J_rest_lbs_no_batch will be (num_lbs_joints, 3)
-        # self.J_regressor is (num_lbs_joints, num_vertices), self.v_template is (num_vertices, 3)
-        J_rest_lbs_no_batch = torch.einsum('JV,VC->JC', self.J_regressor, self.v_template)
-        # Batch it for the lbs function
-        J_rest_lbs_batched = J_rest_lbs_no_batch.unsqueeze(0).repeat(batch_size, 1, 1)
+        # Calculate joint locations for LBS based on v_expressed (shaped + expressed vertices)
+        # self.J_regressor is (num_lbs_joints, num_vertices)
+        # v_expressed is (B, num_vertices, 3)
+        # J_for_lbs_batched will be (B, num_lbs_joints, 3)
+        J_for_lbs_batched = torch.einsum('JV,BVC->BJC', self.J_regressor, v_expressed)
 
         # --- DEBUGGING LBS: Temporarily neutralize non-global poses before passing to lbs ---
         # The lbs function itself also has internal debugging to force identity rotations
@@ -561,7 +559,7 @@ class FLAME(nn.Module):
             neck_pose_params_ax=debug_neck_pose,       # Use zero neck pose
             jaw_pose_params_ax=debug_jaw_pose,         # Use zero jaw pose
             eye_pose_params_ax=debug_eye_pose,         # Use zero eye pose
-            J_transformed_rest_lbs=J_rest_lbs_batched, # Pass pre-computed rest LBS joint locations
+            J_transformed_rest_lbs=J_for_lbs_batched,  # Pass LBS joint locations from v_expressed
             parents_lbs=self.parents_lbs,
             lbs_weights=self.lbs_weights,
             posedirs=self.posedirs, # lbs internal debugging will zero out posedirs effect
