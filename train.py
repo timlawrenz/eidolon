@@ -364,23 +364,17 @@ for epoch in range(NUM_EPOCHS):
             val_pred_landmarks_3d, image_size=_image_size_for_projection_val
         )[:, :, :2]
 
-        output_dir = "outputs/validation_images"
-        os.makedirs(output_dir, exist_ok=True)
-        # Save with epoch number for clarity
-        save_path_prefix = os.path.join(output_dir, f"epoch_{epoch+1}") 
+        # Images are now only logged to TensorBoard, not saved as separate files.
+        # output_dir = "outputs/validation_images" # No longer saving separate files
+        # os.makedirs(output_dir, exist_ok=True)
+        # save_path_prefix = os.path.join(output_dir, f"epoch_{epoch+1}") 
         
         mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
         std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
         val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
 
-        save_validation_images(
-            val_gt_images_unnorm_tb,
-            val_rendered_images, 
-            val_gt_landmarks_for_vis, # Use the correctly scaled GT landmarks for this validation set
-            val_pred_landmarks_2d_model,
-            save_path_prefix,
-            num_images=num_val_samples 
-        )
+        # The save_validation_images call is removed.
+        # Visual output is handled by TensorBoard logging below.
         
         img_grid_gt = torchvision.utils.make_grid(val_gt_images_unnorm_tb.clamp(0,1)) 
         writer.add_image('Validation/ground_truth_epoch_end', img_grid_gt, current_global_step)
