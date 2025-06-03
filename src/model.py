@@ -176,6 +176,18 @@ def lbs(v_shaped_expressed,
     #    This tensor is pre-computed in FLAME.forward using self.J_regressor and self.v_template.
     #    self.J_regressor is expected to be for the 5 LBS joints.
 
+    print(f"--- DEBUG lbs: J_transformed_rest_lbs[0] Stats ---")
+    print(f"  Shape: {J_transformed_rest_lbs.shape}")
+    if J_transformed_rest_lbs.numel() > 0 and J_transformed_rest_lbs.shape[0] > 0:
+        print(f"  X: mean={J_transformed_rest_lbs[0, :, 0].mean().item():.4f}, std={J_transformed_rest_lbs[0, :, 0].std().item():.4f}")
+        print(f"  Y: mean={J_transformed_rest_lbs[0, :, 1].mean().item():.4f}, std={J_transformed_rest_lbs[0, :, 1].std().item():.4f}")
+        print(f"  Z: mean={J_transformed_rest_lbs[0, :, 2].mean().item():.4f}, std={J_transformed_rest_lbs[0, :, 2].std().item():.4f}")
+    print(f"--- DEBUG lbs: rot_mats_lbs[0] Stats (first 3x3 of 5) ---")
+    print(f"  Shape: {rot_mats_lbs.shape}")
+    if rot_mats_lbs.numel() > 0 and rot_mats_lbs.shape[0] > 0:
+        print(rot_mats_lbs[0, 0, :, :]) # Print the first global rotation matrix for the first sample
+    print(f"----------------------------------------------------")
+
     # 3. Get global joint transformations A_global (B, num_lbs_joints, 4, 4)
     #    using the pre-computed rest_pose LBS joint locations.
     #    J_transformed_rest_lbs is (B, num_lbs_joints, 3)
@@ -187,6 +199,15 @@ def lbs(v_shaped_expressed,
     # rel_transforms (A_global_deca): (B, num_lbs_joints, 4, 4) - These are the skinning matrices
     _, A_global = batch_rigid_transform(rot_mats_lbs, J_transformed_rest_lbs, parents_lbs, dtype=dtype)
     # We use A_global (rel_transforms) for skinning. posed_joints is not directly used here for skinning v_shaped_expressed.
+
+    print(f"--- DEBUG lbs: A_global[0] Stats (first 4x4 of 5) ---")
+    print(f"  Shape: {A_global.shape}")
+    if A_global.numel() > 0 and A_global.shape[0] > 0:
+        print(A_global[0, 0, :, :]) # Print the first skinning matrix for the first sample
+        # Check for NaNs or Infs in A_global
+        if torch.isnan(A_global).any() or torch.isinf(A_global).any():
+            print("CRITICAL WARNING: NaNs or Infs found in A_global!")
+    print(f"-------------------------------------------------")
 
     # 4. Calculate pose-corrective blendshapes (posedirs)
     # Standard FLAME posedirs (36 features) are typically driven by neck, jaw, left eye, and right eye rotations.
@@ -223,6 +244,16 @@ def lbs(v_shaped_expressed,
     # Apply posedirs to v_shaped_expressed before skinning
     v_to_skin = v_shaped_expressed + pose_blendshapes
 
+    print(f"--- DEBUG lbs: v_to_skin[0] Stats ---")
+    print(f"  Shape: {v_to_skin.shape}")
+    if v_to_skin.numel() > 0 and v_to_skin.shape[0] > 0:
+        print(f"  X: mean={v_to_skin[0, :, 0].mean().item():.4f}, std={v_to_skin[0, :, 0].std().item():.4f}")
+        print(f"  Y: mean={v_to_skin[0, :, 1].mean().item():.4f}, std={v_to_skin[0, :, 1].std().item():.4f}")
+        print(f"  Z: mean={v_to_skin[0, :, 2].mean().item():.4f}, std={v_to_skin[0, :, 2].std().item():.4f}")
+        if torch.isnan(v_to_skin).any() or torch.isinf(v_to_skin).any():
+            print("CRITICAL WARNING: NaNs or Infs found in v_to_skin!")
+    print(f"---------------------------------------")
+
     # 5. Transform vertices by LBS
     T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, num_lbs_joints)
     # Use v_to_skin for skinning
@@ -231,6 +262,16 @@ def lbs(v_shaped_expressed,
     
     # v_posed is now the result of skinning the posedirs-corrected mesh
     v_posed = v_posed_lbs 
+
+    print(f"--- DEBUG lbs: v_posed[0] (output) Stats ---")
+    print(f"  Shape: {v_posed.shape}")
+    if v_posed.numel() > 0 and v_posed.shape[0] > 0:
+        print(f"  X: mean={v_posed[0, :, 0].mean().item():.4f}, std={v_posed[0, :, 0].std().item():.4f}")
+        print(f"  Y: mean={v_posed[0, :, 1].mean().item():.4f}, std={v_posed[0, :, 1].std().item():.4f}")
+        print(f"  Z: mean={v_posed[0, :, 2].mean().item():.4f}, std={v_posed[0, :, 2].std().item():.4f}")
+        if torch.isnan(v_posed).any() or torch.isinf(v_posed).any():
+            print("CRITICAL WARNING: NaNs or Infs found in v_posed output!")
+    print(f"--------------------------------------------")
     return v_posed
 
 
@@ -315,6 +356,16 @@ class FLAME(nn.Module):
         v_template_np = v_template_data.r if hasattr(v_template_data, 'r') else v_template_data
         self.register_buffer('v_template', torch.tensor(v_template_np, dtype=torch.float32))
         num_vertices = v_template_np.shape[0]
+
+        print(f"--- DEBUG: self.v_template Stats (in FLAME.__init__) ---")
+        print(f"  Shape: {self.v_template.shape}")
+        print(f"  X: mean={self.v_template[:, 0].mean().item():.4f}, std={self.v_template[:, 0].std().item():.4f}, "
+              f"min={self.v_template[:, 0].min().item():.4f}, max={self.v_template[:, 0].max().item():.4f}")
+        print(f"  Y: mean={self.v_template[:, 1].mean().item():.4f}, std={self.v_template[:, 1].std().item():.4f}, "
+              f"min={self.v_template[:, 1].min().item():.4f}, max={self.v_template[:, 1].max().item():.4f}")
+        print(f"  Z: mean={self.v_template[:, 2].mean().item():.4f}, std={self.v_template[:, 2].std().item():.4f}, "
+              f"min={self.v_template[:, 2].min().item():.4f}, max={self.v_template[:, 2].max().item():.4f}")
+        print(f"----------------------------------------------------------")
 
         # Shapedirs: Expected shape after .r is (num_vertices, 3, total_shape_coeffs)
         shapedirs_data = flame_model_data['shapedirs']
