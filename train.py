@@ -331,16 +331,6 @@ for epoch in range(NUM_EPOCHS):
 
         val_pred_coeffs_vec = encoder(val_gt_images)
         val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
-
-        # --- Debug: Print Predicted FLAME Parameter Magnitudes (Epoch End) ---
-        print(f"--- Validation Predicted FLAME Parameters (Epoch {epoch+1} End) ---")
-        for pname in ['shape_params', 'expression_params', 'pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
-            if pname in val_pred_coeffs_dict:
-                p_tensor = val_pred_coeffs_dict[pname]
-                print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
-                      f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
-        print("--------------------------------------------------\n")
-        # --- End Debug ---
         
         val_pred_verts, val_pred_landmarks_3d = flame_model(
             shape_params=val_pred_coeffs_dict['shape_params'],
@@ -351,6 +341,43 @@ for epoch in range(NUM_EPOCHS):
             neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
             transl=val_pred_coeffs_dict['transl']
         )
+
+        # --- Debug: Print Predicted 3D Vertices and 3D Landmarks Statistics ---
+        print(f"--- Predicted 3D Vertices Stats (Epoch {epoch+1} End, First Sample of Batch) ---")
+        if val_pred_verts.numel() > 0 and val_pred_verts.shape[0] > 0: # Check if batch is not empty
+            print(f"  Shape: {val_pred_verts.shape}")
+            print(f"  X: mean={val_pred_verts[0, :, 0].mean().item():.4f}, std={val_pred_verts[0, :, 0].std().item():.4f}, "
+                  f"min={val_pred_verts[0, :, 0].min().item():.4f}, max={val_pred_verts[0, :, 0].max().item():.4f}")
+            print(f"  Y: mean={val_pred_verts[0, :, 1].mean().item():.4f}, std={val_pred_verts[0, :, 1].std().item():.4f}, "
+                  f"min={val_pred_verts[0, :, 1].min().item():.4f}, max={val_pred_verts[0, :, 1].max().item():.4f}")
+            print(f"  Z: mean={val_pred_verts[0, :, 2].mean().item():.4f}, std={val_pred_verts[0, :, 2].std().item():.4f}, "
+                  f"min={val_pred_verts[0, :, 2].min().item():.4f}, max={val_pred_verts[0, :, 2].max().item():.4f}")
+        else:
+            print("  val_pred_verts is empty or has zero batch size.")
+        
+        print(f"--- Predicted 3D Landmarks Stats (Epoch {epoch+1} End, First Sample of Batch) ---")
+        if val_pred_landmarks_3d.numel() > 0 and val_pred_landmarks_3d.shape[0] > 0: # Check if batch is not empty
+            print(f"  Shape: {val_pred_landmarks_3d.shape}")
+            print(f"  X: mean={val_pred_landmarks_3d[0, :, 0].mean().item():.4f}, std={val_pred_landmarks_3d[0, :, 0].std().item():.4f}, "
+                  f"min={val_pred_landmarks_3d[0, :, 0].min().item():.4f}, max={val_pred_landmarks_3d[0, :, 0].max().item():.4f}")
+            print(f"  Y: mean={val_pred_landmarks_3d[0, :, 1].mean().item():.4f}, std={val_pred_landmarks_3d[0, :, 1].std().item():.4f}, "
+                  f"min={val_pred_landmarks_3d[0, :, 1].min().item():.4f}, max={val_pred_landmarks_3d[0, :, 1].max().item():.4f}")
+            print(f"  Z: mean={val_pred_landmarks_3d[0, :, 2].mean().item():.4f}, std={val_pred_landmarks_3d[0, :, 2].std().item():.4f}, "
+                  f"min={val_pred_landmarks_3d[0, :, 2].min().item():.4f}, max={val_pred_landmarks_3d[0, :, 2].max().item():.4f}")
+        else:
+            print("  val_pred_landmarks_3d is empty or has zero batch size.")
+        # --- End Debug 3D Stats ---
+
+        # --- Debug: Print Predicted FLAME Parameter Magnitudes (Epoch End) ---
+        # This block was moved here so all debug prints for validation are grouped.
+        print(f"--- Validation Predicted FLAME Parameters (Epoch {epoch+1} End) ---")
+        for pname in ['shape_params', 'expression_params', 'pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
+            if pname in val_pred_coeffs_dict:
+                p_tensor = val_pred_coeffs_dict[pname]
+                print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
+                      f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
+        print("--------------------------------------------------\n")
+        # --- End Debug FLAME Params ---
         
         val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
         val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
