@@ -83,7 +83,7 @@ VERBOSE_LBS_DEBUG_EPOCHS = {0, NUM_EPOCHS // 2, NUM_EPOCHS - 1} if NUM_EPOCHS > 
 
 LOSS_WEIGHTS = {
     'pixel': 1.0,
-    'landmark': 1e-4, # Keep this for now, or even consider slightly increasing later
+    'landmark': 1e-2, # Increased from 1e-4 to give more weight to landmark alignment
     'reg_shape': 1e-3,  # Increased from 1e-4
     # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
     # TotalLoss will use a default weight of 0.0 for it.
