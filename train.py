@@ -56,7 +56,7 @@ LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
 NUM_COEFFS = 227 # Total number of FLAME parameters the encoder will predict
 # Example breakdown (adjust based on your actual FLAME parameterization):
 NUM_SHAPE_COEFFS = 100
-NUM_EXPRESSION_COEFFS = 50
+NUM_EXPRESSION_COEFFS = 0 # Disabled as 'expressedirs' are missing from the FLAME model pkl
 NUM_GLOBAL_POSE_COEFFS = 6 # e.g., axis-angle for global rotation
 NUM_JAW_POSE_COEFFS = 3    # Jaw pose
 NUM_EYE_POSE_COEFFS = 6    # Left and right eye pose (3 each)
@@ -65,9 +65,12 @@ NUM_TRANSLATION_COEFFS = 3 # Global translation
 
 # Remaining coefficients, e.g., for texture, lighting, or other details
 # Calculated as: NUM_COEFFS - (sum of above)
-# Current sum: 100+50+6+3+6+3+3 = 171
-# NUM_COEFFS = 227, so 227 - 171 = 56
-NUM_DETAIL_COEFFS = 56 
+# Current sum (with expressions disabled): 100+0+6+3+6+3+3 = 121
+# NUM_COEFFS = 227, so 227 - 121 = 106
+NUM_DETAIL_COEFFS = NUM_COEFFS - (NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS + \
+                                 NUM_GLOBAL_POSE_COEFFS + NUM_JAW_POSE_COEFFS + \
+                                 NUM_EYE_POSE_COEFFS + NUM_NECK_POSE_COEFFS + \
+                                 NUM_TRANSLATION_COEFFS)
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
 DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' # Updated path for DECA landmarks
@@ -82,7 +85,8 @@ LOSS_WEIGHTS = {
     'pixel': 1.0,
     'landmark': 1e-4, # Keep this for now, or even consider slightly increasing later
     'reg_shape': 1e-3,  # Increased from 1e-4
-    'reg_expression': 1e-5 # << Maybe increase slightly too if expressions also look extreme
+    # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
+    # TotalLoss will use a default weight of 0.0 for it.
 }
 
 # 2. Initialize everything
