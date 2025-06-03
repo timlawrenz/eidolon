@@ -358,14 +358,21 @@ for epoch in range(NUM_EPOCHS):
                 os.makedirs(output_dir, exist_ok=True)
                 save_path_prefix = os.path.join(output_dir, f"epoch_{epoch+1}_step_{i+1}")
                 
+                # Prepare unnormalized GT images for saving and TensorBoard
+                mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
+                std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
+                val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb # val_gt_images is (num_val_samples, C, H, W)
+
                 save_validation_images(
-                    val_gt_images, val_rendered_images, 
-                    val_gt_landmarks, val_pred_landmarks_2d_model,
+                    val_gt_images_unnorm_tb, # Pass unnormalized GT images
+                    val_rendered_images, 
+                    val_gt_landmarks,      # Already scaled to 224x224 space
+                    val_pred_landmarks_2d_model,
                     save_path_prefix,
                     num_images=num_val_samples 
                 )
 
-                mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
+                # mean_tb and std_tb already defined above for unnormalization
                 std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
                 val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
                 
