@@ -316,6 +316,10 @@ class EidolonEncoder(nn.Module):
         weights = ResNet50_Weights.DEFAULT
         self.backbone = resnet50(weights=weights)
 
+        # Freeze all parameters in the backbone
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
         # 2. Get the number of input features for the final layer
         # This is typically 2048 for ResNet-50
         num_bottleneck_features = self.backbone.fc.in_features
