@@ -329,6 +329,49 @@ class EidolonEncoder(nn.Module):
         # We replace it with a new linear layer that outputs our coefficient vector.
         self.backbone.fc = nn.Linear(num_bottleneck_features, num_coeffs)
 
+        # Initialize the biases of the new fully connected layer
+        # This aims to start predictions closer to a neutral/canonical face
+        with torch.no_grad():
+            # Define the expected number of coefficients for each parameter type
+            # These should match the definitions in train.py (NUM_SHAPE_COEFFS, etc.)
+            # For num_coeffs = 227:
+            n_shape = 100
+            n_expr = 50
+            n_global_pose = 6 # 6D rotation
+            n_jaw_pose = 3    # axis-angle
+            n_eye_pose = 6    # axis-angle
+            n_neck_pose = 3   # axis-angle
+            n_transl = 3
+            # n_detail = 56 (remaining, NUM_COEFFS - sum_of_above)
+
+            # Initialize all biases to zero first
+            self.backbone.fc.bias.fill_(0.0)
+
+            # Set specific biases for global pose to encourage identity rotation
+            # For 6D rotation (representing the first two columns of a 3x3 matrix),
+            # identity is [1,0,0] and [0,1,0]. So, 6D vector is (1,0,0,0,1,0).
+            current_idx = n_shape + n_expr
+            # Global pose params (6D)
+            if num_coeffs >= current_idx + n_global_pose:
+                # Indices for the 6D global pose parameters
+                # R_col1_x, R_col1_y, R_col1_z, R_col2_x, R_col2_y, R_col2_z
+                # Identity: col1=(1,0,0), col2=(0,1,0)
+                self.backbone.fc.bias[current_idx + 0] = 1.0 # R_col1_x
+                self.backbone.fc.bias[current_idx + 1] = 0.0 # R_col1_y
+                self.backbone.fc.bias[current_idx + 2] = 0.0 # R_col1_z
+                self.backbone.fc.bias[current_idx + 3] = 0.0 # R_col2_x
+                self.backbone.fc.bias[current_idx + 4] = 1.0 # R_col2_y
+                self.backbone.fc.bias[current_idx + 5] = 0.0 # R_col2_z
+            
+            # Other parameters (shape, expression, jaw/neck/eye poses, translation, detail)
+            # will have their biases remain at 0.0, encouraging neutral initial values.
+            # This means:
+            # - Zero shape offset (average shape)
+            # - Zero expression offset
+            # - Zero jaw, neck, eye pose (identity rotation for axis-angle)
+            # - Zero translation
+            # - Zero detail parameters
+
     def forward(self, image):
         """
         The forward pass of the model.
