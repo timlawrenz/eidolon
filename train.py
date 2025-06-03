@@ -336,33 +336,23 @@ for epoch in range(NUM_EPOCHS):
         val_pred_coeffs_vec = encoder(val_gt_images)
         val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec) # Encoder's actual predictions
 
-        # --- DEBUG: Force ALL FLAME parameters to zero for validation rendering ---
-        # This will render the base v_template at the origin with no pose.
-        # This helps verify the camera and projection pipeline.
-        debug_shape_params = torch.zeros_like(val_pred_coeffs_dict['shape_params'])
-        debug_expression_params = torch.zeros_like(val_pred_coeffs_dict['expression_params'])
-        debug_pose_params = torch.zeros_like(val_pred_coeffs_dict['pose_params'])
-        # Use distinct names for these debug zeroed params to avoid conflict if original names are used later
-        debug_jaw_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['jaw_pose_params'])
-        debug_eye_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['eye_pose_params'])
-        debug_neck_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['neck_pose_params'])
-        debug_transl = torch.zeros_like(val_pred_coeffs_dict['transl'])
-        print("DEBUG: Forcing all FLAME parameters to zero for validation rendering (template mesh at origin).")
+        # --- INFO: Using actual predicted FLAME parameters for validation rendering ---
+        # This will render the mesh based on the encoder's current output.
         
         # Determine if LBS internal prints should be active for this epoch's validation
         debug_lbs_this_epoch = epoch in VERBOSE_LBS_DEBUG_EPOCHS
         if debug_lbs_this_epoch:
-            print(f"--- INFO: Enabling verbose LBS debug prints for epoch {epoch+1} ---")
-        # --- END DEBUG ---
+            print(f"--- INFO: Enabling verbose LBS debug prints for epoch {epoch+1} (using actual predicted params) ---")
+        # --- END INFO ---
         
         val_pred_verts, val_pred_landmarks_3d = flame_model(
-            shape_params=debug_shape_params,
-            expression_params=debug_expression_params,
-            pose_params=debug_pose_params, 
-            jaw_pose_params=debug_jaw_pose_params_val, 
-            eye_pose_params=debug_eye_pose_params_val, 
-            neck_pose_params=debug_neck_pose_params_val, 
-            transl=debug_transl,
+            shape_params=val_pred_coeffs_dict['shape_params'],
+            expression_params=val_pred_coeffs_dict['expression_params'],
+            pose_params=val_pred_coeffs_dict['pose_params'], 
+            jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'], 
+            eye_pose_params=val_pred_coeffs_dict['eye_pose_params'], 
+            neck_pose_params=val_pred_coeffs_dict['neck_pose_params'], 
+            transl=val_pred_coeffs_dict['transl'],
             debug_print=debug_lbs_this_epoch # Pass the flag to FLAME model
         )
         
