@@ -161,13 +161,11 @@ def lbs(v_shaped_expressed,
         print(f"Warning: Global pose_params have unexpected shape {global_pose_params_6d.shape}. Expected 3 or 6. Using identity for global rotation.")
         global_rot_mat = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
 
-    # --- DEBUGGING: Force neck, jaw, eye rotations to identity ---
-    ident_rot_mat = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
-    neck_rot_mat = ident_rot_mat.clone()
-    jaw_rot_mat = ident_rot_mat.clone()
-    eye_l_rot_mat = ident_rot_mat.clone()
-    eye_r_rot_mat = ident_rot_mat.clone()
-    # --- END DEBUGGING ---
+    # Calculate neck, jaw, and eye rotation matrices normally
+    neck_rot_mat = batch_rodrigues(neck_pose_params_ax)
+    jaw_rot_mat = batch_rodrigues(jaw_pose_params_ax)
+    eye_l_rot_mat = batch_rodrigues(eye_pose_params_ax[:, :3])
+    eye_r_rot_mat = batch_rodrigues(eye_pose_params_ax[:, 3:])
 
     # Stack rotation matrices for the 5 main LBS joints: global, neck, jaw, left_eye, right_eye
     rot_mats_lbs = torch.stack([
