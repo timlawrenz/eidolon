@@ -72,7 +72,7 @@ NUM_DETAIL_COEFFS = 56
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
 DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' # Updated path for DECA landmarks
 
-VISUALIZATION_INTERVAL = 500 # Steps between generating validation images, and for all detailed logging.
+# VISUALIZATION_INTERVAL = 500 # Removed, snapshots are now per epoch.
 
 LOSS_WEIGHTS = {
     'pixel': 1.0,
@@ -276,113 +276,119 @@ for epoch in range(NUM_EPOCHS):
         total_loss.backward() 
         optimizer.step()
         
-        # Visual validation step, TensorBoard logging, and detailed console output
-        if i % VISUALIZATION_INTERVAL == 0: 
-            current_global_step = epoch * len(data_loader) + i
-            
-            # --- Console Logging ---
-            # Fetch specific loss values for console logging
-            loss_pixel_val = loss_dict.get('pixel', torch.tensor(0.0)).item()
-            loss_landmark_val = loss_dict.get('landmark', torch.tensor(0.0)).item()
-            loss_reg_shape_val = loss_dict.get('reg_shape', torch.tensor(0.0)).item()
-            loss_total_val = total_loss.item() # Already available
+    # --- EPOCH-END SNAPSHOT: Visual validation, TensorBoard logging, and detailed console output ---
+    # This block runs once at the end of each epoch.
+    # It uses variables from the last batch of the epoch (gt_images, gt_landmarks_2d_original_scale, loss_dict, total_loss).
+    
+    current_global_step = (epoch + 1) * len(data_loader) # Global step for TensorBoard
+    
+    # --- Console Logging (Epoch End) ---
+    # Fetch specific loss values from the last batch for console logging
+    loss_pixel_val = loss_dict.get('pixel', torch.tensor(0.0)).item()
+    loss_landmark_val = loss_dict.get('landmark', torch.tensor(0.0)).item()
+    loss_reg_shape_val = loss_dict.get('reg_shape', torch.tensor(0.0)).item()
+    loss_total_val = total_loss.item() # From the last batch
 
-            print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i+1}/{len(data_loader)}], Batch: {current_batch_size}, "
-                  f"Total Loss: {loss_total_val:.4f}, Pixel: {loss_pixel_val:.4f}, "
-                  f"Landmark: {loss_landmark_val:.4f}, RegShape: {loss_reg_shape_val:.4f}")
+    print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} Completed ---")
+    print(f"  Last Batch Losses: Total: {loss_total_val:.4f}, Pixel: {loss_pixel_val:.4f}, "
+          f"Landmark: {loss_landmark_val:.4f}, RegShape: {loss_reg_shape_val:.4f}")
+    print(f"  Config: Batch Size: {BATCH_SIZE}, LR: {LEARNING_RATE}")
 
-            # --- TensorBoard Scalar Logging ---
-            writer.add_scalar('Loss/train_total', loss_total_val, current_global_step)
-            for loss_name, loss_value in loss_dict.items():
-                if loss_name != 'total': # total is already logged
-                    val_to_log = loss_value.item() if hasattr(loss_value, 'item') else loss_value
-                    writer.add_scalar(f'Loss/train_{loss_name}', val_to_log, current_global_step)
-            writer.add_scalar('Hyperparameters/learning_rate', LEARNING_RATE, current_global_step)
+    # --- TensorBoard Scalar Logging (Epoch End) ---
+    writer.add_scalar('Loss/train_total_epoch_last_batch', loss_total_val, current_global_step)
+    for loss_name, loss_value in loss_dict.items():
+        if loss_name != 'total': # total is already logged
+            val_to_log = loss_value.item() if hasattr(loss_value, 'item') else loss_value
+            writer.add_scalar(f'Loss/train_{loss_name}_epoch_last_batch', val_to_log, current_global_step)
+    writer.add_scalar('Hyperparameters/learning_rate_epoch', LEARNING_RATE, current_global_step) # Log LR per epoch too
 
-            # --- Validation Image Generation and TensorBoard Image Logging ---
-            encoder.eval() # Set model to evaluation mode
-            with torch.no_grad(): # No gradients needed for validation
-                num_val_samples = min(4, gt_images.shape[0]) 
-                val_gt_images = gt_images[:num_val_samples]
-                # Use the original scale landmarks for selection, then scale them for visualization
-                val_gt_landmarks_original_scale = gt_landmarks_2d_original_scale[:num_val_samples]
-                
-                # Scale these validation ground truth landmarks as well
-                val_gt_landmarks_scaled = val_gt_landmarks_original_scale.clone()
-                val_gt_landmarks_scaled[..., 0] *= scale_x
-                val_gt_landmarks_scaled[..., 1] *= scale_y
-                # val_gt_landmarks for save_validation_images should be the scaled version
-                val_gt_landmarks = val_gt_landmarks_scaled
+    # --- Validation Image Generation and TensorBoard Image Logging (Epoch End) ---
+    encoder.eval() # Set model to evaluation mode
+    with torch.no_grad(): # No gradients needed for validation
+        # Use the last batch's gt_images for validation visualization
+        num_val_samples = min(4, gt_images.shape[0]) 
+        val_gt_images = gt_images[:num_val_samples] # From last batch of epoch
+        val_gt_landmarks_original_scale = gt_landmarks_2d_original_scale[:num_val_samples] # From last batch
+        
+        # Recalculate scaling factors for these specific validation landmarks
+        # (though they are constant if raster_settings.image_size doesn't change)
+        _vis_original_landmark_img_width = 128.0
+        _vis_original_landmark_img_height = 128.0
+        _vis_target_projection_img_width = float(raster_settings.image_size)
+        _vis_target_projection_img_height = float(raster_settings.image_size)
+        _vis_scale_x = _vis_target_projection_img_width / _vis_original_landmark_img_width
+        _vis_scale_y = _vis_target_projection_img_height / _vis_original_landmark_img_height
 
-                val_pred_coeffs_vec = encoder(val_gt_images)
-                val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
+        val_gt_landmarks_scaled = val_gt_landmarks_original_scale.clone()
+        val_gt_landmarks_scaled[..., 0] *= _vis_scale_x
+        val_gt_landmarks_scaled[..., 1] *= _vis_scale_y
+        val_gt_landmarks_for_vis = val_gt_landmarks_scaled # Use this for save_validation_images
 
-                # --- Debug: Print Pose Parameter Magnitudes ---
-                print(f"\n--- Validation Pose Params (Epoch {epoch+1}, Step {i+1}) ---")
-                for pname in ['pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
-                    if pname in val_pred_coeffs_dict:
-                        p_tensor = val_pred_coeffs_dict[pname]
-                        print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
-                              f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
-                        # print(f"    First sample values: {p_tensor[0].cpu().numpy()}") # Uncomment for more detail
-                print("--------------------------------------------------")
-                # --- End Debug ---
-                
-                val_pred_verts, val_pred_landmarks_3d = flame_model(
-                    shape_params=val_pred_coeffs_dict['shape_params'],
-                    expression_params=val_pred_coeffs_dict['expression_params'],
-                    pose_params=val_pred_coeffs_dict['pose_params'],
-                    jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'],
-                    eye_pose_params=val_pred_coeffs_dict['eye_pose_params'],
-                    neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
-                    transl=val_pred_coeffs_dict['transl']
-                )
-                
-                # Render val_pred_verts immediately after obtaining them
-                val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
-                val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
-                
-                val_meshes_batch = Meshes(
-                    verts=list(val_pred_verts),
-                    faces=[flame_model.faces_idx] * val_pred_verts.shape[0], # val_pred_verts.shape[0] is num_val_samples
-                    textures=val_textures_batch
-                )
-                val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
-                
-                val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                    val_pred_landmarks_3d, image_size=image_size_for_projection
-                )[:, :, :2]
-                # Rendering block moved earlier, before 2D landmark projection.
+        val_pred_coeffs_vec = encoder(val_gt_images)
+        val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
 
-                output_dir = "outputs/validation_images"
-                os.makedirs(output_dir, exist_ok=True)
-                save_path_prefix = os.path.join(output_dir, f"epoch_{epoch+1}_step_{i+1}")
-                
-                # Prepare unnormalized GT images for saving and TensorBoard
-                mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
-                std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
-                val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb # val_gt_images is (num_val_samples, C, H, W)
+        # --- Debug: Print Pose Parameter Magnitudes (Epoch End) ---
+        print(f"--- Validation Pose Params (Epoch {epoch+1} End) ---")
+        for pname in ['pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
+            if pname in val_pred_coeffs_dict:
+                p_tensor = val_pred_coeffs_dict[pname]
+                print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
+                      f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
+        print("--------------------------------------------------\n")
+        # --- End Debug ---
+        
+        val_pred_verts, val_pred_landmarks_3d = flame_model(
+            shape_params=val_pred_coeffs_dict['shape_params'],
+            expression_params=val_pred_coeffs_dict['expression_params'],
+            pose_params=val_pred_coeffs_dict['pose_params'],
+            jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'],
+            eye_pose_params=val_pred_coeffs_dict['eye_pose_params'],
+            neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
+            transl=val_pred_coeffs_dict['transl']
+        )
+        
+        val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
+        val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
+        
+        val_meshes_batch = Meshes(
+            verts=list(val_pred_verts),
+            faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
+            textures=val_textures_batch
+        )
+        val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
+        
+        # image_size_for_projection is defined in the main training loop, ensure it's available
+        # or redefine. It's (raster_settings.image_size, raster_settings.image_size)
+        _image_size_for_projection_val = (raster_settings.image_size, raster_settings.image_size)
+        val_pred_landmarks_2d_model = cameras.transform_points_screen(
+            val_pred_landmarks_3d, image_size=_image_size_for_projection_val
+        )[:, :, :2]
 
-                save_validation_images(
-                    val_gt_images_unnorm_tb, # Pass unnormalized GT images
-                    val_rendered_images, 
-                    val_gt_landmarks,      # Already scaled to 224x224 space
-                    val_pred_landmarks_2d_model,
-                    save_path_prefix,
-                    num_images=num_val_samples 
-                )
+        output_dir = "outputs/validation_images"
+        os.makedirs(output_dir, exist_ok=True)
+        # Save with epoch number for clarity
+        save_path_prefix = os.path.join(output_dir, f"epoch_{epoch+1}") 
+        
+        mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
+        std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
+        val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
 
-                # mean_tb and std_tb already defined above for unnormalization
-                std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
-                val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
-                
-                img_grid_gt = torchvision.utils.make_grid(val_gt_images_unnorm_tb.clamp(0,1)) 
-                writer.add_image('Validation/ground_truth', img_grid_gt, current_global_step)
-                
-                img_grid_rendered = torchvision.utils.make_grid(val_rendered_images.clamp(0,1))
-                writer.add_image('Validation/prediction', img_grid_rendered, current_global_step)
+        save_validation_images(
+            val_gt_images_unnorm_tb,
+            val_rendered_images, 
+            val_gt_landmarks_for_vis, # Use the correctly scaled GT landmarks for this validation set
+            val_pred_landmarks_2d_model,
+            save_path_prefix,
+            num_images=num_val_samples 
+        )
+        
+        img_grid_gt = torchvision.utils.make_grid(val_gt_images_unnorm_tb.clamp(0,1)) 
+        writer.add_image('Validation/ground_truth_epoch_end', img_grid_gt, current_global_step)
+        
+        img_grid_rendered = torchvision.utils.make_grid(val_rendered_images.clamp(0,1))
+        writer.add_image('Validation/prediction_epoch_end', img_grid_rendered, current_global_step)
 
-            encoder.train() # Set model back to training mode
+    encoder.train() # Set model back to training mode
 
 print("Training finished (skeleton).")
 
