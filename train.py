@@ -27,7 +27,7 @@ import os # For os.makedirs and os.path.join
 from src.dataset import FaceDataset
 from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
-from src.utils import save_validation_images # Import the new utility function
+from src.utils import save_validation_images, draw_landmarks_on_images_tensor # Import the new utility functions
 import pickle # For loading FLAME model faces
 from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
 import torchvision # For making image grids for TensorBoard
@@ -375,12 +375,29 @@ for epoch in range(NUM_EPOCHS):
 
         # The save_validation_images call is removed.
         # Visual output is handled by TensorBoard logging below.
+
+        # Draw landmarks on images for TensorBoard
+        # val_gt_images_unnorm_tb is (B,C,H,W) float [0,1]
+        # val_gt_landmarks_for_vis is (B, N, 2) float, scaled
+        # val_rendered_images is (B,C,H,W) float [0,1]
+        # val_pred_landmarks_2d_model is (B, N, 2) float, scaled
         
-        img_grid_gt = torchvision.utils.make_grid(val_gt_images_unnorm_tb.clamp(0,1)) 
-        writer.add_image('Validation/ground_truth_epoch_end', img_grid_gt, current_global_step)
+        gt_images_tb_with_landmarks = draw_landmarks_on_images_tensor(
+            val_gt_images_unnorm_tb, 
+            val_gt_landmarks_for_vis, 
+            color='red'
+        )
+        pred_images_tb_with_landmarks = draw_landmarks_on_images_tensor(
+            val_rendered_images,
+            val_pred_landmarks_2d_model,
+            color='blue'
+        )
         
-        img_grid_rendered = torchvision.utils.make_grid(val_rendered_images.clamp(0,1))
-        writer.add_image('Validation/prediction_epoch_end', img_grid_rendered, current_global_step)
+        img_grid_gt = torchvision.utils.make_grid(gt_images_tb_with_landmarks.clamp(0,1)) 
+        writer.add_image('Validation/ground_truth_with_landmarks_epoch_end', img_grid_gt, current_global_step)
+        
+        img_grid_rendered = torchvision.utils.make_grid(pred_images_tb_with_landmarks.clamp(0,1))
+        writer.add_image('Validation/prediction_with_landmarks_epoch_end', img_grid_rendered, current_global_step)
 
     encoder.train() # Set model back to training mode
 

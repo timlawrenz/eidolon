@@ -64,3 +64,43 @@ def save_validation_images(gt_images_display_unnormalized, rendered_images,
         plt.close(fig) # Close the figure to free memory
 
     tqdm.write(f"Saved {num_images} validation samples to {os.path.dirname(save_path_prefix)}")
+
+
+def draw_landmarks_on_images_tensor(images_batch_float, landmarks_batch, color='red', radius=2):
+    """
+    Draws landmarks on a batch of image tensors.
+
+    Args:
+        images_batch_float (torch.Tensor): Batch of images (B, C, H, W), float, range [0, 1].
+        landmarks_batch (torch.Tensor): Batch of landmarks (B, N_landmarks, 2), float.
+        color (str): Color for the landmarks.
+        radius (int): Radius of the landmark points.
+
+    Returns:
+        torch.Tensor: Batch of images (B, C, H, W) with landmarks drawn, float, range [0, 1].
+    """
+    images_batch_uint8 = (images_batch_float.clone() * 255).to(torch.uint8) # Convert to uint8 [0,255]
+    
+    # Ensure landmarks are on the same device as images and are integer type for drawing
+    landmarks_batch_int = landmarks_batch.round().to(dtype=torch.int64, device=images_batch_uint8.device)
+
+    images_with_landmarks_list = []
+    for i in range(images_batch_uint8.shape[0]):
+        img_uint8 = images_batch_uint8[i] # (C, H, W)
+        lms_int = landmarks_batch_int[i]   # (N_landmarks, 2)
+        
+        # draw_keypoints expects keypoints in (K, 2) format, and landmarks_batch_int[i] is already in this format.
+        # It also expects a list of such tensors if drawing on multiple instances within a single image,
+        # but here we draw one set of landmarks per image in the batch.
+        # So, we provide landmarks_batch_int[i].unsqueeze(0) to make it (1, K, 2) for one instance.
+        img_with_lms = torchvision.utils.draw_keypoints(
+            image=img_uint8, 
+            keypoints=lms_int.unsqueeze(0), # Shape (1, N_landmarks, 2)
+            colors=color, 
+            radius=radius
+        )
+        images_with_landmarks_list.append(img_with_lms)
+    
+    images_with_landmarks_batch_uint8 = torch.stack(images_with_landmarks_list)
+    images_with_landmarks_batch_float = images_with_landmarks_batch_uint8.float() / 255.0 # Convert back to float [0,1]
+    return images_with_landmarks_batch_float
