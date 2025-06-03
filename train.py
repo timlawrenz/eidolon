@@ -85,6 +85,7 @@ LOSS_WEIGHTS = {
     'pixel': 1.0,
     'landmark': 1e-2, # Increased from 1e-4 to give more weight to landmark alignment
     'reg_shape': 1e-1,  # Increased from 1e-3 to heavily penalize large shape params
+    'reg_transl': 1e-2, # Added to penalize large translation parameters
     # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
     # TotalLoss will use a default weight of 0.0 for it.
 }
@@ -269,11 +270,12 @@ for epoch in range(NUM_EPOCHS):
         # We pass the relevant parts of pred_coeffs_dict
         coeffs_for_loss_fn = {
             'shape': pred_coeffs_dict['shape_params'],
-            'expression': pred_coeffs_dict['expression_params']
+            'expression': pred_coeffs_dict['expression_params'],
+            'transl': pred_coeffs_dict['transl'] # Add translation for regularization
         }
         total_loss, loss_dict = loss_fn(
-            coeffs_for_loss_fn,      
-            pred_verts,          
+            coeffs_for_loss_fn,
+            pred_verts,
             pred_landmarks_2d_model,  # This is already in 224x224 screen space
             rendered_images,     
             gt_images,                # This is the 224x224 input image

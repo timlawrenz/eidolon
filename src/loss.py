@@ -79,6 +79,13 @@ class TotalLoss(nn.Module):
            pred_coeffs['expression'].numel() > 0 and \
            self.weights.get('reg_expression', 0.0) > 0:
             loss_reg_expression = (pred_coeffs['expression'] ** 2).mean()
+
+        loss_reg_transl = torch.tensor(0.0, device=rendered_image.device)
+        if 'transl' in pred_coeffs and \
+           pred_coeffs['transl'] is not None and \
+           pred_coeffs['transl'].numel() > 0 and \
+           self.weights.get('reg_transl', 0.0) > 0:
+            loss_reg_transl = (pred_coeffs['transl'] ** 2).mean()
         
         # --- TODO: Perceptual Loss ---
         # loss_perceptual = self.perceptual_loss(rendered_image, gt_image)
@@ -91,7 +98,8 @@ class TotalLoss(nn.Module):
             self.weights.get('pixel', 1.0) * loss_pixel +
             self.weights.get('landmark', 1.0) * loss_landmark +
             self.weights.get('reg_shape', 1.0) * loss_reg_shape +
-            self.weights.get('reg_expression', 1.0) * loss_reg_expression
+            self.weights.get('reg_expression', 1.0) * loss_reg_expression +
+            self.weights.get('reg_transl', 1.0) * loss_reg_transl
             # + self.weights.get('perceptual', 1.0) * loss_perceptual # Keep commented for now
         )
         
@@ -101,6 +109,7 @@ class TotalLoss(nn.Module):
             'landmark': loss_landmark,
             'reg_shape': loss_reg_shape,
             'reg_expression': loss_reg_expression,
+            'reg_transl': loss_reg_transl,
             # 'perceptual': loss_perceptual # Keep commented for now
         }
         
