@@ -336,7 +336,7 @@ class EidolonEncoder(nn.Module):
             # These should match the definitions in train.py (NUM_SHAPE_COEFFS, etc.)
             # For num_coeffs = 227:
             n_shape = 100
-            n_expr = 50
+            n_expr = 0 # Must match NUM_EXPRESSION_COEFFS in train.py (currently 0)
             n_global_pose = 6 # 6D rotation
             n_jaw_pose = 3    # axis-angle
             n_eye_pose = 6    # axis-angle
