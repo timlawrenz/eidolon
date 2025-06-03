@@ -104,3 +104,46 @@ def draw_landmarks_on_images_tensor(images_batch_float, landmarks_batch, color='
     images_with_landmarks_batch_uint8 = torch.stack(images_with_landmarks_list)
     images_with_landmarks_batch_float = images_with_landmarks_batch_uint8.float() / 255.0 # Convert back to float [0,1]
     return images_with_landmarks_batch_float
+
+
+def plot_landmarks_ascii(landmarks_2d_batch, original_img_width, original_img_height, grid_width=40, grid_height=20, title="Landmarks ASCII Plot"):
+    """
+    Generates an ASCII representation of 2D landmarks for the first sample in a batch.
+
+    Args:
+        landmarks_2d_batch (torch.Tensor): Batch of 2D landmarks (B, N_landmarks, 2).
+                                           Coordinates are assumed to be in original image space.
+        original_img_width (float): Width of the original image space for landmarks.
+        original_img_height (float): Height of the original image space for landmarks.
+        grid_width (int): Width of the ASCII character grid.
+        grid_height (int): Height of the ASCII character grid.
+        title (str): Title for the plot.
+
+    Returns:
+        str: A multi-line string representing the ASCII plot.
+    """
+    if landmarks_2d_batch.numel() == 0:
+        return f"{title}:\nNo landmarks to plot.\n"
+
+    landmarks_sample = landmarks_2d_batch[0].cpu().numpy() # Take the first sample (N_landmarks, 2)
+
+    grid = [[' ' for _ in range(grid_width)] for _ in range(grid_height)]
+
+    for x, y in landmarks_sample:
+        # Normalize coordinates to grid dimensions
+        # Clamp to ensure they are within image bounds before scaling
+        norm_x = np.clip(x / original_img_width, 0.0, 1.0)
+        norm_y = np.clip(y / original_img_height, 0.0, 1.0)
+        
+        grid_x = int(norm_x * (grid_width - 1))
+        grid_y = int(norm_y * (grid_height - 1))
+        
+        if 0 <= grid_y < grid_height and 0 <= grid_x < grid_width:
+            grid[grid_y][grid_x] = '*'
+
+    output_str = f"{title} (First Sample, {original_img_width}x{original_img_height} space):\n"
+    output_str += "+" + "-" * grid_width + "+\n"
+    for row in grid:
+        output_str += "|" + "".join(row) + "|\n"
+    output_str += "+" + "-" * grid_width + "+\n"
+    return output_str
