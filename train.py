@@ -330,17 +330,34 @@ for epoch in range(NUM_EPOCHS):
         val_gt_landmarks_for_vis = val_gt_landmarks_scaled # Use this for save_validation_images
 
         val_pred_coeffs_vec = encoder(val_gt_images)
-        val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
+        val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec) # Encoder's actual predictions
+
+        # --- DEBUG: Force ALL FLAME parameters to zero for validation rendering ---
+        # This will render the base v_template at the origin with no pose.
+        # This helps verify the camera and projection pipeline.
+        debug_shape_params = torch.zeros_like(val_pred_coeffs_dict['shape_params'])
+        debug_expression_params = torch.zeros_like(val_pred_coeffs_dict['expression_params'])
+        debug_pose_params = torch.zeros_like(val_pred_coeffs_dict['pose_params'])
+        # Use distinct names for these debug zeroed params to avoid conflict if original names are used later
+        debug_jaw_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['jaw_pose_params'])
+        debug_eye_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['eye_pose_params'])
+        debug_neck_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['neck_pose_params'])
+        debug_transl = torch.zeros_like(val_pred_coeffs_dict['transl'])
+        print("DEBUG: Forcing all FLAME parameters to zero for validation rendering (template mesh at origin).")
+        # --- END DEBUG ---
         
         val_pred_verts, val_pred_landmarks_3d = flame_model(
-            shape_params=val_pred_coeffs_dict['shape_params'],
-            expression_params=val_pred_coeffs_dict['expression_params'],
-            pose_params=val_pred_coeffs_dict['pose_params'],
-            jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'],
-            eye_pose_params=val_pred_coeffs_dict['eye_pose_params'],
-            neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
-            transl=val_pred_coeffs_dict['transl']
+            shape_params=debug_shape_params,
+            expression_params=debug_expression_params,
+            pose_params=debug_pose_params, 
+            jaw_pose_params=debug_jaw_pose_params_val, 
+            eye_pose_params=debug_eye_pose_params_val, 
+            neck_pose_params=debug_neck_pose_params_val, 
+            transl=debug_transl 
         )
+        
+        # Note: The FLAME parameter magnitude logging below will still show the *actual*
+        # predicted values from the encoder (from val_pred_coeffs_dict), not these debug zeroed values.
 
         # --- Debug: Print Predicted 3D Vertices and 3D Landmarks Statistics ---
         print(f"--- Predicted 3D Vertices Stats (Epoch {epoch+1} End, First Sample of Batch) ---")
