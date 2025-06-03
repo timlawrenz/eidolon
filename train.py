@@ -49,7 +49,7 @@ print(f"TensorBoard logs will be saved to: {log_dir_name}")
 # --- Hyperparameters and Config ---
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
-BATCH_SIZE = 130 # Start small (e.g., 8-16) and increase if memory allows
+BATCH_SIZE = 140 # Start small (e.g., 8-16) and increase if memory allows
 NUM_EPOCHS = 50
 IMAGE_DIR = "data/ffhq_thumbnails_128" # Directory for pre-processed images
 LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
