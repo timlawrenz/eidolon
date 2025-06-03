@@ -313,19 +313,22 @@ for epoch in range(NUM_EPOCHS):
                     neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
                     transl=val_pred_coeffs_dict['transl']
                 )
-                val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                    val_pred_landmarks_3d, image_size=image_size_for_projection
-                )[:, :, :2]
                 
+                # Render val_pred_verts immediately after obtaining them
                 val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
                 val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
                 
                 val_meshes_batch = Meshes(
                     verts=list(val_pred_verts),
-                    faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
+                    faces=[flame_model.faces_idx] * val_pred_verts.shape[0], # val_pred_verts.shape[0] is num_val_samples
                     textures=val_textures_batch
                 )
                 val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
+                
+                val_pred_landmarks_2d_model = cameras.transform_points_screen(
+                    val_pred_landmarks_3d, image_size=image_size_for_projection
+                )[:, :, :2]
+                # Rendering block moved earlier, before 2D landmark projection.
 
                 output_dir = "outputs/validation_images"
                 os.makedirs(output_dir, exist_ok=True)
