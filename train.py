@@ -73,6 +73,10 @@ FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
 DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' # Updated path for DECA landmarks
 
 # VISUALIZATION_INTERVAL = 500 # Removed, snapshots are now per epoch.
+# Define epochs for verbose LBS debugging (e.g., first, middle, last)
+# This set will be checked against the current epoch index (0-based)
+VERBOSE_LBS_DEBUG_EPOCHS = {0, NUM_EPOCHS // 2, NUM_EPOCHS - 1} if NUM_EPOCHS > 0 else {0}
+
 
 LOSS_WEIGHTS = {
     'pixel': 1.0,
@@ -344,6 +348,11 @@ for epoch in range(NUM_EPOCHS):
         debug_neck_pose_params_val = torch.zeros_like(val_pred_coeffs_dict['neck_pose_params'])
         debug_transl = torch.zeros_like(val_pred_coeffs_dict['transl'])
         print("DEBUG: Forcing all FLAME parameters to zero for validation rendering (template mesh at origin).")
+        
+        # Determine if LBS internal prints should be active for this epoch's validation
+        debug_lbs_this_epoch = epoch in VERBOSE_LBS_DEBUG_EPOCHS
+        if debug_lbs_this_epoch:
+            print(f"--- INFO: Enabling verbose LBS debug prints for epoch {epoch+1} ---")
         # --- END DEBUG ---
         
         val_pred_verts, val_pred_landmarks_3d = flame_model(
@@ -353,7 +362,8 @@ for epoch in range(NUM_EPOCHS):
             jaw_pose_params=debug_jaw_pose_params_val, 
             eye_pose_params=debug_eye_pose_params_val, 
             neck_pose_params=debug_neck_pose_params_val, 
-            transl=debug_transl 
+            transl=debug_transl,
+            debug_print=debug_lbs_this_epoch # Pass the flag to FLAME model
         )
         
         # Note: The FLAME parameter magnitude logging below will still show the *actual*
