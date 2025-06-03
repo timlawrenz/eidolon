@@ -287,11 +287,16 @@ for epoch in range(NUM_EPOCHS):
     loss_pixel_val = loss_dict.get('pixel', torch.tensor(0.0)).item()
     loss_landmark_val = loss_dict.get('landmark', torch.tensor(0.0)).item()
     loss_reg_shape_val = loss_dict.get('reg_shape', torch.tensor(0.0)).item()
+    loss_reg_expression_val = loss_dict.get('reg_expression', torch.tensor(0.0)).item() # Get expression loss
     loss_total_val = total_loss.item() # From the last batch
 
     print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} Completed ---")
-    print(f"  Last Batch Losses: Total: {loss_total_val:.4f}, Pixel: {loss_pixel_val:.4f}, "
-          f"Landmark: {loss_landmark_val:.4f}, RegShape: {loss_reg_shape_val:.4f}")
+    # Updated print statement to include all individual losses
+    loss_summary_str = f"  Last Batch Losses: Total: {loss_total_val:.4f}"
+    for loss_name, loss_component in loss_dict.items():
+        if loss_name != 'total': # Total is already included
+            loss_summary_str += f", {loss_name.capitalize()}: {loss_component.item():.4f}"
+    print(loss_summary_str)
     print(f"  Config: Batch Size: {BATCH_SIZE}, LR: {LEARNING_RATE}")
 
     # --- TensorBoard Scalar Logging (Epoch End) ---
