@@ -186,10 +186,26 @@ def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
 # 3. The Training Loop
 for epoch in range(NUM_EPOCHS):
     for i, batch in enumerate(data_loader):
-        gt_images = batch['image'].to(DEVICE)
-        gt_landmarks_2d = batch['gt_landmarks'].to(DEVICE) # Pre-loaded landmarks
+        gt_images = batch['image'].to(DEVICE) # These are already transformed to 224x224 for the encoder
+        gt_landmarks_2d_original_scale = batch['gt_landmarks'].to(DEVICE) # Shape (B, 68, 2) - in 128x128 space
         
         current_batch_size = gt_images.size(0)
+
+        # Define original and target sizes for landmark scaling
+        original_landmark_img_width = 128.0 # Width of images landmarks were detected on
+        original_landmark_img_height = 128.0 # Height of images landmarks were detected on
+        target_projection_img_width = float(raster_settings.image_size) # Should be 224.0
+        target_projection_img_height = float(raster_settings.image_size) # Should be 224.0
+
+        # Calculate scaling factors
+        scale_x = target_projection_img_width / original_landmark_img_width
+        scale_y = target_projection_img_height / original_landmark_img_height
+
+        # Scale the ground truth landmarks
+        gt_landmarks_2d_scaled = gt_landmarks_2d_original_scale.clone()
+        gt_landmarks_2d_scaled[..., 0] *= scale_x # Scale x coordinates
+        gt_landmarks_2d_scaled[..., 1] *= scale_y # Scale y coordinates
+        # Now gt_landmarks_2d_scaled is in 224x224 space
 
         # --- Forward Pass ---
         optimizer.zero_grad()
@@ -250,10 +266,10 @@ for epoch in range(NUM_EPOCHS):
         total_loss, loss_dict = loss_fn(
             coeffs_for_loss_fn,      
             pred_verts,          
-            pred_landmarks_2d_model, 
+            pred_landmarks_2d_model,  # This is already in 224x224 screen space
             rendered_images,     
-            gt_images,         
-            gt_landmarks_2d      
+            gt_images,                # This is the 224x224 input image
+            gt_landmarks_2d_scaled    # USE THE SCALED VERSION HERE
         )
 
         # --- Backward Pass ---
@@ -288,7 +304,15 @@ for epoch in range(NUM_EPOCHS):
             with torch.no_grad(): # No gradients needed for validation
                 num_val_samples = min(4, gt_images.shape[0]) 
                 val_gt_images = gt_images[:num_val_samples]
-                val_gt_landmarks = gt_landmarks_2d[:num_val_samples]
+                # Use the original scale landmarks for selection, then scale them for visualization
+                val_gt_landmarks_original_scale = gt_landmarks_2d_original_scale[:num_val_samples]
+                
+                # Scale these validation ground truth landmarks as well
+                val_gt_landmarks_scaled = val_gt_landmarks_original_scale.clone()
+                val_gt_landmarks_scaled[..., 0] *= scale_x
+                val_gt_landmarks_scaled[..., 1] *= scale_y
+                # val_gt_landmarks for save_validation_images should be the scaled version
+                val_gt_landmarks = val_gt_landmarks_scaled
 
                 val_pred_coeffs_vec = encoder(val_gt_images)
                 val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
