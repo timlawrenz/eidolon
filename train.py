@@ -27,7 +27,7 @@ import os # For os.makedirs and os.path.join
 from src.dataset import FaceDataset
 from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
-from src.utils import save_validation_images, draw_landmarks_on_images_tensor # Import the new utility functions
+from src.utils import save_validation_images, draw_landmarks_on_images_tensor, plot_landmarks_ascii # Import the new utility functions
 import pickle # For loading FLAME model faces
 from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
 import torchvision # For making image grids for TensorBoard
@@ -49,7 +49,7 @@ print(f"TensorBoard logs will be saved to: {log_dir_name}")
 # --- Hyperparameters and Config ---
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
-BATCH_SIZE = 165 # Start small (e.g., 8-16) and increase if memory allows
+BATCH_SIZE = 190 # Start small (e.g., 8-16) and increase if memory allows
 NUM_EPOCHS = 50
 IMAGE_DIR = "data/ffhq_thumbnails_128" # Directory for pre-processed images
 LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
@@ -380,6 +380,26 @@ for epoch in range(NUM_EPOCHS):
 
         # The save_validation_images call is removed.
         # Visual output is handled by TensorBoard logging below.
+
+        # --- ASCII Landmark Plotting for Console Debug ---
+        # Plot GT landmarks (already scaled to target_projection_img_width/height)
+        ascii_plot_gt = plot_landmarks_ascii(
+            val_gt_landmarks_for_vis, 
+            original_img_width=_vis_target_projection_img_width, # These are already in 224 space
+            original_img_height=_vis_target_projection_img_height,
+            title="GT Landmarks (Scaled to 224x224)"
+        )
+        print(ascii_plot_gt)
+
+        # Plot predicted landmarks (also in target_projection_img_width/height space)
+        ascii_plot_pred = plot_landmarks_ascii(
+            val_pred_landmarks_2d_model,
+            original_img_width=_vis_target_projection_img_width,
+            original_img_height=_vis_target_projection_img_height,
+            title="Predicted Landmarks (224x224)"
+        )
+        print(ascii_plot_pred)
+        # --- End ASCII Landmark Plotting ---
 
         # Draw landmarks on images for TensorBoard
         # val_gt_images_unnorm_tb is (B,C,H,W) float [0,1]
