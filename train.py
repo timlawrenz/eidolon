@@ -395,8 +395,13 @@ for epoch in range(NUM_EPOCHS):
         for pname in ['shape_params', 'expression_params', 'pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
             if pname in val_pred_coeffs_dict:
                 p_tensor = val_pred_coeffs_dict[pname]
-                print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
-                      f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
+                if p_tensor is not None and p_tensor.numel() > 0:
+                    print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
+                          f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
+                else:
+                    print(f"  {pname}: Not used or empty tensor.")
+            else:
+                print(f"  {pname}: Not found in predicted coefficients.")
         print("--------------------------------------------------\n")
         # --- End Debug FLAME Params ---
         

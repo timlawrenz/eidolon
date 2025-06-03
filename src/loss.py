@@ -66,12 +66,18 @@ class TotalLoss(nn.Module):
         
         # --- Parameter Regularization Loss ---
         # Penalize large shape and expression params to encourage plausible faces
-        loss_reg_shape = torch.tensor(0.0, device=pred_coeffs['shape'].device)
-        if 'shape' in pred_coeffs and pred_coeffs['shape'] is not None:
+        loss_reg_shape = torch.tensor(0.0, device=rendered_image.device) # Use a common device
+        if 'shape' in pred_coeffs and \
+           pred_coeffs['shape'] is not None and \
+           pred_coeffs['shape'].numel() > 0 and \
+           self.weights.get('reg_shape', 0.0) > 0:
             loss_reg_shape = (pred_coeffs['shape'] ** 2).mean()
         
-        loss_reg_expression = torch.tensor(0.0, device=pred_coeffs['expression'].device)
-        if 'expression' in pred_coeffs and pred_coeffs['expression'] is not None:
+        loss_reg_expression = torch.tensor(0.0, device=rendered_image.device) # Use a common device
+        if 'expression' in pred_coeffs and \
+           pred_coeffs['expression'] is not None and \
+           pred_coeffs['expression'].numel() > 0 and \
+           self.weights.get('reg_expression', 0.0) > 0:
             loss_reg_expression = (pred_coeffs['expression'] ** 2).mean()
         
         # --- TODO: Perceptual Loss ---
