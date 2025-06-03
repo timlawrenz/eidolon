@@ -188,13 +188,7 @@ def lbs(v_shaped_expressed,
     _, A_global = batch_rigid_transform(rot_mats_lbs, J_transformed_rest_lbs, parents_lbs, dtype=dtype)
     # We use A_global (rel_transforms) for skinning. posed_joints is not directly used here for skinning v_shaped_expressed.
 
-    # 4. Transform vertices by LBS
-    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, num_lbs_joints)
-    v_homo = torch.cat([v_shaped_expressed, torch.ones(batch_size, v_shaped_expressed.shape[1], 1, device=device, dtype=dtype)], dim=2)
-    v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3]
-
-    # 5. Add pose-corrective blendshapes (posedirs)
-    # Create pose_feature_vector for posedirs.
+    # 4. Calculate pose-corrective blendshapes (posedirs)
     # Standard FLAME posedirs (36 features) are typically driven by neck, jaw, left eye, and right eye rotations.
     num_joints_for_posedirs = 4 # Neck, Jaw, Left Eye, Right Eye
     # rot_mats_lbs is stacked as [global, neck, jaw, eye_l, eye_r]
@@ -224,13 +218,19 @@ def lbs(v_shaped_expressed,
             
     # Einsum: current_pose_feature_vector (B, P_expected), posedirs (V, P_expected, C) -> pose_blendshapes (B, V, C)
     # Here C=3 (for x,y,z offsets), P_expected is num_features_expected_by_posedirs.
-    # pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs) # Original
+    pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs) # Actual calculation
 
-    # --- DEBUGGING: Force pose_blendshapes to zero ---
-    pose_blendshapes = torch.zeros_like(v_posed_lbs)
-    # --- END DEBUGGING ---
+    # Apply posedirs to v_shaped_expressed before skinning
+    v_to_skin = v_shaped_expressed + pose_blendshapes
 
-    v_posed = v_posed_lbs + pose_blendshapes
+    # 5. Transform vertices by LBS
+    T = torch.einsum('VJ,BJHW->BVHW', lbs_weights, A_global) # lbs_weights (N_verts, num_lbs_joints)
+    # Use v_to_skin for skinning
+    v_homo = torch.cat([v_to_skin, torch.ones(batch_size, v_to_skin.shape[1], 1, device=device, dtype=dtype)], dim=2)
+    v_posed_lbs = torch.einsum('BVHW,BVW->BVH', T, v_homo)[:, :, :3]
+    
+    # v_posed is now the result of skinning the posedirs-corrected mesh
+    v_posed = v_posed_lbs 
     return v_posed
 
 
