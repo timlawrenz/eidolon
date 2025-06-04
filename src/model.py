@@ -396,7 +396,16 @@ class FLAME(nn.Module):
         with open(flame_model_path, 'rb') as f:
             flame_model_data = pickle.load(f, encoding='latin1')
         
-        print(f"DEBUG: FLAME model data keys: {list(flame_model_data.keys())}") # Print keys for debugging
+        print(f"DEBUG: FLAME model data keys and types:")
+        for key, value in flame_model_data.items():
+            type_info = f"  Key: '{key}', Type: {type(value)}"
+            if hasattr(value, 'r'): # For chumpy objects
+                type_info += f", .r Type: {type(value.r)}"
+                if hasattr(value.r, 'shape'):
+                    type_info += f", .r Shape: {value.r.shape}"
+            elif hasattr(value, 'shape'): # For numpy arrays or tensors
+                 type_info += f", Shape: {value.shape}"
+            print(type_info)
 
         # --- Debugging expressedirs ---
         if 'expressedirs' in flame_model_data:

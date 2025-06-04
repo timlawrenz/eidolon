@@ -250,7 +250,11 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     for current_stage_epoch_idx in range(num_epochs_this_stage): # Loops 0 to num_epochs_this_stage-1
         # 'epoch' variable must be updated with the current global_epoch_idx for THIS iteration
         epoch = global_epoch_idx 
-        print(f"DEBUG: MAIN LOOP - Global Epoch: {epoch + 1}, Stage Epoch: {current_stage_epoch_idx + 1}/{num_epochs_this_stage}") # DEBUG PRINT
+        # Conditional print for epoch progress: 1st, every 5th, last epoch of stage
+        if current_stage_epoch_idx == 0 or \
+           (current_stage_epoch_idx + 1) % 5 == 0 or \
+           current_stage_epoch_idx == num_epochs_this_stage - 1:
+            print(f"DEBUG: MAIN LOOP - Global Epoch: {epoch + 1}, Stage Epoch: {current_stage_epoch_idx + 1}/{num_epochs_this_stage}") # DEBUG PRINT
         
         # <<< START of moved block: Batch processing and validation >>>
         for i, batch in enumerate(data_loader):
