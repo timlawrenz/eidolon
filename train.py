@@ -155,7 +155,7 @@ flame_model = FLAME(
 
 # Setup PyTorch3D renderer and cameras (similar to main.py)
 R, T = look_at_view_transform(dist=1.0, elev=0, azim=0) # Camera closer to make projection larger
-cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=30.0) # Narrow FoV to zoom in
+cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=15.0) # Further narrow FoV to zoom in more
 raster_settings = RasterizationSettings(image_size=224, blur_radius=0.0, faces_per_pixel=1) # Match image size
 lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])
 # Using a simple shader. For albedo/texture, a different shader might be needed later.
