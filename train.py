@@ -232,6 +232,7 @@ def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
 # 3. The Training Loop
 global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
 for stage_idx, stage_config in enumerate(TRAINING_STAGES):
+    print(f"DEBUG: MAIN LOOP - Starting Stage {stage_idx + 1} ({stage_config['name']})") # DEBUG PRINT
     stage_name = stage_config['name']
     num_epochs_this_stage = stage_config['epochs']
     stage_loss_weights = stage_config['loss_weights']
@@ -247,6 +248,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     loss_fn.weights = stage_loss_weights # Update loss function weights for the current stage
 
     for current_stage_epoch_idx in range(num_epochs_this_stage): # Loops 0 to num_epochs_this_stage-1
+        print(f"DEBUG: MAIN LOOP - Global Epoch: {global_epoch_idx + 1}, Stage Epoch: {current_stage_epoch_idx + 1}/{num_epochs_this_stage}") # DEBUG PRINT
         # 'epoch' variable now correctly refers to the global_epoch_idx for this iteration
         epoch = global_epoch_idx
         
@@ -633,7 +635,9 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, current_tensorboard_step)
 
         encoder.train() # Set model back to training mode
+        print(f"DEBUG: MAIN LOOP - Completed Global Epoch {global_epoch_idx + 1}. Incrementing global_epoch_idx.") # DEBUG PRINT
         global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
+    print(f"DEBUG: MAIN LOOP - Finished Stage {stage_idx + 1}") # DEBUG PRINT
 
 print("Training finished (skeleton).")
 
