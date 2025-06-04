@@ -632,8 +632,9 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         img_grid_rendered = torchvision.utils.make_grid(pred_images_tb_with_landmarks.clamp(0,1))
         writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, current_tensorboard_step)
 
-    encoder.train() # Set model back to training mode
-    global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
+        encoder.train() # Set model back to training mode
+        global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
+    # The increment was here, moved inside the inner epoch loop
 
 print("Training finished (skeleton).")
 
