@@ -488,9 +488,28 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         print("--------------------------------------------------\n")
         # --- End Debug FLAME Params ---
 
+        # Calculate predicted 2D landmarks and rendered images for validation
+        # This needs to happen before they are used in debug prints or TensorBoard logging
+        _image_size_for_projection_val = (raster_settings.image_size, raster_settings.image_size)
+        val_pred_landmarks_2d_model = cameras.transform_points_screen(
+            val_pred_landmarks_3d, image_size=_image_size_for_projection_val
+        )[:, :, :2]
+
+        val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
+        val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
+        
+        val_meshes_batch = Meshes(
+            verts=list(val_pred_verts),
+            faces=[flame_model.faces_idx] * val_pred_verts.shape[0], # Use actual batch size from val_pred_verts
+            textures=val_textures_batch
+        )
+        val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
+
+
         # --- DEBUG: Template Landmark Projection (Only for the very first epoch's validation) ---
         if epoch == 0: 
             print(f"\n--- DEBUG: TEMPLATE LANDMARK PROJECTION (Epoch {epoch+1}) ---")
+            # _image_size_for_projection_val is already defined above
             # Force zero parameters for template mesh
             # Ensure tensors are on the correct device
             _bs_one = 1 # Batch size of 1 for this debug
@@ -552,22 +571,9 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             print(f"----------------------------------------------------")
         # --- END DEBUG ---
 
-        val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
-        val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
-        
-        val_meshes_batch = Meshes(
-            verts=list(val_pred_verts),
-            faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
-            textures=val_textures_batch
-        )
-        val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
-        
-        # image_size_for_projection is defined in the main training loop, ensure it's available
-        # or redefine. It's (raster_settings.image_size, raster_settings.image_size)
-        _image_size_for_projection_val = (raster_settings.image_size, raster_settings.image_size)
-        val_pred_landmarks_2d_model = cameras.transform_points_screen(
-            val_pred_landmarks_3d, image_size=_image_size_for_projection_val
-        )[:, :, :2]
+        # val_generic_vertex_colors, val_textures_batch, val_meshes_batch, 
+        # val_rendered_images, and val_pred_landmarks_2d_model 
+        # are now calculated earlier in the validation block.
 
         # Images are now only logged to TensorBoard, not saved as separate files.
         # output_dir = "outputs/validation_images" # No longer saving separate files
