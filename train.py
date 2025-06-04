@@ -87,7 +87,7 @@ LOSS_WEIGHTS = {
     'reg_shape': 1e-1,  
     'reg_transl': 1e-2, 
     'reg_global_pose': 1e-1, # Increased from 1e-3 to strongly penalize global pose deviations
-    'reg_jaw_pose': 1e-2,    # Increased from 1e-3
+    'reg_jaw_pose': 1.0,     # Increased from 1e-2 to very strongly penalize jaw pose deviations
     'reg_neck_pose': 1e-2,   # Increased from 1e-3
     'reg_eye_pose': 1e-2,    # Increased from 1e-3
     # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
