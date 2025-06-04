@@ -345,11 +345,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         
         # --- DEBUG: Print first few landmark coordinates before loss ---
         # Print for the first batch of every epoch during Stage 1, and for verbose epochs in other stages
-        is_stage1 = stage_idx == 0
-        print_landmark_debug = (is_stage1 and i == 0) or (i == 0 and epoch in VERBOSE_LBS_DEBUG_EPOCHS)
-
-        if print_landmark_debug:
-            print(f"--- DEBUG Landmark Coords (Epoch {epoch+1}, Batch 0) ---")
+        # This debug print is for the TRAINING loop, for the first batch of certain epochs.
+        is_stage1_training_batch0 = (stage_idx == 0 and i == 0)
+        is_verbose_epoch_training_batch0 = (i == 0 and epoch in VERBOSE_LBS_DEBUG_EPOCHS)
+        
+        if is_stage1_training_batch0 or is_verbose_epoch_training_batch0:
+            print(f"--- DEBUG Training Landmark Coords (Epoch {epoch+1}, Batch {i}) ---")
             print(f"  gt_landmarks_2d_scaled[0, :5, :]:\n{gt_landmarks_2d_scaled[0, :5, :]}")
             print(f"  pred_landmarks_2d_model[0, :5, :]:\n{pred_landmarks_2d_model[0, :5, :]}")
             print(f"----------------------------------------------------")
@@ -486,7 +487,71 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 print(f"  {pname}: Not found in predicted coefficients.")
         print("--------------------------------------------------\n")
         # --- End Debug FLAME Params ---
-        
+
+        # --- DEBUG: Template Landmark Projection (Only for the very first epoch's validation) ---
+        if epoch == 0: 
+            print(f"\n--- DEBUG: TEMPLATE LANDMARK PROJECTION (Epoch {epoch+1}) ---")
+            # Force zero parameters for template mesh
+            # Ensure tensors are on the correct device
+            _bs_one = 1 # Batch size of 1 for this debug
+            template_shape_params = torch.zeros(_bs_one, NUM_SHAPE_COEFFS, device=DEVICE)
+            template_expr_params = torch.zeros(_bs_one, NUM_EXPRESSION_COEFFS, device=DEVICE)
+            
+            template_pose_params = torch.zeros(_bs_one, NUM_GLOBAL_POSE_COEFFS, device=DEVICE)
+            template_pose_params[:, 0] = 1.0 # Identity for 6D: col1_x
+            template_pose_params[:, 4] = 1.0 # Identity for 6D: col2_y
+            
+            template_jaw_pose_params = torch.zeros(_bs_one, NUM_JAW_POSE_COEFFS, device=DEVICE)
+            template_eye_pose_params = torch.zeros(_bs_one, NUM_EYE_POSE_COEFFS, device=DEVICE)
+            template_neck_pose_params = torch.zeros(_bs_one, NUM_NECK_POSE_COEFFS, device=DEVICE)
+            template_transl_params = torch.zeros(_bs_one, NUM_TRANSLATION_COEFFS, device=DEVICE)
+
+            # Note: detail_params are not passed to flame_model.forward in this debug call
+            # as they don't affect vertices/landmarks.
+            _template_verts, _template_landmarks_3d = flame_model(
+                shape_params=template_shape_params,
+                expression_params=template_expr_params,
+                pose_params=template_pose_params,
+                jaw_pose_params=template_jaw_pose_params,
+                eye_pose_params=template_eye_pose_params,
+                neck_pose_params=template_neck_pose_params,
+                transl=template_transl_params,
+                debug_print=True # Enable LBS prints for this specific call
+            )
+            _template_landmarks_2d = cameras.transform_points_screen(
+                _template_landmarks_3d, image_size=_image_size_for_projection_val # _image_size_for_projection_val is defined below
+            )[:, :, :2]
+
+            print(f"  Template 2D Landmarks (first 5 points):\n{_template_landmarks_2d[0, :5, :]}")
+            ascii_plot_template_lmks = plot_landmarks_ascii(
+                _template_landmarks_2d, # (B, N, 2)
+                original_img_width=_vis_target_projection_img_width,
+                original_img_height=_vis_target_projection_img_height,
+                title=f"Template Projected Landmarks (Epoch {epoch+1}, 224x224)"
+            )
+            print(ascii_plot_template_lmks)
+            
+            # Log to TensorBoard
+            dummy_bg_for_template_lmks = torch.ones(1, 3, int(_vis_target_projection_img_height), int(_vis_target_projection_img_width), device=DEVICE) * 0.3
+            template_lmks_img_tb = draw_landmarks_on_images_tensor(
+                dummy_bg_for_template_lmks,
+                _template_landmarks_2d,
+                color='green'
+            )
+            writer.add_image('Debug/template_projected_landmarks', torchvision.utils.make_grid(template_lmks_img_tb.clamp(0,1)), epoch + 1)
+            print(f"--- END DEBUG: TEMPLATE LANDMARK PROJECTION ---\n")
+        # --- END DEBUG: Template Landmark Projection ---
+
+        # --- DEBUG: Print actual predicted landmark coordinates during validation for verbose epochs ---
+        if epoch in VERBOSE_LBS_DEBUG_EPOCHS:
+            print(f"--- DEBUG Actual Predicted Landmark Coords (Validation, Epoch {epoch+1}) ---")
+            # Ensure val_gt_landmarks_scaled and val_pred_landmarks_2d_model are defined before this print
+            # val_gt_landmarks_scaled is val_gt_landmarks_for_vis
+            print(f"  val_gt_landmarks_scaled[0, :5, :]:\n{val_gt_landmarks_for_vis[0, :5, :]}") 
+            print(f"  val_pred_landmarks_2d_model[0, :5, :]:\n{val_pred_landmarks_2d_model[0, :5, :]}")
+            print(f"----------------------------------------------------")
+        # --- END DEBUG ---
+
         val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
         val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
         
