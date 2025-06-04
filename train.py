@@ -87,9 +87,9 @@ LOSS_WEIGHTS = {
     'reg_shape': 1e-1,  
     'reg_transl': 1e-2, 
     'reg_global_pose': 1e-1, # Increased from 1e-3 to strongly penalize global pose deviations
-    'reg_jaw_pose': 1e-3,    # Added to penalize large jaw pose parameters
-    'reg_neck_pose': 1e-3,   # Added to penalize large neck pose parameters
-    'reg_eye_pose': 1e-3,    # Added to penalize large eye pose parameters
+    'reg_jaw_pose': 1e-2,    # Increased from 1e-3
+    'reg_neck_pose': 1e-2,   # Increased from 1e-3
+    'reg_eye_pose': 1e-2,    # Increased from 1e-3
     # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
     # TotalLoss will use a default weight of 0.0 for it.
 }
