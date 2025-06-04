@@ -95,10 +95,10 @@ TRAINING_STAGES = [
             'reg_shape': 0.5, # Strong shape regularization
             'reg_transl': 0.5, # Strong translation regularization
             'reg_global_pose': 1.0, # Very strong global pose regularization towards identity
-            'reg_jaw_pose': 1.0,    # Very strong jaw pose regularization towards zero
-            'reg_neck_pose': 0.5,   # Strong neck pose regularization
-            'reg_eye_pose': 0.5,    # Strong eye pose regularization
-            'reg_detail': 1e-3,     # Added regularization for detail params
+            'reg_jaw_pose': 10.0,    # Extremely strong jaw pose regularization
+            'reg_neck_pose': 10.0,   # Extremely strong neck pose regularization
+            'reg_eye_pose': 10.0,    # Extremely strong eye pose regularization
+            'reg_detail': 1e-3,     # Regularization for detail params
             # 'reg_expression' will default to 0 if not present and NUM_EXPRESSION_COEFFS is 0
         }
     },
@@ -342,6 +342,18 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             gt_images,                # This is the 224x224 input image
             gt_landmarks_2d_scaled    # USE THE SCALED VERSION HERE
         )
+        
+        # --- DEBUG: Print first few landmark coordinates before loss ---
+        # Print for the first batch of every epoch during Stage 1, and for verbose epochs in other stages
+        is_stage1 = stage_idx == 0
+        print_landmark_debug = (is_stage1 and i == 0) or (i == 0 and epoch in VERBOSE_LBS_DEBUG_EPOCHS)
+
+        if print_landmark_debug:
+            print(f"--- DEBUG Landmark Coords (Epoch {epoch+1}, Batch 0) ---")
+            print(f"  gt_landmarks_2d_scaled[0, :5, :]:\n{gt_landmarks_2d_scaled[0, :5, :]}")
+            print(f"  pred_landmarks_2d_model[0, :5, :]:\n{pred_landmarks_2d_model[0, :5, :]}")
+            print(f"----------------------------------------------------")
+        # --- END DEBUG ---
 
         # --- Backward Pass ---
         total_loss.backward() 
