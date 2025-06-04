@@ -154,7 +154,7 @@ flame_model = FLAME(
 # flame_faces_tensor = flame_model.faces_idx # This is already on DEVICE if registered as buffer
 
 # Setup PyTorch3D renderer and cameras (similar to main.py)
-R, T = look_at_view_transform(dist=2.0, elev=0, azim=0) # Adjusted dist for potential variance
+R, T = look_at_view_transform(dist=1.0, elev=0, azim=0) # Camera closer to make projection larger
 cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T)
 raster_settings = RasterizationSettings(image_size=224, blur_radius=0.0, faces_per_pixel=1) # Match image size
 lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])
