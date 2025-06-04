@@ -88,6 +88,7 @@ TRAINING_STAGES = [
     {
         'name': 'Stage1_StabilizePose',
         'epochs': 20, # Number of epochs for this stage
+        'learning_rate': 1e-5, # Lower LR for stabilization
         'loss_weights': {
             'pixel': 1.0,
             'landmark': 1.0,  # Very strong landmark guidance
@@ -104,6 +105,7 @@ TRAINING_STAGES = [
     {
         'name': 'Stage2_FinetuneDetails',
         'epochs': 30, # Number of epochs for this stage
+        'learning_rate': LEARNING_RATE, # Use default LEARNING_RATE or specify another
         'loss_weights': {
             'pixel': 1.0,
             'landmark': 1e-1, # Still important, but less dominant than Stage 1
@@ -127,7 +129,9 @@ VERBOSE_LBS_DEBUG_EPOCHS = {0, total_epochs_all_stages // 2, total_epochs_all_st
 
 # Initial LOSS_WEIGHTS will be set by the first stage.
 # We still need loss_fn initialized, it will be updated per stage.
-INITIAL_LOSS_WEIGHTS_FOR_SETUP = TRAINING_STAGES[0]['loss_weights'] 
+INITIAL_LOSS_WEIGHTS_FOR_SETUP = TRAINING_STAGES[0]['loss_weights']
+INITIAL_LEARNING_RATE_FOR_SETUP = TRAINING_STAGES[0].get('learning_rate', LEARNING_RATE)
+
 
 # 2. Initialize everything
 encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
@@ -135,7 +139,7 @@ encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
 # renderer = ... # Your PyTorch3D renderer, needed for projecting landmarks
 # cameras = ... # Your PyTorch3D camera, needed for projecting landmarks
 loss_fn = TotalLoss(loss_weights=INITIAL_LOSS_WEIGHTS_FOR_SETUP).to(DEVICE) # Use initial weights for setup
-optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
+optimizer = torch.optim.Adam(encoder.parameters(), lr=INITIAL_LEARNING_RATE_FOR_SETUP) # Use initial LR for setup
 
 # Initialize FLAME model
 # Pass paths and parameter dimensions to the FLAME model constructor
@@ -231,9 +235,15 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     stage_name = stage_config['name']
     num_epochs_this_stage = stage_config['epochs']
     stage_loss_weights = stage_config['loss_weights']
+    stage_lr = stage_config.get('learning_rate', LEARNING_RATE) # Get LR for stage, default to global LR
+
+    # Update optimizer learning rate for the current stage
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = stage_lr
     
     print(f"\n--- Starting Training Stage: {stage_name} for {num_epochs_this_stage} epochs ---")
     print(f"Using Loss Weights: {stage_loss_weights}")
+    print(f"Using Learning Rate: {stage_lr}")
     loss_fn.weights = stage_loss_weights # Update loss function weights for the current stage
 
     for current_stage_epoch_idx in range(num_epochs_this_stage): # Loops 0 to num_epochs_this_stage-1
@@ -362,7 +372,10 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         if loss_name != 'total': # Total is already included
             loss_summary_str += f", {loss_name.capitalize()}: {loss_component.item():.4f}"
     print(loss_summary_str)
-    print(f"  Config: Batch Size: {BATCH_SIZE}, LR: {LEARNING_RATE}")
+    # Get current learning rate from optimizer for logging
+    current_lr_for_log = optimizer.param_groups[0]['lr']
+    print(f"  Config: Batch Size: {BATCH_SIZE}, LR: {current_lr_for_log}")
+
 
     # --- TensorBoard Scalar Logging (Epoch End) ---
     writer.add_scalar('Loss/train_total_epoch_last_batch', loss_total_val, current_tensorboard_step)
@@ -370,7 +383,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         if loss_name != 'total': # total is already logged
             val_to_log = loss_value.item() if hasattr(loss_value, 'item') else loss_value
             writer.add_scalar(f'Loss/train_{loss_name}_epoch_last_batch', val_to_log, current_tensorboard_step)
-    writer.add_scalar('Hyperparameters/learning_rate_epoch', LEARNING_RATE, current_tensorboard_step) # Log LR per epoch too
+    writer.add_scalar('Hyperparameters/learning_rate_epoch', current_lr_for_log, current_tensorboard_step) # Log current LR
 
     # --- Validation Image Generation and TensorBoard Image Logging (Epoch End) ---
     encoder.eval() # Set model to evaluation mode
