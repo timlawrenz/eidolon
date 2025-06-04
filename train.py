@@ -97,6 +97,7 @@ TRAINING_STAGES = [
             'reg_jaw_pose': 1.0,    # Very strong jaw pose regularization towards zero
             'reg_neck_pose': 0.5,   # Strong neck pose regularization
             'reg_eye_pose': 0.5,    # Strong eye pose regularization
+            'reg_detail': 1e-3,     # Added regularization for detail params
             # 'reg_expression' will default to 0 if not present and NUM_EXPRESSION_COEFFS is 0
         }
     },
@@ -112,6 +113,7 @@ TRAINING_STAGES = [
             'reg_jaw_pose': 1e-1,    # Relaxed jaw pose regularization
             'reg_neck_pose': 1e-2,   # Relaxed neck pose regularization
             'reg_eye_pose': 1e-2,    # Relaxed eye pose regularization
+            'reg_detail': 1e-4,     # Relaxed detail params regularization
         }
     }
     # Add more stages as needed
@@ -318,7 +320,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             'global_pose': pred_coeffs_dict['pose_params'], # Name 'pose_params' from deconstruct_flame_coeffs
             'jaw_pose': pred_coeffs_dict['jaw_pose_params'],
             'neck_pose': pred_coeffs_dict['neck_pose_params'],
-            'eye_pose': pred_coeffs_dict['eye_pose_params']
+            'eye_pose': pred_coeffs_dict['eye_pose_params'],
+            'detail': pred_coeffs_dict['detail_params'] # Add detail params for regularization
         }
         total_loss, loss_dict = loss_fn(
             coeffs_for_loss_fn,

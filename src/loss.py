@@ -120,6 +120,13 @@ class TotalLoss(nn.Module):
            pred_coeffs['eye_pose'].numel() > 0 and \
            self.weights.get('reg_eye_pose', 0.0) > 0:
             loss_reg_eye_pose = (pred_coeffs['eye_pose'] ** 2).mean()
+
+        loss_reg_detail = torch.tensor(0.0, device=rendered_image.device)
+        if 'detail' in pred_coeffs and \
+           pred_coeffs['detail'] is not None and \
+           pred_coeffs['detail'].numel() > 0 and \
+           self.weights.get('reg_detail', 0.0) > 0:
+            loss_reg_detail = (pred_coeffs['detail'] ** 2).mean()
         
         # --- TODO: Perceptual Loss ---
         # loss_perceptual = self.perceptual_loss(rendered_image, gt_image)
@@ -137,7 +144,8 @@ class TotalLoss(nn.Module):
             self.weights.get('reg_global_pose', 1.0) * loss_reg_global_pose +
             self.weights.get('reg_jaw_pose', 1.0) * loss_reg_jaw_pose +
             self.weights.get('reg_neck_pose', 1.0) * loss_reg_neck_pose +
-            self.weights.get('reg_eye_pose', 1.0) * loss_reg_eye_pose
+            self.weights.get('reg_eye_pose', 1.0) * loss_reg_eye_pose +
+            self.weights.get('reg_detail', 1.0) * loss_reg_detail
             # + self.weights.get('perceptual', 1.0) * loss_perceptual # Keep commented for now
         )
         
@@ -152,6 +160,7 @@ class TotalLoss(nn.Module):
             'reg_jaw_pose': loss_reg_jaw_pose,
             'reg_neck_pose': loss_reg_neck_pose,
             'reg_eye_pose': loss_reg_eye_pose,
+            'reg_detail': loss_reg_detail,
             # 'perceptual': loss_perceptual # Keep commented for now
         }
         
