@@ -226,18 +226,19 @@ def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
     }
 
 # 3. The Training Loop
-overall_epoch_count = 0
+global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
 for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     stage_name = stage_config['name']
-    stage_epochs = stage_config['epochs']
+    num_epochs_this_stage = stage_config['epochs']
     stage_loss_weights = stage_config['loss_weights']
     
-    print(f"\n--- Starting Training Stage: {stage_name} for {stage_epochs} epochs ---")
+    print(f"\n--- Starting Training Stage: {stage_name} for {num_epochs_this_stage} epochs ---")
     print(f"Using Loss Weights: {stage_loss_weights}")
     loss_fn.weights = stage_loss_weights # Update loss function weights for the current stage
 
-    for stage_epoch in range(stage_epochs):
-        epoch = overall_epoch_count # Use overall_epoch_count for logging and VERBOSE_LBS_DEBUG_EPOCHS
+    for current_stage_epoch_idx in range(num_epochs_this_stage): # Loops 0 to num_epochs_this_stage-1
+        # 'epoch' variable now correctly refers to the global_epoch_idx for this iteration
+        epoch = global_epoch_idx
         
         for i, batch in enumerate(data_loader):
             gt_images = batch['image'].to(DEVICE) # These are already transformed to 224x224 for the encoder
@@ -340,10 +341,11 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     # This block runs once at the end of each epoch.
     # It uses variables from the last batch of the epoch (gt_images, gt_landmarks_2d_original_scale, loss_dict, total_loss).
     
-    # current_global_step should reflect the overall progress, not just within a stage batch loop
-    # It's better to calculate it based on overall_epoch_count and batch index 'i'
-    # However, for epoch-end summary, using overall_epoch_count * len(data_loader) is fine.
-    current_global_step = (overall_epoch_count + 1) * len(data_loader) # Global step for TensorBoard
+    # current_global_step should reflect the overall progress.
+    # Using (epoch + 1) which is (global_epoch_idx + 1) as the step for TensorBoard.
+    # If we want per-batch step, it would be global_epoch_idx * len(data_loader) + i
+    # For epoch-end summary, (epoch + 1) is appropriate.
+    current_tensorboard_step = epoch + 1 # Use 1-indexed global epoch for TensorBoard steps
     
     # --- Console Logging (Epoch End) ---
     # Fetch specific loss values from the last batch for console logging
@@ -353,7 +355,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     loss_reg_expression_val = loss_dict.get('reg_expression', torch.tensor(0.0)).item() # Get expression loss
     loss_total_val = total_loss.item() # From the last batch
 
-    print(f"\n--- Epoch {overall_epoch_count+1}/{NUM_EPOCHS} (Stage: {stage_name} - {stage_epoch+1}/{stage_epochs}) Completed ---")
+    print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} (Stage: {stage_name} - {current_stage_epoch_idx+1}/{num_epochs_this_stage}) Completed ---")
     # Updated print statement to include all individual losses
     loss_summary_str = f"  Last Batch Losses: Total: {loss_total_val:.4f}"
     for loss_name, loss_component in loss_dict.items():
@@ -363,12 +365,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     print(f"  Config: Batch Size: {BATCH_SIZE}, LR: {LEARNING_RATE}")
 
     # --- TensorBoard Scalar Logging (Epoch End) ---
-    writer.add_scalar('Loss/train_total_epoch_last_batch', loss_total_val, current_global_step)
+    writer.add_scalar('Loss/train_total_epoch_last_batch', loss_total_val, current_tensorboard_step)
     for loss_name, loss_value in loss_dict.items():
         if loss_name != 'total': # total is already logged
             val_to_log = loss_value.item() if hasattr(loss_value, 'item') else loss_value
-            writer.add_scalar(f'Loss/train_{loss_name}_epoch_last_batch', val_to_log, current_global_step)
-    writer.add_scalar('Hyperparameters/learning_rate_epoch', LEARNING_RATE, current_global_step) # Log LR per epoch too
+            writer.add_scalar(f'Loss/train_{loss_name}_epoch_last_batch', val_to_log, current_tensorboard_step)
+    writer.add_scalar('Hyperparameters/learning_rate_epoch', LEARNING_RATE, current_tensorboard_step) # Log LR per epoch too
 
     # --- Validation Image Generation and TensorBoard Image Logging (Epoch End) ---
     encoder.eval() # Set model to evaluation mode
@@ -491,12 +493,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
 
         # --- ASCII Landmark Plotting for Console Debug ---
         # Plot GT landmarks (already scaled to target_projection_img_width/height)
-        # Use overall_epoch_count for title consistency
+        # Use current global epoch for title consistency
         ascii_plot_gt = plot_landmarks_ascii(
             val_gt_landmarks_for_vis,
             original_img_width=_vis_target_projection_img_width, # These are already in 224 space
             original_img_height=_vis_target_projection_img_height,
-            title=f"GT Landmarks (Epoch {overall_epoch_count+1}, Scaled to 224x224)"
+            title=f"GT Landmarks (Epoch {epoch+1}, Scaled to 224x224)"
         )
         print(ascii_plot_gt)
 
@@ -505,7 +507,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             val_pred_landmarks_2d_model,
             original_img_width=_vis_target_projection_img_width,
             original_img_height=_vis_target_projection_img_height,
-            title=f"Predicted Landmarks (Epoch {overall_epoch_count+1}, 224x224)"
+            title=f"Predicted Landmarks (Epoch {epoch+1}, 224x224)"
         )
         print(ascii_plot_pred)
         # --- End ASCII Landmark Plotting ---
@@ -528,16 +530,14 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         )
         
         img_grid_gt = torchvision.utils.make_grid(gt_images_tb_with_landmarks.clamp(0,1))
-        # Use overall_epoch_count for TensorBoard step/tag if you want to see evolution across stages distinctly
-        # Or use current_global_step if you want a continuous timeline.
-        # For simplicity, current_global_step is fine.
-        writer.add_image(f'Validation_Stage_{stage_idx+1}/ground_truth_with_landmarks', img_grid_gt, overall_epoch_count + 1)
+        # Use current_tensorboard_step (which is global_epoch_idx + 1) for TensorBoard image logging
+        writer.add_image(f'Validation_Stage_{stage_idx+1}/ground_truth_with_landmarks', img_grid_gt, current_tensorboard_step)
         
         img_grid_rendered = torchvision.utils.make_grid(pred_images_tb_with_landmarks.clamp(0,1))
-        writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, overall_epoch_count + 1)
+        writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, current_tensorboard_step)
 
     encoder.train() # Set model back to training mode
-    overall_epoch_count += 1 # Increment overall epoch count after each epoch completes
+    global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
 
 print("Training finished (skeleton).")
 
