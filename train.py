@@ -155,7 +155,7 @@ flame_model = FLAME(
 
 # Setup PyTorch3D renderer and cameras (similar to main.py)
 R, T = look_at_view_transform(dist=1.0, elev=0, azim=0) # Camera closer to make projection larger
-cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T)
+cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=30.0) # Narrow FoV to zoom in
 raster_settings = RasterizationSettings(image_size=224, blur_radius=0.0, faces_per_pixel=1) # Match image size
 lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])
 # Using a simple shader. For albedo/texture, a different shader might be needed later.
@@ -634,7 +634,6 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
 
         encoder.train() # Set model back to training mode
         global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
-    # The increment was here, moved inside the inner epoch loop
 
 print("Training finished (skeleton).")
 
