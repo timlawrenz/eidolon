@@ -92,7 +92,13 @@ class TotalLoss(nn.Module):
            pred_coeffs['global_pose'] is not None and \
            pred_coeffs['global_pose'].numel() > 0 and \
            self.weights.get('reg_global_pose', 0.0) > 0:
-            loss_reg_global_pose = (pred_coeffs['global_pose'] ** 2).mean()
+            # Target for 6D global pose is (1,0,0, 0,1,0) for identity rotation
+            target_global_pose_6d = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], 
+                                                 device=pred_coeffs['global_pose'].device, 
+                                                 dtype=pred_coeffs['global_pose'].dtype)
+            # Expand target to match batch size
+            target_global_pose_6d_batch = target_global_pose_6d.unsqueeze(0).expand_as(pred_coeffs['global_pose'])
+            loss_reg_global_pose = ((pred_coeffs['global_pose'] - target_global_pose_6d_batch) ** 2).mean()
 
         loss_reg_jaw_pose = torch.tensor(0.0, device=rendered_image.device)
         if 'jaw_pose' in pred_coeffs and \
