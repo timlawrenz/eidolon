@@ -86,7 +86,7 @@ LOSS_WEIGHTS = {
     'landmark': 1e-2, 
     'reg_shape': 1e-1,  
     'reg_transl': 1e-2, 
-    'reg_global_pose': 1e-3, # Added to penalize large global pose parameters
+    'reg_global_pose': 1e-1, # Increased from 1e-3 to strongly penalize global pose deviations
     'reg_jaw_pose': 1e-3,    # Added to penalize large jaw pose parameters
     'reg_neck_pose': 1e-3,   # Added to penalize large neck pose parameters
     'reg_eye_pose': 1e-3,    # Added to penalize large eye pose parameters
