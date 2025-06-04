@@ -96,6 +96,50 @@ The `train.py` script trains the `EidolonEncoder`. It now uses pre-loaded images
     
     Upon completion, the trained encoder model weights will be saved to `eidolon_encoder_final.pth` in the project root directory.
 
+### Multi-Stage Training
+
+To help stabilize training and guide the model towards a good solution, `train.py` supports a multi-stage training approach. This allows you to define different sets of loss weights and numbers of epochs for distinct phases of training.
+
+**Rationale:**
+-   **Stage 1 (Stabilization):** In the initial stage, the goal is to get the model to produce roughly correct outputs. This typically involves:
+    -   Strong landmark loss to ensure basic 2D alignment.
+    -   Strong regularization for global pose (towards identity), jaw/neck/eye poses (towards neutral), shape (towards average), and translation (towards center). This prevents extreme, non-face-like predictions.
+-   **Stage 2+ (Finetuning):** Once the model is stable, subsequent stages can gradually relax the regularization terms. This allows the model to learn more detailed variations in shape, pose, and potentially expression (if enabled). The landmark loss weight might also be reduced as the model gets better at pixel-level reconstruction.
+
+**Configuration:**
+The multi-stage training is configured in `train.py` via the `TRAINING_STAGES` list. Each element in this list is a dictionary defining a stage:
+```python
+TRAINING_STAGES = [
+    {
+        'name': 'Stage1_StabilizePose', # A descriptive name for the stage
+        'epochs': 20,                  # Number of epochs for this specific stage
+        'loss_weights': {              # Dictionary of loss weights for this stage
+            'pixel': 1.0,
+            'landmark': 1.0,
+            'reg_shape': 0.5,
+            'reg_transl': 0.5,
+            'reg_global_pose': 1.0,
+            'reg_jaw_pose': 1.0,
+            'reg_neck_pose': 0.5,
+            'reg_eye_pose': 0.5,
+        }
+    },
+    {
+        'name': 'Stage2_FinetuneDetails',
+        'epochs': 30,
+        'loss_weights': {
+            'pixel': 1.0,
+            'landmark': 1e-1,
+            # ... other relaxed weights ...
+        }
+    }
+    # Add more stages as needed
+]
+```
+The script will iterate through these stages, applying the specified number of epochs and loss weights for each. The total number of epochs (`NUM_EPOCHS`) is automatically calculated as the sum of epochs from all defined stages. TensorBoard logs will also be organized to reflect these stages for easier analysis.
+
+You can customize the number of stages, the epochs per stage, and the specific loss weights to suit your training needs and observations.
+
 ## References
 
 This project utilizes the FLAME model:

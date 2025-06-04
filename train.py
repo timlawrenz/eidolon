@@ -77,35 +77,62 @@ DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' 
 
 # VISUALIZATION_INTERVAL = 500 # Removed, snapshots are now per epoch.
 # Define epochs for verbose LBS debugging (e.g., first, middle, last)
-# This set will be checked against the current epoch index (0-based)
-VERBOSE_LBS_DEBUG_EPOCHS = {0, NUM_EPOCHS // 2, NUM_EPOCHS - 1} if NUM_EPOCHS > 0 else {0}
+# This set will be checked against the current *overall* epoch index (0-based)
+# NUM_EPOCHS will now be the total epochs across all stages.
+# VERBOSE_LBS_DEBUG_EPOCHS will be calculated after total_epochs_all_stages is known.
 
 
-LOSS_WEIGHTS = {
-    'pixel': 1.0,
-    'landmark': 1e-2, 
-    'reg_shape': 1e-1,  
-    'reg_transl': 1e-2, 
-    'reg_global_pose': 1e-1, # Increased from 1e-3 to strongly penalize global pose deviations
-    'reg_jaw_pose': 1.0,     # Increased from 1e-2 to very strongly penalize jaw pose deviations
-    'reg_neck_pose': 1e-2,   # Increased from 1e-3
-    'reg_eye_pose': 1e-2,    # Increased from 1e-3
-    # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
-    # TotalLoss will use a default weight of 0.0 for it.
-}
+# --- Multi-Stage Training Configuration ---
+# Each stage is a dictionary with 'epochs' and 'loss_weights'.
+TRAINING_STAGES = [
+    {
+        'name': 'Stage1_StabilizePose',
+        'epochs': 20, # Number of epochs for this stage
+        'loss_weights': {
+            'pixel': 1.0,
+            'landmark': 1.0,  # Very strong landmark guidance
+            'reg_shape': 0.5, # Strong shape regularization
+            'reg_transl': 0.5, # Strong translation regularization
+            'reg_global_pose': 1.0, # Very strong global pose regularization towards identity
+            'reg_jaw_pose': 1.0,    # Very strong jaw pose regularization towards zero
+            'reg_neck_pose': 0.5,   # Strong neck pose regularization
+            'reg_eye_pose': 0.5,    # Strong eye pose regularization
+            # 'reg_expression' will default to 0 if not present and NUM_EXPRESSION_COEFFS is 0
+        }
+    },
+    {
+        'name': 'Stage2_FinetuneDetails',
+        'epochs': 30, # Number of epochs for this stage
+        'loss_weights': {
+            'pixel': 1.0,
+            'landmark': 1e-1, # Still important, but less dominant than Stage 1
+            'reg_shape': 1e-1, # Relaxed shape regularization
+            'reg_transl': 1e-2, # Relaxed translation regularization
+            'reg_global_pose': 1e-1, # Relaxed global pose regularization
+            'reg_jaw_pose': 1e-1,    # Relaxed jaw pose regularization
+            'reg_neck_pose': 1e-2,   # Relaxed neck pose regularization
+            'reg_eye_pose': 1e-2,    # Relaxed eye pose regularization
+        }
+    }
+    # Add more stages as needed
+]
+
+total_epochs_all_stages = sum(stage['epochs'] for stage in TRAINING_STAGES)
+NUM_EPOCHS = total_epochs_all_stages # Update NUM_EPOCHS to be the total
+
+VERBOSE_LBS_DEBUG_EPOCHS = {0, total_epochs_all_stages // 2, total_epochs_all_stages - 1} if total_epochs_all_stages > 0 else {0}
+
+
+# Initial LOSS_WEIGHTS will be set by the first stage.
+# We still need loss_fn initialized, it will be updated per stage.
+INITIAL_LOSS_WEIGHTS_FOR_SETUP = TRAINING_STAGES[0]['loss_weights'] 
 
 # 2. Initialize everything
 encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
 # flame = FLAME().to(DEVICE) # Assuming your FLAME class is also an nn.Module
 # renderer = ... # Your PyTorch3D renderer, needed for projecting landmarks
 # cameras = ... # Your PyTorch3D camera, needed for projecting landmarks
-loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
-optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
-
-# flame = FLAME().to(DEVICE) # Assuming your FLAME class is also an nn.Module
-# renderer = ... # Your PyTorch3D renderer, needed for projecting landmarks
-# cameras = ... # Your PyTorch3D camera, needed for projecting landmarks
-loss_fn = TotalLoss(loss_weights=LOSS_WEIGHTS).to(DEVICE)
+loss_fn = TotalLoss(loss_weights=INITIAL_LOSS_WEIGHTS_FOR_SETUP).to(DEVICE) # Use initial weights for setup
 optimizer = torch.optim.Adam(encoder.parameters(), lr=LEARNING_RATE)
 
 # Initialize FLAME model
@@ -197,10 +224,22 @@ def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
     }
 
 # 3. The Training Loop
-for epoch in range(NUM_EPOCHS):
-    for i, batch in enumerate(data_loader):
-        gt_images = batch['image'].to(DEVICE) # These are already transformed to 224x224 for the encoder
-        gt_landmarks_2d_original_scale = batch['gt_landmarks'].to(DEVICE) # Shape (B, 68, 2) - in 128x128 space
+overall_epoch_count = 0
+for stage_idx, stage_config in enumerate(TRAINING_STAGES):
+    stage_name = stage_config['name']
+    stage_epochs = stage_config['epochs']
+    stage_loss_weights = stage_config['loss_weights']
+    
+    print(f"\n--- Starting Training Stage: {stage_name} for {stage_epochs} epochs ---")
+    print(f"Using Loss Weights: {stage_loss_weights}")
+    loss_fn.weights = stage_loss_weights # Update loss function weights for the current stage
+
+    for stage_epoch in range(stage_epochs):
+        epoch = overall_epoch_count # Use overall_epoch_count for logging and VERBOSE_LBS_DEBUG_EPOCHS
+        
+        for i, batch in enumerate(data_loader):
+            gt_images = batch['image'].to(DEVICE) # These are already transformed to 224x224 for the encoder
+            gt_landmarks_2d_original_scale = batch['gt_landmarks'].to(DEVICE) # Shape (B, 68, 2) - in 128x128 space
         
         current_batch_size = gt_images.size(0)
 
@@ -298,7 +337,10 @@ for epoch in range(NUM_EPOCHS):
     # This block runs once at the end of each epoch.
     # It uses variables from the last batch of the epoch (gt_images, gt_landmarks_2d_original_scale, loss_dict, total_loss).
     
-    current_global_step = (epoch + 1) * len(data_loader) # Global step for TensorBoard
+    # current_global_step should reflect the overall progress, not just within a stage batch loop
+    # It's better to calculate it based on overall_epoch_count and batch index 'i'
+    # However, for epoch-end summary, using overall_epoch_count * len(data_loader) is fine.
+    current_global_step = (overall_epoch_count + 1) * len(data_loader) # Global step for TensorBoard
     
     # --- Console Logging (Epoch End) ---
     # Fetch specific loss values from the last batch for console logging
@@ -308,7 +350,7 @@ for epoch in range(NUM_EPOCHS):
     loss_reg_expression_val = loss_dict.get('reg_expression', torch.tensor(0.0)).item() # Get expression loss
     loss_total_val = total_loss.item() # From the last batch
 
-    print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} Completed ---")
+    print(f"\n--- Epoch {overall_epoch_count+1}/{NUM_EPOCHS} (Stage: {stage_name} - {stage_epoch+1}/{stage_epochs}) Completed ---")
     # Updated print statement to include all individual losses
     loss_summary_str = f"  Last Batch Losses: Total: {loss_total_val:.4f}"
     for loss_name, loss_component in loss_dict.items():
@@ -446,11 +488,12 @@ for epoch in range(NUM_EPOCHS):
 
         # --- ASCII Landmark Plotting for Console Debug ---
         # Plot GT landmarks (already scaled to target_projection_img_width/height)
+        # Use overall_epoch_count for title consistency
         ascii_plot_gt = plot_landmarks_ascii(
-            val_gt_landmarks_for_vis, 
+            val_gt_landmarks_for_vis,
             original_img_width=_vis_target_projection_img_width, # These are already in 224 space
             original_img_height=_vis_target_projection_img_height,
-            title="GT Landmarks (Scaled to 224x224)"
+            title=f"GT Landmarks (Epoch {overall_epoch_count+1}, Scaled to 224x224)"
         )
         print(ascii_plot_gt)
 
@@ -459,7 +502,7 @@ for epoch in range(NUM_EPOCHS):
             val_pred_landmarks_2d_model,
             original_img_width=_vis_target_projection_img_width,
             original_img_height=_vis_target_projection_img_height,
-            title="Predicted Landmarks (224x224)"
+            title=f"Predicted Landmarks (Epoch {overall_epoch_count+1}, 224x224)"
         )
         print(ascii_plot_pred)
         # --- End ASCII Landmark Plotting ---
@@ -481,13 +524,17 @@ for epoch in range(NUM_EPOCHS):
             color='blue'
         )
         
-        img_grid_gt = torchvision.utils.make_grid(gt_images_tb_with_landmarks.clamp(0,1)) 
-        writer.add_image('Validation/ground_truth_with_landmarks_epoch_end', img_grid_gt, current_global_step)
+        img_grid_gt = torchvision.utils.make_grid(gt_images_tb_with_landmarks.clamp(0,1))
+        # Use overall_epoch_count for TensorBoard step/tag if you want to see evolution across stages distinctly
+        # Or use current_global_step if you want a continuous timeline.
+        # For simplicity, current_global_step is fine.
+        writer.add_image(f'Validation_Stage_{stage_idx+1}/ground_truth_with_landmarks', img_grid_gt, overall_epoch_count + 1)
         
         img_grid_rendered = torchvision.utils.make_grid(pred_images_tb_with_landmarks.clamp(0,1))
-        writer.add_image('Validation/prediction_with_landmarks_epoch_end', img_grid_rendered, current_global_step)
+        writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, overall_epoch_count + 1)
 
     encoder.train() # Set model back to training mode
+    overall_epoch_count += 1 # Increment overall epoch count after each epoch completes
 
 print("Training finished (skeleton).")
 
