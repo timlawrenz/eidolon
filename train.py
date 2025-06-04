@@ -83,9 +83,13 @@ VERBOSE_LBS_DEBUG_EPOCHS = {0, NUM_EPOCHS // 2, NUM_EPOCHS - 1} if NUM_EPOCHS > 
 
 LOSS_WEIGHTS = {
     'pixel': 1.0,
-    'landmark': 1e-2, # Increased from 1e-4 to give more weight to landmark alignment
-    'reg_shape': 1e-1,  # Increased from 1e-3 to heavily penalize large shape params
-    'reg_transl': 1e-2, # Added to penalize large translation parameters
+    'landmark': 1e-2, 
+    'reg_shape': 1e-1,  
+    'reg_transl': 1e-2, 
+    'reg_global_pose': 1e-3, # Added to penalize large global pose parameters
+    'reg_jaw_pose': 1e-3,    # Added to penalize large jaw pose parameters
+    'reg_neck_pose': 1e-3,   # Added to penalize large neck pose parameters
+    'reg_eye_pose': 1e-3,    # Added to penalize large eye pose parameters
     # 'reg_expression' is removed as NUM_EXPRESSION_COEFFS is 0.
     # TotalLoss will use a default weight of 0.0 for it.
 }
@@ -271,7 +275,11 @@ for epoch in range(NUM_EPOCHS):
         coeffs_for_loss_fn = {
             'shape': pred_coeffs_dict['shape_params'],
             'expression': pred_coeffs_dict['expression_params'],
-            'transl': pred_coeffs_dict['transl'] # Add translation for regularization
+            'transl': pred_coeffs_dict['transl'],
+            'global_pose': pred_coeffs_dict['pose_params'], # Name 'pose_params' from deconstruct_flame_coeffs
+            'jaw_pose': pred_coeffs_dict['jaw_pose_params'],
+            'neck_pose': pred_coeffs_dict['neck_pose_params'],
+            'eye_pose': pred_coeffs_dict['eye_pose_params']
         }
         total_loss, loss_dict = loss_fn(
             coeffs_for_loss_fn,

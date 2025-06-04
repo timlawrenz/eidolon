@@ -86,6 +86,34 @@ class TotalLoss(nn.Module):
            pred_coeffs['transl'].numel() > 0 and \
            self.weights.get('reg_transl', 0.0) > 0:
             loss_reg_transl = (pred_coeffs['transl'] ** 2).mean()
+
+        loss_reg_global_pose = torch.tensor(0.0, device=rendered_image.device)
+        if 'global_pose' in pred_coeffs and \
+           pred_coeffs['global_pose'] is not None and \
+           pred_coeffs['global_pose'].numel() > 0 and \
+           self.weights.get('reg_global_pose', 0.0) > 0:
+            loss_reg_global_pose = (pred_coeffs['global_pose'] ** 2).mean()
+
+        loss_reg_jaw_pose = torch.tensor(0.0, device=rendered_image.device)
+        if 'jaw_pose' in pred_coeffs and \
+           pred_coeffs['jaw_pose'] is not None and \
+           pred_coeffs['jaw_pose'].numel() > 0 and \
+           self.weights.get('reg_jaw_pose', 0.0) > 0:
+            loss_reg_jaw_pose = (pred_coeffs['jaw_pose'] ** 2).mean()
+
+        loss_reg_neck_pose = torch.tensor(0.0, device=rendered_image.device)
+        if 'neck_pose' in pred_coeffs and \
+           pred_coeffs['neck_pose'] is not None and \
+           pred_coeffs['neck_pose'].numel() > 0 and \
+           self.weights.get('reg_neck_pose', 0.0) > 0:
+            loss_reg_neck_pose = (pred_coeffs['neck_pose'] ** 2).mean()
+
+        loss_reg_eye_pose = torch.tensor(0.0, device=rendered_image.device)
+        if 'eye_pose' in pred_coeffs and \
+           pred_coeffs['eye_pose'] is not None and \
+           pred_coeffs['eye_pose'].numel() > 0 and \
+           self.weights.get('reg_eye_pose', 0.0) > 0:
+            loss_reg_eye_pose = (pred_coeffs['eye_pose'] ** 2).mean()
         
         # --- TODO: Perceptual Loss ---
         # loss_perceptual = self.perceptual_loss(rendered_image, gt_image)
@@ -99,7 +127,11 @@ class TotalLoss(nn.Module):
             self.weights.get('landmark', 1.0) * loss_landmark +
             self.weights.get('reg_shape', 1.0) * loss_reg_shape +
             self.weights.get('reg_expression', 1.0) * loss_reg_expression +
-            self.weights.get('reg_transl', 1.0) * loss_reg_transl
+            self.weights.get('reg_transl', 1.0) * loss_reg_transl +
+            self.weights.get('reg_global_pose', 1.0) * loss_reg_global_pose +
+            self.weights.get('reg_jaw_pose', 1.0) * loss_reg_jaw_pose +
+            self.weights.get('reg_neck_pose', 1.0) * loss_reg_neck_pose +
+            self.weights.get('reg_eye_pose', 1.0) * loss_reg_eye_pose
             # + self.weights.get('perceptual', 1.0) * loss_perceptual # Keep commented for now
         )
         
@@ -110,6 +142,10 @@ class TotalLoss(nn.Module):
             'reg_shape': loss_reg_shape,
             'reg_expression': loss_reg_expression,
             'reg_transl': loss_reg_transl,
+            'reg_global_pose': loss_reg_global_pose,
+            'reg_jaw_pose': loss_reg_jaw_pose,
+            'reg_neck_pose': loss_reg_neck_pose,
+            'reg_eye_pose': loss_reg_eye_pose,
             # 'perceptual': loss_perceptual # Keep commented for now
         }
         
