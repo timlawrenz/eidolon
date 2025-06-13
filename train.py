@@ -104,22 +104,37 @@ TRAINING_STAGES = [
         }
     },
     {
-        'name': 'Stage2_FinetuneDetails',
-        'epochs': 25, # More epochs for fine-tuning
-        'learning_rate': 1e-5, # Use a smaller LR for stable fine-tuning
+        'name': 'Stage2_FinetuneShape',
+        'epochs': 15, # Use a good number of epochs to find a stable shape
+        'learning_rate': 1e-5, # Keep the small LR for stability
         'loss_weights': {
-            'pixel': 0.0,           # Disable pixel loss; focus on geometric fit
-            'landmark': 0.1,        # Landmarks are still a guide
-            'reg_shape': 0.2,       # Moderately relax shape regularization
-            'reg_transl': 0.1,      # Relax translation regularization
-            'reg_global_pose': 0.1, # Relax global pose regularization
-            'reg_jaw_pose': 0.5,    # Allow more jaw movement
-            'reg_neck_pose': 0.5,   # Allow more neck movement
-            'reg_eye_pose': 0.5,    # Allow more eye movement
+            'pixel': 0.0,
+            'landmark': 0.2,        # Keep landmark weight moderate
+            'reg_shape': 0.2,       # Relax shape regularization a bit
+            'reg_transl': 0.1,
+            'reg_global_pose': 0.1,
+            'reg_jaw_pose': 0.5,
+            'reg_neck_pose': 0.5,
+            'reg_eye_pose': 0.5,
             'reg_detail': 1e-4,
         }
+    },
+    {
+        'name': 'Stage3_FinalLandmarkFit',
+        'epochs': 10, # Final polish
+        'learning_rate': 1e-5, # Keep LR low
+        'loss_weights': {
+            'pixel': 0.0,
+            'landmark': 1.0,        # Now, strongly pull to landmarks
+            'reg_shape': 0.1,       # Relax shape regularization even more
+            'reg_transl': 0.05,
+            'reg_global_pose': 0.05,
+            'reg_jaw_pose': 0.2,    # Allow final pose tweaks
+            'reg_neck_pose': 0.2,
+            'reg_eye_pose': 0.2,
+            'reg_detail': 1e-5,
+        }
     }
-    # Add more stages as needed
 ]
 
 total_epochs_all_stages = sum(stage['epochs'] for stage in TRAINING_STAGES)
