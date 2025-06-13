@@ -52,7 +52,7 @@ print(f"TensorBoard logs will be saved to: {log_dir_name}")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 190 # Start small (e.g., 8-16) and increase if memory allows
-NUM_EPOCHS = 50
+NUM_EPOCHS = 30 # Will be overridden by sum of stage epochs, but set for clarity
 IMAGE_DIR = "data/ffhq_thumbnails_128" # Directory for pre-processed images
 LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
 NUM_COEFFS = 227 # Total number of FLAME parameters the encoder will predict
@@ -88,38 +88,37 @@ DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' 
 # Each stage is a dictionary with 'epochs' and 'loss_weights'.
 TRAINING_STAGES = [
     {
-        'name': 'Stage1_StabilizePose',
+        'name': 'Stage1_CoarseAlignment',
         'epochs': 5, # Number of epochs for this stage
         'learning_rate': 1e-5, # Lower LR for stabilization
         'loss_weights': {
             'pixel': 1.0,
-            'landmark': 1.0,  # Very strong landmark guidance
-            'reg_shape': 0.5, # Strong shape regularization
-            'reg_transl': 0.5, # Strong translation regularization
-            'reg_global_pose': 1.0, # Very strong global pose regularization towards identity
-            'reg_jaw_pose': 10.0,    # Extremely strong jaw pose regularization
-            'reg_neck_pose': 10.0,   # Extremely strong neck pose regularization
-            'reg_eye_pose': 10.0,    # Extremely strong eye pose regularization
-            'reg_detail': 1e-3,     # Regularization for detail params
-            # 'reg_expression' will default to 0 if not present and NUM_EXPRESSION_COEFFS is 0
+            'landmark': 0.2,        # Reduced landmark guidance to prevent distortion
+            'reg_shape': 0.5,       # Keep shape regularization strong
+            'reg_transl': 0.5,      # Keep translation regularization strong
+            'reg_global_pose': 1.0, # Strong global pose regularization
+            'reg_jaw_pose': 1.0,    # Moderated jaw pose regularization
+            'reg_neck_pose': 1.0,   # Moderated neck pose regularization
+            'reg_eye_pose': 1.0,    # Moderated eye pose regularization
+            'reg_detail': 1e-3,
+        }
+    },
+    {
+        'name': 'Stage2_FinetuneDetails',
+        'epochs': 25, # More epochs for fine-tuning
+        'learning_rate': LEARNING_RATE, # Use default (higher) LEARNING_RATE
+        'loss_weights': {
+            'pixel': 1.0,           # Pixel loss is now more important
+            'landmark': 0.1,        # Landmarks are still a guide
+            'reg_shape': 0.1,       # Relax shape regularization
+            'reg_transl': 0.1,      # Relax translation regularization
+            'reg_global_pose': 0.1, # Relax global pose regularization
+            'reg_jaw_pose': 0.5,    # Allow more jaw movement
+            'reg_neck_pose': 0.5,   # Allow more neck movement
+            'reg_eye_pose': 0.5,    # Allow more eye movement
+            'reg_detail': 1e-4,
         }
     }
-    # {
-    #     'name': 'Stage2_FinetuneDetails',
-    #     'epochs': 30, # Number of epochs for this stage
-    #     'learning_rate': LEARNING_RATE, # Use default LEARNING_RATE or specify another
-    #     'loss_weights': {
-    #         'pixel': 1.0,
-    #         'landmark': 1e-1, # Still important, but less dominant than Stage 1
-    #         'reg_shape': 1e-1, # Relaxed shape regularization
-    #         'reg_transl': 1e-2, # Relaxed translation regularization
-    #         'reg_global_pose': 1e-1, # Relaxed global pose regularization
-    #         'reg_jaw_pose': 1e-1,    # Relaxed jaw pose regularization
-    #         'reg_neck_pose': 1e-2,   # Relaxed neck pose regularization
-    #         'reg_eye_pose': 1e-2,    # Relaxed eye pose regularization
-    #         'reg_detail': 1e-4,     # Relaxed detail params regularization
-    #     }
-    # }
     # Add more stages as needed
 ]
 
