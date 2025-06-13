@@ -87,7 +87,7 @@ DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' 
 TRAINING_STAGES = [
     {
         'name': 'Stage1_StabilizePose',
-        'epochs': 20, # Number of epochs for this stage
+        'epochs': 5, # Number of epochs for this stage
         'learning_rate': 1e-5, # Lower LR for stabilization
         'loss_weights': {
             'pixel': 1.0,
@@ -101,23 +101,23 @@ TRAINING_STAGES = [
             'reg_detail': 1e-3,     # Regularization for detail params
             # 'reg_expression' will default to 0 if not present and NUM_EXPRESSION_COEFFS is 0
         }
-    },
-    {
-        'name': 'Stage2_FinetuneDetails',
-        'epochs': 30, # Number of epochs for this stage
-        'learning_rate': LEARNING_RATE, # Use default LEARNING_RATE or specify another
-        'loss_weights': {
-            'pixel': 1.0,
-            'landmark': 1e-1, # Still important, but less dominant than Stage 1
-            'reg_shape': 1e-1, # Relaxed shape regularization
-            'reg_transl': 1e-2, # Relaxed translation regularization
-            'reg_global_pose': 1e-1, # Relaxed global pose regularization
-            'reg_jaw_pose': 1e-1,    # Relaxed jaw pose regularization
-            'reg_neck_pose': 1e-2,   # Relaxed neck pose regularization
-            'reg_eye_pose': 1e-2,    # Relaxed eye pose regularization
-            'reg_detail': 1e-4,     # Relaxed detail params regularization
-        }
     }
+    # {
+    #     'name': 'Stage2_FinetuneDetails',
+    #     'epochs': 30, # Number of epochs for this stage
+    #     'learning_rate': LEARNING_RATE, # Use default LEARNING_RATE or specify another
+    #     'loss_weights': {
+    #         'pixel': 1.0,
+    #         'landmark': 1e-1, # Still important, but less dominant than Stage 1
+    #         'reg_shape': 1e-1, # Relaxed shape regularization
+    #         'reg_transl': 1e-2, # Relaxed translation regularization
+    #         'reg_global_pose': 1e-1, # Relaxed global pose regularization
+    #         'reg_jaw_pose': 1e-1,    # Relaxed jaw pose regularization
+    #         'reg_neck_pose': 1e-2,   # Relaxed neck pose regularization
+    #         'reg_eye_pose': 1e-2,    # Relaxed eye pose regularization
+    #         'reg_detail': 1e-4,     # Relaxed detail params regularization
+    #     }
+    # }
     # Add more stages as needed
 ]
 
