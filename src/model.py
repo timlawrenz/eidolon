@@ -365,12 +365,14 @@ class EidolonEncoder(nn.Module):
             
             # Other parameters (shape, expression, jaw/neck/eye poses, translation, detail)
             # will have their biases remain at 0.0, encouraging neutral initial values.
-            # This means:
-            # - Zero shape offset (average shape)
-            # - Zero expression offset
-            # - Zero jaw, neck, eye pose (identity rotation for axis-angle)
-            # - Zero translation
-            # - Zero detail parameters
+            current_idx += n_global_pose + n_jaw_pose + n_eye_pose + n_neck_pose
+            if num_coeffs >= current_idx + n_transl:
+                # The camera is at dist=1.0 and we have a narrow FoV.
+                # A non-zero initial prediction can easily push the model out of view.
+                # By setting the initial Z-translation bias to a negative value, we push
+                # the model further away from the camera, making it smaller in the frame
+                # and more likely to be fully visible, which can stabilize initial training.
+                self.backbone.fc.bias[current_idx + 2] = -2.0 # Initialize z-translation
 
     def forward(self, image):
         """
