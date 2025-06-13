@@ -20,6 +20,17 @@ for full functionality. The IMAGE_DIR constant must be set to a valid dataset pa
 import torch
 from torch.utils.data import DataLoader
 import numpy as np # For image unnormalization
+
+# The following is a workaround for a compatibility issue between an old version of
+# the `chumpy` library and numpy versions 1.24+. `chumpy` is a dependency for
+# loading the FLAME model and it uses deprecated numpy type aliases that have been removed.
+# This patch re-adds them to the numpy namespace.
+# The permanent fix is to ensure your environment uses numpy<1.24 as specified
+# in requirements.txt by running `pip install --upgrade -r requirements.txt`.
+for alias in ('bool', 'int', 'float', 'complex', 'object', 'unicode', 'str'):
+    if not hasattr(np, alias):
+        setattr(np, alias, getattr(np, f"{alias}_"))
+
 # import face_alignment # No longer needed for on-the-fly detection
 import os # For os.makedirs and os.path.join
 # Assuming src.dataset, src.model, src.loss are in the Python path
