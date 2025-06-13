@@ -92,7 +92,7 @@ TRAINING_STAGES = [
         'epochs': 5, # Number of epochs for this stage
         'learning_rate': 1e-5, # Lower LR for stabilization
         'loss_weights': {
-            'pixel': 1.0,
+            'pixel': 0.0,           # Disable pixel loss; focus on geometric fit
             'landmark': 0.2,        # Reduced landmark guidance to prevent distortion
             'reg_shape': 0.5,       # Keep shape regularization strong
             'reg_transl': 0.5,      # Keep translation regularization strong
@@ -106,11 +106,11 @@ TRAINING_STAGES = [
     {
         'name': 'Stage2_FinetuneDetails',
         'epochs': 25, # More epochs for fine-tuning
-        'learning_rate': LEARNING_RATE, # Use default (higher) LEARNING_RATE
+        'learning_rate': 1e-5, # Use a smaller LR for stable fine-tuning
         'loss_weights': {
-            'pixel': 1.0,           # Pixel loss is now more important
+            'pixel': 0.0,           # Disable pixel loss; focus on geometric fit
             'landmark': 0.1,        # Landmarks are still a guide
-            'reg_shape': 0.1,       # Relax shape regularization
+            'reg_shape': 0.2,       # Moderately relax shape regularization
             'reg_transl': 0.1,      # Relax translation regularization
             'reg_global_pose': 0.1, # Relax global pose regularization
             'reg_jaw_pose': 0.5,    # Allow more jaw movement
