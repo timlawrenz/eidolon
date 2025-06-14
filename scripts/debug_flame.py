@@ -35,9 +35,9 @@ def save_obj(filepath, vertices, faces=None):
 
 def main():
     flame_model_path = 'data/flame_model/flame2023.pkl'
-    # This is the path for FLAME's landmark embedding file.
-    # FLAME.__init__ expects `deca_landmark_embedding_path` as argument name.
-    landmark_embedding_file_path = 'data/flame_model/deca_landmark_embedding.npz'
+    # This is the path for the landmark embedding file, as referenced in the README.
+    # The FLAME class __init__ may expect this argument as `deca_landmark_embedding_path`.
+    landmark_embedding_file_path = 'data/flame_model/mediapipe_landmark_embedding.npz'
     NUM_EXPECTED_LANDMARKS_SCRIPT = 68
 
     print("--- Inspecting Landmark Embedding File ---")
@@ -96,7 +96,10 @@ def main():
             if data.size > 0:
                 is_coord = "coords" in key.lower() or "b_coords" in key.lower()
                 min_val, mean_val, max_val = np.min(data), np.mean(data), np.max(data)
-                print(f"Min: {min_val:.4f if is_coord else min_val}, Mean: {mean_val:.4f}, Max: {max_val:.4f if is_coord else max_val}")
+                if is_coord:
+                    print(f"Min: {min_val:.4f}, Mean: {mean_val:.4f}, Max: {max_val:.4f}")
+                else:
+                    print(f"Min: {min_val}, Mean: {mean_val:.4f}, Max: {max_val}")
                 print(f"First 5 elements/rows:\n{data[:5]}")
         else:
             print(f"\nKey '{key}' not found in landmark file.")
