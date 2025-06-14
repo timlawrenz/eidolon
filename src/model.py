@@ -99,25 +99,26 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     # The last column of the transformations contains the posed joints
     posed_joints = transforms[:, :, :3, 3] # J_transformed
 
-    # Calculate skinning matrices A_j = G_j @ inv(T_j_rest)
-    # where T_j_rest = [I | J_j_rest; 0 | 1]
-    # inv(T_j_rest) = [I | -J_j_rest; 0 | 1]
-    # So, A_j_rot = G_j_rot
-    #     A_j_trans = G_j_trans - G_j_rot @ J_j_rest
-    # This is equivalent to DECA's: rel_transforms = transforms - F.pad(torch.matmul(transforms, joints_homogen), ...)
-    
-    # joints_homogen is (B, N, 4, 1)
-    joints_homogen = F.pad(_joints, [0, 0, 0, 1]) # Pad the 3x1 joint vectors to 4x1
+    # The last column of the transformations contains the posed joints
+    posed_joints = transforms[:, :, :3, 3]
 
-    # rel_transforms are the skinning matrices A
-    # G_j - [0 | G_j @ J_j_rest_homo]
-    # This results in: rel_transforms_rot = G_j_rot
-    #                 rel_transforms_trans = G_j_trans - (G_j @ J_j_rest_homo)_trans
-    #                                      = G_j_trans - (G_j_rot @ J_j_rest + G_j_trans)
-    #                                      = - G_j_rot @ J_j_rest
-    # This is [R | -R*J_rest], which is the standard skinning matrix.
-    rel_transforms = transforms - F.pad(
-        torch.matmul(transforms, joints_homogen), [3, 0, 0, 0, 0, 0, 0, 0])
+    # Correctly calculate the skinning transformation matrix A_j = G_j_posed * inv(G_j_rest)
+    # G_j_posed is `transforms`. inv(G_j_rest) is a transform that translates by -J_j_rest.
+    # The result is: A_j_rot = R_j_posed, and A_j_trans = t_j_posed - R_j_posed @ J_j_rest
+    
+    # Get the rotation part of the global transformations
+    R = transforms[:, :, :3, :3] # (B, J, 3, 3)
+    
+    # Get the translation part of the global transformations
+    t_posed = posed_joints.unsqueeze(-1) # (B, J, 3, 1)
+    
+    # _joints is J_rest, with shape (B, J, 3, 1)
+    # Compute the translation part of the skinning matrix
+    t = t_posed - torch.matmul(R, _joints)
+
+    # Combine rotation and translation to form the final skinning matrices
+    rel_transforms = transform_mat(R.reshape(-1, 3, 3), t.reshape(-1, 3, 1))
+    rel_transforms = rel_transforms.reshape(-1, joints.shape[1], 4, 4)
 
     return posed_joints, rel_transforms
 
