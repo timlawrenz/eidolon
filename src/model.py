@@ -223,8 +223,14 @@ class FLAME(nn.Module):
                 used_face_key, used_bary_key = mediapipe_face_key, mediapipe_bary_key
             
             if used_face_key and used_bary_key:
-                lmk_faces_idx_np = deca_lmk_data[used_face_key]
+                lmk_faces_idx_np = deca_lmk_data[used_face_key].copy() # Use copy to avoid modifying cache
                 lmk_bary_coords_np = deca_lmk_data[used_bary_key]
+
+                # DECA landmarks are 1-based, FLAME is 0-based.
+                if used_face_key == 'full_lmk_faces_idx':
+                    print("DEBUG FLAME.__init__: Converting 1-based DECA landmark face indices to 0-based.")
+                    lmk_faces_idx_np -= 1
+                
                 if lmk_faces_idx_np.ndim == 2 and lmk_faces_idx_np.shape[0] == 1: lmk_faces_idx_np = lmk_faces_idx_np.squeeze(0)
                 if lmk_bary_coords_np.ndim == 3 and lmk_bary_coords_np.shape[0] == 1: lmk_bary_coords_np = lmk_bary_coords_np.squeeze(0)
 
@@ -279,7 +285,7 @@ class FLAME(nn.Module):
             for b in range(batch_size):
                 current_pred_verts = pred_verts[b]
                 tri_verts = current_pred_verts[landmark_triangles_verts_idx]
-                pred_landmarks_3d_sample = torch.einsum('ijk,ik->ij', tri_verts, self.landmark_b_coords)
+                pred_landmarks_3d_sample = torch.einsum('ijk,ij->ik', tri_verts, self.landmark_b_coords)
                 pred_landmarks_3d_list.append(pred_landmarks_3d_sample)
             pred_landmarks_3d = torch.stack(pred_landmarks_3d_list, dim=0)
         else:
