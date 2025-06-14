@@ -124,7 +124,11 @@ def main():
 
     shape_params = torch.zeros(1, n_shape)
     expression_params = torch.zeros(1, n_exp if n_exp > 0 else 0)
+    # The 6D rotation representation for an identity matrix (no rotation)
+    # is [1, 0, 0, 0, 1, 0]. A zero vector is an invalid rotation.
     pose_params = torch.zeros(1, 6, dtype=torch.float32)
+    pose_params[0, 0] = 1.0
+    pose_params[0, 4] = 1.0
     eye_pose_params = torch.zeros(1, 6)
     jaw_pose_params = torch.zeros(1, 3)
     neck_pose_params = torch.zeros(1, 3)
