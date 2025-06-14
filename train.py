@@ -265,25 +265,10 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         # <<< START of moved block: Batch processing and validation >>>
         for i, batch in enumerate(data_loader):
             gt_images = batch['image'].to(DEVICE) # These are already transformed to 224x224 for the encoder
-            gt_landmarks_2d_original_scale = batch['gt_landmarks'].to(DEVICE) # Shape (B, 68, 2) - in 128x128 space
+            # The FaceDataset already scales landmarks to the 224x224 space.
+            gt_landmarks_2d_scaled = batch['gt_landmarks'].to(DEVICE) # Shape (B, 68, 2)
         
             current_batch_size = gt_images.size(0)
-
-            # Define original and target sizes for landmark scaling
-            original_landmark_img_width = 128.0 # Width of images landmarks were detected on
-            original_landmark_img_height = 128.0 # Height of images landmarks were detected on
-            target_projection_img_width = float(raster_settings.image_size) # Should be 224.0
-            target_projection_img_height = float(raster_settings.image_size) # Should be 224.0
-
-            # Calculate scaling factors
-            scale_x = target_projection_img_width / original_landmark_img_width
-            scale_y = target_projection_img_height / original_landmark_img_height
-
-            # Scale the ground truth landmarks
-            gt_landmarks_2d_scaled = gt_landmarks_2d_original_scale.clone()
-            gt_landmarks_2d_scaled[..., 0] *= scale_x # Scale x coordinates
-            gt_landmarks_2d_scaled[..., 1] *= scale_y # Scale y coordinates
-            # Now gt_landmarks_2d_scaled is in 224x224 space
 
             # --- Forward Pass ---
             optimizer.zero_grad()
@@ -378,20 +363,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         encoder.eval() 
         with torch.no_grad(): 
             num_val_samples = min(4, gt_images.shape[0]) 
-            val_gt_images = gt_images[:num_val_samples] 
-            val_gt_landmarks_original_scale = gt_landmarks_2d_original_scale[:num_val_samples]
+            val_gt_images = gt_images[:num_val_samples]
+            # Use the already-scaled landmarks from the last batch for visualization.
+            val_gt_landmarks_for_vis = gt_landmarks_2d_scaled[:num_val_samples]
             
-            _vis_original_landmark_img_width = 128.0
-            _vis_original_landmark_img_height = 128.0
             _vis_target_projection_img_width = float(raster_settings.image_size)
             _vis_target_projection_img_height = float(raster_settings.image_size)
-            _vis_scale_x = _vis_target_projection_img_width / _vis_original_landmark_img_width
-            _vis_scale_y = _vis_target_projection_img_height / _vis_original_landmark_img_height
-
-            val_gt_landmarks_scaled = val_gt_landmarks_original_scale.clone()
-            val_gt_landmarks_scaled[..., 0] *= _vis_scale_x
-            val_gt_landmarks_scaled[..., 1] *= _vis_scale_y
-            val_gt_landmarks_for_vis = val_gt_landmarks_scaled
 
             val_pred_coeffs_vec = encoder(val_gt_images)
             val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
