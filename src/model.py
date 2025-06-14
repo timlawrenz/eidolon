@@ -188,24 +188,30 @@ class FLAME(nn.Module):
         self.using_barycentric_landmarks = False
         NUM_EXPECTED_LANDMARKS = 68
         try:
-            deca_lmk_data_container = np.load(deca_landmark_embedding_path, allow_pickle=True)
             deca_lmk_data = None
-            if isinstance(deca_lmk_data_container, np.lib.npyio.NpzFile):
-                print("DEBUG FLAME.__init__: Loaded landmark data is an NpzFile.")
-                deca_lmk_data = deca_lmk_data_container
-            elif isinstance(deca_lmk_data_container, np.ndarray) and deca_lmk_data_container.shape == ():
-                print("DEBUG FLAME.__init__: Loaded landmark data is a 0-dim array, attempting .item().")
-                deca_lmk_data = deca_lmk_data_container.item()
-                if not isinstance(deca_lmk_data, dict):
-                     raise ValueError(f"FLAME.__init__: Loaded .npy object from {deca_landmark_embedding_path} did not contain a dict.")
-            elif isinstance(deca_lmk_data_container, dict):
-                 print("DEBUG FLAME.__init__: Loaded landmark data is already a dictionary.")
-                 deca_lmk_data = deca_lmk_data_container
-            else:
-                raise ValueError(f"FLAME.__init__: Landmark file {deca_landmark_embedding_path} loaded into unexpected type: {type(deca_lmk_data_container)}.")
+            if deca_landmark_embedding_path.endswith('.pkl'):
+                with open(deca_landmark_embedding_path, 'rb') as f:
+                    deca_lmk_data = pickle.load(f, encoding='latin1')
+                print("DEBUG FLAME.__init__: Loaded landmark data from .pkl file.")
+            else: # Fallback for .npz, .npy
+                deca_lmk_data_container = np.load(deca_landmark_embedding_path, allow_pickle=True)
+                if isinstance(deca_lmk_data_container, np.lib.npyio.NpzFile):
+                    print("DEBUG FLAME.__init__: Loaded landmark data is an NpzFile.")
+                    deca_lmk_data = deca_lmk_data_container
+                elif isinstance(deca_lmk_data_container, np.ndarray) and deca_lmk_data_container.shape == ():
+                    print("DEBUG FLAME.__init__: Loaded landmark data is a 0-dim array, attempting .item().")
+                    deca_lmk_data = deca_lmk_data_container.item()
+                elif isinstance(deca_lmk_data_container, dict):
+                     print("DEBUG FLAME.__init__: Loaded landmark data is already a dictionary.")
+                     deca_lmk_data = deca_lmk_data_container
+                else:
+                    raise ValueError(f"FLAME.__init__: Landmark file {deca_landmark_embedding_path} loaded into unexpected type: {type(deca_lmk_data_container)}.")
+            
+            if not isinstance(deca_lmk_data, dict):
+                raise ValueError(f"FLAME.__init__: Landmark data from {deca_landmark_embedding_path} did not resolve to a dictionary.")
 
-            # Per the README, this project uses the MediaPipe landmark embedding.
-            # We will only look for the MediaPipe-specific keys.
+            # We now use the standard static landmark embedding.
+            # The keys are typically 'lmk_face_idx' and 'lmk_b_coords'.
             used_face_key, used_bary_key = 'lmk_face_idx', 'lmk_b_coords'
 
             if used_face_key in deca_lmk_data and used_bary_key in deca_lmk_data:
@@ -229,33 +235,14 @@ class FLAME(nn.Module):
             print(f"ERROR loading or processing landmark embedding from {deca_landmark_embedding_path}: {e}")
             import traceback; traceback.print_exc()
 
-        # Fallback to landmark_vertex_ids (added by my previous work, but potentially incorrect given your README)
-        if not self.using_barycentric_landmarks:
-            print("DEBUG FLAME.__init__: Barycentric landmark loading failed or produced wrong number of landmarks.")
-            vertex_ids_key = 'landmark_indices' # From mediapipe file
-            if vertex_ids_key in deca_lmk_data:
-                print(f"DEBUG FLAME.__init__: Attempting to use '{vertex_ids_key}' as fallback direct vertex IDs.")
-                landmark_vertex_ids_np = deca_lmk_data[vertex_ids_key]
-                if landmark_vertex_ids_np.ndim == 2 and landmark_vertex_ids_np.shape[0] == 1:
-                    landmark_vertex_ids_np = landmark_vertex_ids_np.squeeze(0)
-                if landmark_vertex_ids_np.shape == (NUM_EXPECTED_LANDMARKS,):
-                    num_model_vertices = self.v_template.shape[0]
-                    if np.all(landmark_vertex_ids_np >= 0) and np.all(landmark_vertex_ids_np < num_model_vertices):
-                        self.register_buffer('landmark_vertex_ids', torch.tensor(landmark_vertex_ids_np, dtype=torch.long))
-                        print(f"Successfully loaded {NUM_EXPECTED_LANDMARKS} landmark vertex IDs using key '{vertex_ids_key}'.")
-                        if hasattr(self, 'landmark_face_idx'): self.landmark_face_idx = torch.empty(0, dtype=torch.long, device=self.v_template.device) # Clear barycentric data
-                        if hasattr(self, 'landmark_b_coords'): self.landmark_b_coords = torch.empty(0, dtype=torch.float32, device=self.v_template.device)
-                    else: print(f"Warning FLAME.__init__: '{vertex_ids_key}' values out of range for model vertices.")
-                else: print(f"Warning FLAME.__init__: '{vertex_ids_key}' array shape is {landmark_vertex_ids_np.shape}, expected ({NUM_EXPECTED_LANDMARKS},).")
-            else: print(f"DEBUG FLAME.__init__: Fallback key '{vertex_ids_key}' not found in landmark file.")
+        # The fallback to 'landmark_indices' is no longer needed as we are using a known-good static embedding.
 
-        if not self.using_barycentric_landmarks and (not hasattr(self, 'landmark_vertex_ids') or self.landmark_vertex_ids.numel() != NUM_EXPECTED_LANDMARKS):
-            print("Critical Warning: Final check - Could not load {NUM_EXPECTED_LANDMARKS}-point landmarks using barycentric or direct vertex ID methods.")
+        if not self.using_barycentric_landmarks:
+            print(f"Critical Warning: Final check - Could not load {NUM_EXPECTED_LANDMARKS}-point landmarks.")
+            # Ensure buffers exist even if loading fails, to prevent errors in forward pass.
             if not hasattr(self, 'landmark_face_idx'): self.register_buffer('landmark_face_idx', torch.empty(0, dtype=torch.long))
             if not hasattr(self, 'landmark_b_coords'): self.register_buffer('landmark_b_coords', torch.empty(0, dtype=torch.float32))
-            if not hasattr(self, 'landmark_vertex_ids'): self.register_buffer('landmark_vertex_ids', torch.empty(0, dtype=torch.long))
-        elif hasattr(self, 'landmark_vertex_ids') and self.landmark_vertex_ids.numel() == NUM_EXPECTED_LANDMARKS and not self.using_barycentric_landmarks:
-             print("INFO FLAME.__init__: Using direct vertex IDs for landmarks.")
+        # We no longer use landmark_vertex_ids, so no need for an else-if here.
 
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None,
@@ -288,12 +275,6 @@ class FLAME(nn.Module):
                 pred_landmarks_3d_sample = torch.einsum('ijk,ik->ij', tri_verts, self.landmark_b_coords)
                 pred_landmarks_3d_list.append(pred_landmarks_3d_sample)
             pred_landmarks_3d = torch.stack(pred_landmarks_3d_list, dim=0)
-        elif hasattr(self, 'landmark_vertex_ids') and self.landmark_vertex_ids.numel() == NUM_EXPECTED_LANDMARKS:
-            if self.landmark_vertex_ids.max() < pred_verts.shape[1]:
-                pred_landmarks_3d = pred_verts[:, self.landmark_vertex_ids, :]
-            else:
-                print(f"Error: landmark_vertex_ids contains indices out of bounds for pred_verts.")
-                pred_landmarks_3d = torch.zeros(batch_size, NUM_EXPECTED_LANDMARKS, 3, device=device)
         else:
             print(f"Error: No valid {NUM_EXPECTED_LANDMARKS}-point landmark definition available in FLAME model.")
             pred_landmarks_3d = torch.zeros(batch_size, NUM_EXPECTED_LANDMARKS, 3, device=device)

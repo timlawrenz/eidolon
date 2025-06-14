@@ -38,30 +38,25 @@ def main():
     flame_model_path = 'data/flame_model/flame2023.pkl'
     # This is the path for the landmark embedding file, as referenced in the README.
     # The FLAME class __init__ may expect this argument as `deca_landmark_embedding_path`.
-    landmark_embedding_file_path = 'data/flame_model/mediapipe_landmark_embedding.npz'
+    # Using the static embedding from the official flame-fitting repository.
+    landmark_embedding_file_path = 'data/flame_model/flame_static_embedding.pkl'
     NUM_EXPECTED_LANDMARKS_SCRIPT = 68
 
     print("--- Inspecting Landmark Embedding File ---")
     print(f"Loading landmark embedding file from: {landmark_embedding_file_path}")
 
+    # Dummy file creation is not necessary for this test. We need the real file.
     if not os.path.exists(landmark_embedding_file_path):
-        print(f"Warning: Landmark embedding file not found at {landmark_embedding_file_path}")
-        print(f"Creating dummy {landmark_embedding_file_path} for script structure testing.")
-        os.makedirs(os.path.dirname(landmark_embedding_file_path), exist_ok=True)
-        dummy_embed_data = {
-            'lmk_face_idx': np.arange(NUM_EXPECTED_LANDMARKS_SCRIPT, dtype=np.int64), # MediaPipe key
-            'lmk_b_coords': np.random.rand(NUM_EXPECTED_LANDMARKS_SCRIPT, 3).astype(np.float32),
-            'full_lmk_faces_idx': np.arange(NUM_EXPECTED_LANDMARKS_SCRIPT, dtype=np.int64) + 1, # DECA key (differentiated)
-            'full_lmk_bary_coords': np.random.rand(NUM_EXPECTED_LANDMARKS_SCRIPT, 3).astype(np.float32) + 0.1,
-            'landmark_indices': np.random.randint(0, 5023, size=NUM_EXPECTED_LANDMARKS_SCRIPT, dtype=np.int64)
-        }
-        # Ensure sum of barycentric coords is 1 for dummy data
-        for key in ['lmk_b_coords', 'full_lmk_bary_coords']:
-            dummy_embed_data[key] = dummy_embed_data[key] / np.sum(dummy_embed_data[key], axis=1, keepdims=True)
-        np.savez(landmark_embedding_file_path, **dummy_embed_data)
+        print(f"Error: Landmark embedding file not found at {landmark_embedding_file_path}")
+        print("Please run: wget -P data/flame_model/ https://github.com/Rubikplayer/flame-fitting/raw/master/models/flame_static_embedding.pkl")
+        sys.exit(1)
 
     try:
-        data_embed = np.load(landmark_embedding_file_path, allow_pickle=True)
+        if landmark_embedding_file_path.endswith('.pkl'):
+            with open(landmark_embedding_file_path, 'rb') as f:
+                data_embed = pickle.load(f, encoding='latin1')
+        else: # For .npz, .npy
+            data_embed = np.load(landmark_embedding_file_path, allow_pickle=True)
     except Exception as e:
         print(f"Error loading {landmark_embedding_file_path}: {e}")
         sys.exit(1)
@@ -83,9 +78,8 @@ def main():
     print(f"Available keys in landmark file: {list(data_dict.keys())}")
 
     keys_to_inspect = {
-        'lmk_face_idx': "MediaPipe Face Indices",
-        'lmk_b_coords': "MediaPipe Barycentric Coords",
-        'landmark_indices': "Vertex Indices for Landmarks"
+        'lmk_face_idx': "Static Face Indices",
+        'lmk_b_coords': "Static Barycentric Coords",
     }
     for key, desc in keys_to_inspect.items():
         if key in data_dict:
@@ -197,23 +191,7 @@ def main():
         # print(f"Lmk0 (Vertex ID): {flame_model.landmark_vertex_ids[0].item()}, Pos: {pred_verts[0, flame_model.landmark_vertex_ids[0].item()].detach().cpu().numpy()}")
         # print(f"FLAME output Lmk0: {pred_landmarks_3d[0,0].detach().cpu().numpy()}")
 
-    print("\n--- Special Inspection: Visualizing 'landmark_indices' on FLAME mesh ---")
-    print("The 'landmark_indices' key contains vertex IDs for the MediaPipe face mesh (468 vertices), not the FLAME mesh (5023 vertices).")
-    print("To demonstrate this incompatibility, we will select vertices from the FLAME mesh using these indices and save the result.")
-    print("The resulting .obj file will likely show a meaningless point cloud.")
-
-    if 'landmark_indices' in data_dict and pred_verts is not None and pred_verts.numel() > 0:
-        landmark_indices_np = data_dict['landmark_indices']
-        if landmark_indices_np.max() < pred_verts.shape[1]:
-            selected_verts_tensor = pred_verts[0, landmark_indices_np, :]
-            save_obj('output/debug_landmark_indices_on_flame.obj', selected_verts_tensor.detach().cpu())
-            print("Visual inspection file saved. Please check 'output/debug_landmark_indices_on_flame.obj' and compare it with 'output/debug_flame_vertices.obj'.")
-        else:
-            print(f"Skipping visualization: Max index in 'landmark_indices' ({landmark_indices_np.max()}) is out of bounds for FLAME vertices ({pred_verts.shape[1]}).")
-    else:
-        print("Skipping visualization: 'landmark_indices' not found in landmark file or FLAME vertices were not generated.")
-
-
+    # The 'landmark_indices' inspection is specific to the mediapipe embedding and is removed for clarity.
     print("\n--- Inspection ---") # ... (rest of inspection messages)
 
 if __name__ == '__main__':
