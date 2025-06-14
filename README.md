@@ -30,7 +30,7 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
     *   Download the following assets:
         *   FLAME 2023 (select the main "FLAME model" download, which typically includes `.pkl` files like `flame2023.pkl`).
         *   FLAME Vertex Masks (select "Vertex masks", e.g., `FLAME_masks.pkl` or `vertex_masks.npz`). The file `FLAME_masks.pkl` is present in your `data/flame_model` directory.
-        *   FLAME Mediapipe Landmark Embedding (select "Landmark embedding for Mediapipe", e.g., `mediapipe_landmark_embedding.npz`). This is present in your `data/flame_model` directory.
+        *   **DECA Landmark Embedding**: The training pipeline is configured for 68 landmarks. The standard embedding for this is found in the official **DECA** project release (`DECA: Detailed Expression Capture and Animation`). You will need to download it from the DECA website and place the `deca_landmark_embedding.npz` file into `data/flame_model/`.
     *   Unzip the downloaded files.
     *   Create a directory `data/flame_model/` in the root of this project (if it doesn't exist).
     *   Place the unzipped model files into the `data/flame_model/` directory. Based on your files, you should have at least `flame2023.pkl`, `FLAME_masks.pkl`, and `deca_landmark_embedding.npz`. The `head_template_mesh.obj` is also useful if provided in the FLAME download.

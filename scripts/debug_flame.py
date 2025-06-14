@@ -187,12 +187,6 @@ def main():
                         print(f"Manually calculated Lmk0: {calculated_lmk0_pos_np}, FLAME Lmk0: {flame_output_lmk0_pos_np}, Diff Sum: {np.sum(diff):.6e}")
         except Exception as e: print(f"Error during manual barycentric check: {e}")
 
-    elif hasattr(flame_model, 'landmark_vertex_ids') and flame_model.landmark_vertex_ids.numel() > 0:
-        print("\n--- FLAME using Vertex ID based landmarks. Manual barycentric check skipped. ---")
-        # You could add a simple check for vertex 0 if desired:
-        # print(f"Lmk0 (Vertex ID): {flame_model.landmark_vertex_ids[0].item()}, Pos: {pred_verts[0, flame_model.landmark_vertex_ids[0].item()].detach().cpu().numpy()}")
-        # print(f"FLAME output Lmk0: {pred_landmarks_3d[0,0].detach().cpu().numpy()}")
-
     print("\n--- Inspection ---") # ... (rest of inspection messages)
 
 if __name__ == '__main__':
