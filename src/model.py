@@ -493,9 +493,10 @@ class FLAME(nn.Module):
         # Kinematic tree (parents of joints)
         # self.parents_full_skeleton is for the full 16-joint skeleton if needed elsewhere.
         if 'kintree_table' in flame_model_data:
-             # The kinematic tree defines the parent of each joint. The second row ([1]) contains the parent indices.
-             parents_full_np = flame_model_data['kintree_table'][1].astype(np.int64)
-             # The parent of the root joint (0) is already -1 in the table, so no modification is needed.
+             # The kinematic tree defines the parent of each joint. The first row ([0]) contains the parent indices.
+             parents_full_np = flame_model_data['kintree_table'][0].astype(np.int64)
+             # The parent of the root joint (0) must be -1 for the LBS algorithm to work.
+             parents_full_np[0] = -1
              self.register_buffer('parents_full_skeleton', torch.tensor(parents_full_np, dtype=torch.long))
         elif 'parent' in flame_model_data: 
              parents_full_np = flame_model_data['parent'].astype(np.int64)
