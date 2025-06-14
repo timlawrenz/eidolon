@@ -85,8 +85,6 @@ def main():
     keys_to_inspect = {
         'lmk_face_idx': "MediaPipe Face Indices",
         'lmk_b_coords': "MediaPipe Barycentric Coords",
-        'full_lmk_faces_idx': "DECA Face Indices",
-        'full_lmk_bary_coords': "DECA Barycentric Coords",
         'landmark_indices': "Vertex Indices for Landmarks"
     }
     for key, desc in keys_to_inspect.items():
