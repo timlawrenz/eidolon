@@ -253,14 +253,30 @@ def main():
             transl=fit_transl
         )
 
-        # Use a simple L2 loss on the 3D landmarks. This is the purest geometric loss.
-        loss = torch.mean((pred_landmarks_3d_fit - target_3d_landmarks)**2)
+        # Define loss components
+        loss_lmk_3d = torch.mean((pred_landmarks_3d_fit - target_3d_landmarks)**2)
+        
+        # Add regularization to penalize deviations from the mean shape and identity pose
+        loss_reg_shape = torch.mean(fit_shape_params**2)
+        loss_reg_pose = torch.mean(fit_pose_params**2)
+
+        # Use weights similar to our training stages to test the landscape
+        lmk_weight = 0.5
+        shape_reg_weight = 1.0
+        pose_reg_weight = 10.0
+
+        loss = (loss_lmk_3d * lmk_weight) + \
+               (loss_reg_shape * shape_reg_weight) + \
+               (loss_reg_pose * pose_reg_weight)
         
         loss.backward()
         optimizer.step()
 
         if i % 20 == 0:
-            print(f"Iteration {i:03d}, Loss: {loss.item():.8f}")
+            print(f"Iter {i:03d}, Loss: {loss.item():.6f} "
+                  f"(Lmk: {loss_lmk_3d.item():.6f}, "
+                  f"ShapeReg: {loss_reg_shape.item():.6f}, "
+                  f"PoseReg: {loss_reg_pose.item():.6f})")
 
     print("\nFitting complete.")
     print("--- Final Optimized Parameters (should be close to zero) ---")
