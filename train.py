@@ -38,7 +38,7 @@ import datetime # For timestamping log directories
 # PyTorch3D imports for renderer and camera
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import (
-    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    look_at_view_transform, FoVPerspectiveCameras, OrthographicCameras, PointLights, RasterizationSettings,
     MeshRenderer, MeshRasterizer, SoftPhongShader, TexturesVertex
 )
 
@@ -88,31 +88,33 @@ LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 # Each stage is a dictionary with 'epochs' and 'loss_weights'.
 TRAINING_STAGES = [
     {
-        'name': 'Stage1_LockDownPose',
-        'epochs': 10, # More epochs to ensure stabilization
+        'name': 'Stage1_OrthoLockdown',
+        'epochs': 10,
+        'camera_type': 'orthographic',
         'learning_rate': 1e-4,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.5,
-            'reg_shape': 1.0,       # Keep shape close to average
-            'reg_transl': 100.0,    # EXTREMELY strong regularization to prevent flying away
-            'reg_global_pose': 10.0,# EXTREMELY strong regularization to keep orientation stable
-            'reg_jaw_pose': 1.0,
-            'reg_neck_pose': 1.0,
-            'reg_eye_pose': 1.0,
+            'landmark': 1.0,       # Strong landmark guidance is safe with orthographic camera
+            'reg_shape': 1.0,      # Keep shape close to average
+            'reg_transl': 0.1,     # Z-translation has no effect on projection size, can be relaxed
+            'reg_global_pose': 1.0,
+            'reg_jaw_pose': 0.5,
+            'reg_neck_pose': 0.5,
+            'reg_eye_pose': 0.5,
             'reg_detail': 1e-4,
         }
     },
     {
-        'name': 'Stage2_CoarseAlignment',
+        'name': 'Stage2_PerspectiveCoarse',
         'epochs': 10,
-        'learning_rate': 1e-5, # Lower LR for stability
+        'camera_type': 'perspective',
+        'learning_rate': 1e-5, # Lower LR for stability when switching to perspective
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.3,        # Increase landmark importance slightly
-            'reg_shape': 0.5,       # Relax shape regularization
-            'reg_transl': 10.0,     # Relax translation regularization, but still strong
-            'reg_global_pose': 5.0, # Relax global pose regularization, but still strong
+            'landmark': 0.5,
+            'reg_shape': 0.5,
+            'reg_transl': 50.0,     # Re-introduce strong Z-translation regularization
+            'reg_global_pose': 5.0, # Re-introduce strong pose regularization
             'reg_jaw_pose': 1.0,
             'reg_neck_pose': 1.0,
             'reg_eye_pose': 1.0,
@@ -120,15 +122,16 @@ TRAINING_STAGES = [
         }
     },
     {
-        'name': 'Stage3_FinetuneShape',
+        'name': 'Stage3_PerspectiveFinetune',
         'epochs': 10,
+        'camera_type': 'perspective',
         'learning_rate': 1e-5,
         'loss_weights': {
             'pixel': 0.0,
             'landmark': 0.2,
             'reg_shape': 0.2,       # Further relax shape regularization
-            'reg_transl': 1.0,      # Further relax translation
-            'reg_global_pose': 1.0, # Further relax pose
+            'reg_transl': 1.0,      # Relax translation
+            'reg_global_pose': 1.0, # Relax pose
             'reg_jaw_pose': 0.5,
             'reg_neck_pose': 0.5,
             'reg_eye_pose': 0.5,
@@ -167,21 +170,10 @@ flame_model = FLAME(
 ).to(DEVICE)
 
 # FLAME faces are now loaded within the FLAME class, access via flame_model.faces_idx
-# flame_faces_tensor = flame_model.faces_idx # This is already on DEVICE if registered as buffer
 
-# Setup PyTorch3D renderer and cameras (similar to main.py)
-# Using a slightly larger distance and wider FoV for more stable initial projections.
-# dist=2.7 is a common value in similar 3DMM fitting frameworks.
-R, T = look_at_view_transform(dist=2.7, elev=0, azim=0) 
-cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=30.0) 
-raster_settings = RasterizationSettings(image_size=224, blur_radius=0.0, faces_per_pixel=1) # Match image size
+# Setup common rendering settings
+raster_settings = RasterizationSettings(image_size=224, blur_radius=0.0, faces_per_pixel=1)
 lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])
-# Using a simple shader. For albedo/texture, a different shader might be needed later.
-shader = SoftPhongShader(device=DEVICE, cameras=cameras, lights=lights)
-renderer = MeshRenderer(
-    rasterizer=MeshRasterizer(cameras=cameras, raster_settings=raster_settings),
-    shader=shader
-)
 
 print(f"Initializing FaceDataset with images from: {IMAGE_DIR} and landmarks from: {LANDMARK_DIR}")
 dataset = FaceDataset(image_dir=IMAGE_DIR, landmark_dir=LANDMARK_DIR)
@@ -254,18 +246,43 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     stage_name = stage_config['name']
     num_epochs_this_stage = stage_config['epochs']
     stage_loss_weights = stage_config['loss_weights']
-    stage_lr = stage_config.get('learning_rate', LEARNING_RATE) # Get LR for stage, default to global LR
+    stage_lr = stage_config.get('learning_rate', LEARNING_RATE)
+    stage_camera_type = stage_config.get('camera_type', 'perspective') # Default to perspective
 
-    # Update optimizer learning rate for the current stage
+    # --- Stage-specific Setup ---
+    # Update optimizer learning rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = stage_lr
     
+    # Update loss function weights
+    loss_fn.weights = stage_loss_weights
+    
+    # Setup camera for the current stage
+    if stage_camera_type == 'orthographic':
+        print("--- Using Orthographic Camera for this stage ---")
+        # Orthographic cameras are useful for initial alignment as they are not sensitive to depth.
+        R, T = look_at_view_transform(dist=10.0, elev=0, azim=0) # dist is less meaningful here
+        # The scale of the orthographic camera needs to be chosen carefully.
+        # A scale of 1.0 means that an object with size 1 in world coordinates will take up
+        # half of the image plane. We start with a scale that roughly matches the perspective view.
+        cameras = OrthographicCameras(device=DEVICE, R=R, T=T, scale_xyz=((1.0, 1.0, 1.0),))
+    else: # 'perspective'
+        print("--- Using Perspective Camera for this stage ---")
+        R, T = look_at_view_transform(dist=2.7, elev=0, azim=0) 
+        cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=30.0)
+
+    # The renderer needs to be re-initialized if the camera changes
+    shader = SoftPhongShader(device=DEVICE, cameras=cameras, lights=lights)
+    renderer = MeshRenderer(
+        rasterizer=MeshRasterizer(cameras=cameras, raster_settings=raster_settings),
+        shader=shader
+    )
+
     print(f"\n--- Starting Training Stage: {stage_name} for {num_epochs_this_stage} epochs ---")
     print(f"Using Loss Weights: {stage_loss_weights}")
     print(f"Using Learning Rate: {stage_lr}")
-    loss_fn.weights = stage_loss_weights # Update loss function weights for the current stage
 
-    for current_stage_epoch_idx in range(num_epochs_this_stage): # Loops 0 to num_epochs_this_stage-1
+    for current_stage_epoch_idx in range(num_epochs_this_stage):
         # 'epoch' variable must be updated with the current global_epoch_idx for THIS iteration
         epoch = global_epoch_idx 
         # Conditional print for epoch progress: 1st, every 5th, last epoch of stage

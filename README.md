@@ -105,45 +105,36 @@ The `train.py` script trains the `EidolonEncoder`. It now uses pre-loaded images
 
 ### Multi-Stage Training
 
-To help stabilize training and guide the model towards a good solution, `train.py` supports a multi-stage training approach. This allows you to define different sets of loss weights and numbers of epochs for distinct phases of training.
+To help stabilize training and guide the model towards a good solution, `train.py` supports a multi-stage curriculum learning approach. This allows you to define different sets of loss weights, learning rates, and even camera models for distinct phases of training.
 
 **Rationale:**
--   **Stage 1 (Stabilization):** In the initial stage, the goal is to get the model to produce roughly correct outputs. This typically involves:
-    -   Strong landmark loss to ensure basic 2D alignment.
-    -   Strong regularization for global pose (towards identity), jaw/neck/eye poses (towards neutral), shape (towards average), and translation (towards center). This prevents extreme, non-face-like predictions.
--   **Stage 2+ (Finetuning):** Once the model is stable, subsequent stages can gradually relax the regularization terms. This allows the model to learn more detailed variations in shape, pose, and potentially expression (if enabled). The landmark loss weight might also be reduced as the model gets better at pixel-level reconstruction.
+-   **Stage 1 (Orthographic Lockdown):** To prevent the model from "cheating" the perspective camera by pushing the face far away, the initial stage uses an `OrthographicCameras`. This projection type is not sensitive to depth, forcing the model to learn a good 2D alignment of shape and orientation first.
+-   **Stage 2 (Perspective Coarse Alignment):** The training then switches to a `FoVPerspectiveCameras`. Strong regularization is re-introduced for translation and pose to prevent instability as the model starts learning to place the face in Z-depth.
+-   **Stage 3+ (Finetuning):** Once the model is stable in perspective projection, subsequent stages can gradually relax the regularization terms to allow for more detailed fitting of shape and pose.
 
 **Configuration:**
-The multi-stage training is configured in `train.py` via the `TRAINING_STAGES` list. Each element in this list is a dictionary defining a stage:
+The multi-stage training is configured in `train.py` via the `TRAINING_STAGES` list. Each element in this list is a dictionary defining a stage. The script supports stage-specific keys for `'epochs'`, `'learning_rate'`, `'loss_weights'`, and `'camera_type'`.
+
 ```python
 TRAINING_STAGES = [
     {
-        'name': 'Stage1_StabilizePose', # A descriptive name for the stage
-        'epochs': 20,                  # Number of epochs for this specific stage
-        'loss_weights': {              # Dictionary of loss weights for this stage
-            'pixel': 1.0,
-            'landmark': 1.0,
-            'reg_shape': 0.5,
-            'reg_transl': 0.5,
-            'reg_global_pose': 1.0,
-            'reg_jaw_pose': 1.0,
-            'reg_neck_pose': 0.5,
-            'reg_eye_pose': 0.5,
-        }
+        'name': 'Stage1_OrthoLockdown',
+        'epochs': 10,
+        'camera_type': 'orthographic', # Use orthographic camera
+        'learning_rate': 1e-4,
+        'loss_weights': { ... }
     },
     {
-        'name': 'Stage2_FinetuneDetails',
-        'epochs': 30,
-        'loss_weights': {
-            'pixel': 1.0,
-            'landmark': 1e-1,
-            # ... other relaxed weights ...
-        }
-    }
-    # Add more stages as needed
+        'name': 'Stage2_PerspectiveCoarse',
+        'epochs': 10,
+        'camera_type': 'perspective',  # Switch to perspective camera
+        'learning_rate': 1e-5,
+        'loss_weights': { ... } # Often with stronger transl/pose regularization initially
+    },
+    # ... more stages
 ]
 ```
-The script will iterate through these stages, applying the specified number of epochs and loss weights for each. The total number of epochs (`NUM_EPOCHS`) is automatically calculated as the sum of epochs from all defined stages. TensorBoard logs will also be organized to reflect these stages for easier analysis.
+The script will iterate through these stages, setting up the specified environment for each. The total number of epochs (`NUM_EPOCHS`) is automatically calculated as the sum of epochs from all defined stages. TensorBoard logs will also be organized to reflect these stages for easier analysis.
 
 You can customize the number of stages, the epochs per stage, and the specific loss weights to suit your training needs and observations.
 
