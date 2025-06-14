@@ -19,13 +19,20 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
     *(On Windows, use `.venv\Scripts\activate`)*
 
 3.  **Install dependencies:**
-    This project uses the FLAME model. When using the `.pkl` model files (like `flame2023.pkl`), the `chumpy` library is required. It will be installed as part of the command below.
+    The dependencies are listed in `requirements.txt`.
 
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Download FLAME assets:**
+4.  **Install `chumpy`:**
+    The FLAME model `.pkl` files require the `chumpy` library. It is an older package and its build process is incompatible with modern versions of `pip`. It must be installed separately with a special flag.
+
+    ```bash
+    pip install --no-build-isolation chumpy
+    ```
+
+5.  **Download FLAME assets:**
     *   Go to [https://flame.is.tue.mpg.de/](https://flame.is.tue.mpg.de/) and register for a free account.
     *   Download the following assets:
         *   FLAME 2023 (select the main "FLAME model" download, which typically includes `.pkl` files like `flame2023.pkl`).
