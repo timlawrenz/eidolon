@@ -1,8 +1,17 @@
 import torch
+from torch.nn import Parameter
+from torch.optim import Adam
 import os
 import sys
 import numpy as np
 import pickle
+
+# PyTorch3D imports for renderer and camera
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import (
+    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    MeshRenderer, MeshRasterizer, SoftPhongShader, TexturesVertex
+)
 
 # --- Path Setup ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -192,6 +201,73 @@ def main():
         except Exception as e: print(f"Error during manual barycentric check: {e}")
 
     print("\n--- Inspection ---") # ... (rest of inspection messages)
+
+
+    # --- Single-instance Fitting Test ---
+    print("\n--- Single-instance Fitting Test ---")
+    print("Testing if the loss landscape can guide FLAME parameters to a target.")
+    
+    # 1. Setup a device
+    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    flame_model.to(DEVICE)
+    
+    # 2. Create a target to fit to.
+    # We will use the canonical landmarks (from the previous forward pass) as our 3D target.
+    # This simulates a perfect scenario where we know the ground truth 3D shape.
+    target_3d_landmarks = pred_landmarks_3d.detach().to(DEVICE)
+
+    # 3. Create learnable FLAME parameters, initialized slightly off from the ideal values.
+    # We want to see if the optimizer can return them to zero/identity.
+    fit_shape_params = Parameter(torch.randn(1, n_shape, device=DEVICE) * 0.1)
+    fit_pose_params = Parameter(torch.randn(1, 6, device=DEVICE) * 0.1)
+    # Start translation a bit away from the center
+    fit_transl = Parameter(torch.tensor([[0.0, 0.1, 0.0]], device=DEVICE))
+
+    # We are not fitting these, so keep them as zero tensors.
+    fit_expression_params = torch.zeros(1, n_exp if n_exp > 0 else 0, device=DEVICE)
+    fit_eye_pose_params = torch.zeros(1, 6, device=DEVICE)
+    fit_jaw_pose_params = torch.zeros(1, 3, device=DEVICE)
+    fit_neck_pose_params = torch.zeros(1, 3, device=DEVICE)
+    
+    # 4. Setup optimizer
+    optimizer = Adam([fit_shape_params, fit_pose_params, fit_transl], lr=0.01)
+
+    # 5. Fitting loop
+    print("\nStarting optimization loop...")
+    for i in range(201):
+        optimizer.zero_grad()
+
+        # We need to add the identity bias to the pose params for them to be valid
+        pose_params_for_model = fit_pose_params.clone()
+        pose_params_for_model[:, 0] += 1.0
+        pose_params_for_model[:, 4] += 1.0
+
+        # Forward pass with current parameters
+        _, pred_landmarks_3d_fit = flame_model(
+            shape_params=fit_shape_params,
+            expression_params=fit_expression_params,
+            pose_params=pose_params_for_model,
+            eye_pose_params=fit_eye_pose_params,
+            jaw_pose_params=fit_jaw_pose_params,
+            neck_pose_params=fit_neck_pose_params,
+            transl=fit_transl
+        )
+
+        # Use a simple L2 loss on the 3D landmarks. This is the purest geometric loss.
+        loss = torch.mean((pred_landmarks_3d_fit - target_3d_landmarks)**2)
+        
+        loss.backward()
+        optimizer.step()
+
+        if i % 20 == 0:
+            print(f"Iteration {i:03d}, Loss: {loss.item():.8f}")
+
+    print("\nFitting complete.")
+    print("--- Final Optimized Parameters (should be close to zero) ---")
+    print(f"Shape mean abs: {fit_shape_params.abs().mean().item():.6f}")
+    print(f"Pose mean abs:  {fit_pose_params.abs().mean().item():.6f}")
+    print(f"Transl: {fit_transl.detach().cpu().numpy().squeeze()}")
+
 
 if __name__ == '__main__':
     main()
