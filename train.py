@@ -118,7 +118,6 @@ TRAINING_STAGES = [
             'reg_eye_pose': 0.5,
             'reg_detail': 1e-4,
         }
-    },
     }
     # Stage 3 was removed. After experimentation, it was found that the aggressive
     # landmark fitting in Stage 3 led to distorted, unrealistic face shapes (overfitting),
