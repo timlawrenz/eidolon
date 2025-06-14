@@ -448,20 +448,20 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                     print(f"  {pname}: Not found in predicted coefficients.")
             print("--------------------------------------------------\n")
 
-            _image_size_for_projection_val = (raster_settings.image_size, raster_settings.image_size)
+            _image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                val_pred_landmarks_3d, image_size=_image_size_for_projection_val
+                val_pred_landmarks_3d, image_size=_image_size_for_projection
             )[:, :, :2]
 
-            val_generic_vertex_colors_val = torch.ones_like(val_pred_verts) * 0.7
-            val_textures_batch_val = TexturesVertex(verts_features=val_generic_vertex_colors_val.to(DEVICE))
+            val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
+            val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
             
-            val_meshes_batch_val = Meshes(
+            val_meshes_batch = Meshes(
                 verts=list(val_pred_verts),
                 faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
-                textures=val_textures_batch_val
+                textures=val_textures_batch
             )
-            val_rendered_images_val = renderer(val_meshes_batch_val).permute(0, 3, 1, 2)[:, :3, :, :]
+            val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
 
             if epoch == 0: 
                 print(f"\n--- DEBUG: TEMPLATE LANDMARK PROJECTION (Epoch {epoch+1}) ---")
@@ -482,7 +482,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                     transl=template_transl_params, debug_print=True
                 )
                 _template_landmarks_2d = cameras.transform_points_screen(
-                    _template_landmarks_3d, image_size=_image_size_for_projection_val
+                    _template_landmarks_3d, image_size=_image_size_for_projection
                 )[:, :, :2]
                 print(f"  Template 2D Landmarks (first 5 points):\n{_template_landmarks_2d[0, :5, :]}")
                 ascii_plot_template_lmks = plot_landmarks_ascii(
@@ -528,7 +528,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 val_gt_images_unnorm_tb, val_gt_landmarks_for_vis, color='red'
             )
             pred_images_tb_with_landmarks = draw_landmarks_on_images_tensor(
-                val_rendered_images_val, val_pred_landmarks_2d_model, color='blue' # Use val_rendered_images_val
+                val_rendered_images, val_pred_landmarks_2d_model, color='blue'
             )
             
             img_grid_gt = torchvision.utils.make_grid(gt_images_tb_with_landmarks.clamp(0,1))
