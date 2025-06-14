@@ -97,9 +97,6 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
     transforms = torch.stack(transform_chain, dim=1) # (B, N, 4, 4), these are G_j
 
     # The last column of the transformations contains the posed joints
-    posed_joints = transforms[:, :, :3, 3] # J_transformed
-
-    # The last column of the transformations contains the posed joints
     posed_joints = transforms[:, :, :3, 3]
 
     # Correctly calculate the skinning transformation matrix A_j = G_j_posed * inv(G_j_rest)
@@ -509,11 +506,14 @@ class FLAME(nn.Module):
             self.register_buffer('parents_full_skeleton', torch.empty(0, dtype=torch.long))
 
         # Define parents for the 5 LBS joints (global, neck, jaw, left_eye, right_eye)
-        # This assumes a simplified hierarchy for these 5 joints for LBS purposes.
-        # Global (0) is root. Neck (1) is child of Global. Jaw (2) is child of Neck.
-        # Left Eye (3) and Right Eye (4) are children of Neck (simplified head).
-        parents_lbs_np = np.array([-1, 0, 1, 1, 1], dtype=np.int64) # Corresponds to global, neck, jaw, eyeL, eyeR
+        # Use the kinematic tree from the FLAME model file directly for the 5 LBS joints.
+        # This ensures the parent-child relationships match what the model data expects.
+        # self.parents_full_skeleton is already loaded and has the parent for each joint.
+        # We assume the J_regressor and lbs_weights correspond to the first 5 joints of this skeleton.
+        num_lbs_joints = self.lbs_weights.shape[1] # Should be 5
+        parents_lbs_np = self.parents_full_skeleton.cpu().numpy()[:num_lbs_joints]
         self.register_buffer('parents_lbs', torch.tensor(parents_lbs_np, dtype=torch.long))
+        print(f"DEBUG: Using LBS parents from model file: {parents_lbs_np}")
 
         # Assert consistency in the number of LBS joints
         num_lbs_joints = self.parents_lbs.shape[0] # This will be 5
