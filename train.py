@@ -88,29 +88,45 @@ LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 # Each stage is a dictionary with 'epochs' and 'loss_weights'.
 TRAINING_STAGES = [
     {
-        'name': 'Stage1_CoarseAlignment',
-        'epochs': 5, # Number of epochs for this stage
+        'name': 'Stage1_LockDownPose',
+        'epochs': 5,
+        'learning_rate': 1e-4, # A slightly higher LR can help escape initial local minima
+        'loss_weights': {
+            'pixel': 0.0,
+            'landmark': 0.5,        # Moderate landmark guidance
+            'reg_shape': 1.0,       # Strong shape regularization
+            'reg_transl': 10.0,     # VERY strong translation regularization to prevent flying away
+            'reg_global_pose': 5.0, # VERY strong global pose regularization
+            'reg_jaw_pose': 1.0,
+            'reg_neck_pose': 1.0,
+            'reg_eye_pose': 1.0,
+            'reg_detail': 1e-4,     # Keep detail regularization low
+        }
+    },
+    {
+        'name': 'Stage2_CoarseAlignment',
+        'epochs': 15,
         'learning_rate': 1e-5, # Lower LR for stabilization
         'loss_weights': {
-            'pixel': 0.0,           # Disable pixel loss; focus on geometric fit
-            'landmark': 0.2,        # Reduced landmark guidance to prevent distortion
-            'reg_shape': 0.5,       # Keep shape regularization strong
-            'reg_transl': 0.5,      # Keep translation regularization strong
-            'reg_global_pose': 1.0, # Strong global pose regularization
-            'reg_jaw_pose': 1.0,    # Moderated jaw pose regularization
-            'reg_neck_pose': 1.0,   # Moderated neck pose regularization
-            'reg_eye_pose': 1.0,    # Moderated eye pose regularization
+            'pixel': 0.0,
+            'landmark': 0.2,        # Standard landmark guidance
+            'reg_shape': 0.5,       # Relax shape regularization
+            'reg_transl': 0.5,      # Relax translation regularization
+            'reg_global_pose': 1.0, # Relax global pose regularization
+            'reg_jaw_pose': 1.0,
+            'reg_neck_pose': 1.0,
+            'reg_eye_pose': 1.0,
             'reg_detail': 1e-3,
         }
     },
     {
-        'name': 'Stage2_FinetuneShape',
-        'epochs': 15, # Use a good number of epochs to find a stable shape
-        'learning_rate': 1e-5, # Keep the small LR for stability
+        'name': 'Stage3_FinetuneShape',
+        'epochs': 10,
+        'learning_rate': 1e-5,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.2,        # Keep landmark weight moderate
-            'reg_shape': 0.2,       # Relax shape regularization a bit
+            'landmark': 0.2,
+            'reg_shape': 0.2,       # Further relax shape regularization
             'reg_transl': 0.1,
             'reg_global_pose': 0.1,
             'reg_jaw_pose': 0.5,
@@ -119,10 +135,6 @@ TRAINING_STAGES = [
             'reg_detail': 1e-4,
         }
     }
-    # Stage 3 was removed. After experimentation, it was found that the aggressive
-    # landmark fitting in Stage 3 led to distorted, unrealistic face shapes (overfitting),
-    # while only providing a minor improvement in 2D landmark alignment. The model from
-    # the end of Stage 2 represents the best balance between accurate pose and plausible shape.
 ]
 
 total_epochs_all_stages = sum(stage['epochs'] for stage in TRAINING_STAGES)
