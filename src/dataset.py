@@ -73,6 +73,19 @@ class FaceDataset(Dataset):
         landmark_path = os.path.join(self.landmark_dir, base_name + self.landmark_extension)
         try:
             landmarks = torch.from_numpy(np.load(landmark_path)).float()
+
+            # Scale landmarks from original_dim (e.g., 128) to target_dim (e.g., 224)
+            # This should correspond to the image resizing dimensions if landmarks are pixel coordinates.
+            original_dim = 128.0  # Assuming landmarks were for 128x128 images
+            target_dim = 224.0  # Assuming images are resized to 224x224 by self.transform
+
+            if landmarks.numel() > 0: # Ensure landmarks tensor is not empty
+                # It's important to know if self.transform resizes the image.
+                # If the image is resized from 128 to 224, landmarks need to be scaled.
+                # This scaling assumes the Resize transform is (224,224) as defined in __init__
+                scale_factor = target_dim / original_dim
+                landmarks = landmarks * scale_factor
+
         except FileNotFoundError:
             print(f"Error: Landmark file not found: {landmark_path}")
             # Return dummy data or raise error
