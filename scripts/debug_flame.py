@@ -199,6 +199,22 @@ def main():
         # print(f"Lmk0 (Vertex ID): {flame_model.landmark_vertex_ids[0].item()}, Pos: {pred_verts[0, flame_model.landmark_vertex_ids[0].item()].detach().cpu().numpy()}")
         # print(f"FLAME output Lmk0: {pred_landmarks_3d[0,0].detach().cpu().numpy()}")
 
+    print("\n--- Special Inspection: Visualizing 'landmark_indices' on FLAME mesh ---")
+    print("The 'landmark_indices' key contains vertex IDs for the MediaPipe face mesh (468 vertices), not the FLAME mesh (5023 vertices).")
+    print("To demonstrate this incompatibility, we will select vertices from the FLAME mesh using these indices and save the result.")
+    print("The resulting .obj file will likely show a meaningless point cloud.")
+
+    if 'landmark_indices' in data_dict and pred_verts is not None and pred_verts.numel() > 0:
+        landmark_indices_np = data_dict['landmark_indices']
+        if landmark_indices_np.max() < pred_verts.shape[1]:
+            selected_verts_tensor = pred_verts[0, landmark_indices_np, :]
+            save_obj('output/debug_landmark_indices_on_flame.obj', selected_verts_tensor.detach().cpu())
+            print("Visual inspection file saved. Please check 'output/debug_landmark_indices_on_flame.obj' and compare it with 'output/debug_flame_vertices.obj'.")
+        else:
+            print(f"Skipping visualization: Max index in 'landmark_indices' ({landmark_indices_np.max()}) is out of bounds for FLAME vertices ({pred_verts.shape[1]}).")
+    else:
+        print("Skipping visualization: 'landmark_indices' not found in landmark file or FLAME vertices were not generated.")
+
 
     print("\n--- Inspection ---") # ... (rest of inspection messages)
 
