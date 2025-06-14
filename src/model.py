@@ -207,7 +207,7 @@ class FLAME(nn.Module):
                 else:
                     raise ValueError(f"FLAME.__init__: Landmark file {deca_landmark_embedding_path} loaded into unexpected type: {type(deca_lmk_data_container)}.")
             
-            if not isinstance(deca_lmk_data, dict):
+            if not (isinstance(deca_lmk_data, dict) or isinstance(deca_lmk_data, np.lib.npyio.NpzFile)):
                 raise ValueError(f"FLAME.__init__: Landmark data from {deca_landmark_embedding_path} did not resolve to a dictionary.")
 
             # Check for different landmark embedding standards (e.g., DECA, MediaPipe)
