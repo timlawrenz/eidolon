@@ -89,30 +89,30 @@ LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 TRAINING_STAGES = [
     {
         'name': 'Stage1_LockDownPose',
-        'epochs': 5,
-        'learning_rate': 1e-4, # A slightly higher LR can help escape initial local minima
+        'epochs': 10, # More epochs to ensure stabilization
+        'learning_rate': 1e-4,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.5,        # Moderate landmark guidance
-            'reg_shape': 1.0,       # Strong shape regularization
-            'reg_transl': 10.0,     # VERY strong translation regularization to prevent flying away
-            'reg_global_pose': 5.0, # VERY strong global pose regularization
+            'landmark': 0.5,
+            'reg_shape': 1.0,       # Keep shape close to average
+            'reg_transl': 100.0,    # EXTREMELY strong regularization to prevent flying away
+            'reg_global_pose': 10.0,# EXTREMELY strong regularization to keep orientation stable
             'reg_jaw_pose': 1.0,
             'reg_neck_pose': 1.0,
             'reg_eye_pose': 1.0,
-            'reg_detail': 1e-4,     # Keep detail regularization low
+            'reg_detail': 1e-4,
         }
     },
     {
         'name': 'Stage2_CoarseAlignment',
-        'epochs': 15,
-        'learning_rate': 1e-5, # Lower LR for stabilization
+        'epochs': 10,
+        'learning_rate': 1e-5, # Lower LR for stability
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.2,        # Standard landmark guidance
+            'landmark': 0.3,        # Increase landmark importance slightly
             'reg_shape': 0.5,       # Relax shape regularization
-            'reg_transl': 0.5,      # Relax translation regularization
-            'reg_global_pose': 1.0, # Relax global pose regularization
+            'reg_transl': 10.0,     # Relax translation regularization, but still strong
+            'reg_global_pose': 5.0, # Relax global pose regularization, but still strong
             'reg_jaw_pose': 1.0,
             'reg_neck_pose': 1.0,
             'reg_eye_pose': 1.0,
@@ -127,8 +127,8 @@ TRAINING_STAGES = [
             'pixel': 0.0,
             'landmark': 0.2,
             'reg_shape': 0.2,       # Further relax shape regularization
-            'reg_transl': 0.1,
-            'reg_global_pose': 0.1,
+            'reg_transl': 1.0,      # Further relax translation
+            'reg_global_pose': 1.0, # Further relax pose
             'reg_jaw_pose': 0.5,
             'reg_neck_pose': 0.5,
             'reg_eye_pose': 0.5,
