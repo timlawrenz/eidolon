@@ -75,7 +75,7 @@ NUM_DETAIL_COEFFS = NUM_COEFFS - (NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS + \
                                  NUM_TRANSLATION_COEFFS)
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
-LANDMARK_EMBEDDING_PATH = './data/flame_model/flame_static_embedding.pkl'
+LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 
 # VISUALIZATION_INTERVAL = 500 # Removed, snapshots are now per epoch.
 # Define epochs for verbose LBS debugging (e.g., first, middle, last)

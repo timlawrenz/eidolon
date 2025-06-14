@@ -38,8 +38,8 @@ def main():
     flame_model_path = 'data/flame_model/flame2023.pkl'
     # This is the path for the landmark embedding file, as referenced in the README.
     # The FLAME class __init__ may expect this argument as `deca_landmark_embedding_path`.
-    # Using the static embedding from the official flame-fitting repository.
-    landmark_embedding_file_path = 'data/flame_model/flame_static_embedding.pkl'
+    # Using a standard 68-point landmark embedding, e.g., from DECA.
+    landmark_embedding_file_path = 'data/flame_model/deca_landmark_embedding.npz'
     NUM_EXPECTED_LANDMARKS_SCRIPT = 68
 
     print("--- Inspecting Landmark Embedding File ---")
@@ -48,7 +48,7 @@ def main():
     # Dummy file creation is not necessary for this test. We need the real file.
     if not os.path.exists(landmark_embedding_file_path):
         print(f"Error: Landmark embedding file not found at {landmark_embedding_file_path}")
-        print("Please run: wget -P data/flame_model/ https://github.com/Rubikplayer/flame-fitting/raw/master/models/flame_static_embedding.pkl")
+        print("Please acquire a 68-point FLAME landmark embedding, such as 'deca_landmark_embedding.npz' from the DECA project, and place it in that path.")
         sys.exit(1)
 
     try:
@@ -78,8 +78,10 @@ def main():
     print(f"Available keys in landmark file: {list(data_dict.keys())}")
 
     keys_to_inspect = {
-        'lmk_face_idx': "Static Face Indices",
-        'lmk_b_coords': "Static Barycentric Coords",
+        'full_lmk_faces_idx': "DECA Face Indices",
+        'full_lmk_bary_coords': "DECA Barycentric Coords",
+        'lmk_face_idx': "MediaPipe Face Indices",
+        'lmk_b_coords': "MediaPipe Barycentric Coords",
     }
     for key, desc in keys_to_inspect.items():
         if key in data_dict:
@@ -191,7 +193,6 @@ def main():
         # print(f"Lmk0 (Vertex ID): {flame_model.landmark_vertex_ids[0].item()}, Pos: {pred_verts[0, flame_model.landmark_vertex_ids[0].item()].detach().cpu().numpy()}")
         # print(f"FLAME output Lmk0: {pred_landmarks_3d[0,0].detach().cpu().numpy()}")
 
-    # The 'landmark_indices' inspection is specific to the mediapipe embedding and is removed for clarity.
     print("\n--- Inspection ---") # ... (rest of inspection messages)
 
 if __name__ == '__main__':

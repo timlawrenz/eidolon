@@ -210,12 +210,19 @@ class FLAME(nn.Module):
             if not isinstance(deca_lmk_data, dict):
                 raise ValueError(f"FLAME.__init__: Landmark data from {deca_landmark_embedding_path} did not resolve to a dictionary.")
 
-            # We now use the standard static landmark embedding.
-            # The keys are typically 'lmk_face_idx' and 'lmk_b_coords'.
-            used_face_key, used_bary_key = 'lmk_face_idx', 'lmk_b_coords'
+            # Check for different landmark embedding standards (e.g., DECA, MediaPipe)
+            deca_face_key, deca_bary_key = 'full_lmk_faces_idx', 'full_lmk_bary_coords'
+            mediapipe_face_key, mediapipe_bary_key = 'lmk_face_idx', 'lmk_b_coords'
+            used_face_key, used_bary_key = None, None
 
-            if used_face_key in deca_lmk_data and used_bary_key in deca_lmk_data:
-                print(f"DEBUG FLAME.__init__: Found MediaPipe landmark keys: '{used_face_key}', '{used_bary_key}'.")
+            if deca_face_key in deca_lmk_data and deca_bary_key in deca_lmk_data:
+                print(f"DEBUG FLAME.__init__: Found DECA landmark keys: '{deca_face_key}', '{deca_bary_key}'.")
+                used_face_key, used_bary_key = deca_face_key, deca_bary_key
+            elif mediapipe_face_key in deca_lmk_data and mediapipe_bary_key in deca_lmk_data:
+                print(f"DEBUG FLAME.__init__: DECA keys not found. Found MediaPipe keys: '{mediapipe_face_key}', '{mediapipe_bary_key}'.")
+                used_face_key, used_bary_key = mediapipe_face_key, mediapipe_bary_key
+            
+            if used_face_key and used_bary_key:
                 lmk_faces_idx_np = deca_lmk_data[used_face_key]
                 lmk_bary_coords_np = deca_lmk_data[used_bary_key]
                 if lmk_faces_idx_np.ndim == 2 and lmk_faces_idx_np.shape[0] == 1: lmk_faces_idx_np = lmk_faces_idx_np.squeeze(0)
@@ -230,7 +237,7 @@ class FLAME(nn.Module):
                     print(f"Warning FLAME.__init__: Landmark data (keys '{used_face_key}', '{used_bary_key}') have shapes {lmk_faces_idx_np.shape} and {lmk_bary_coords_np.shape},"
                           f" but expected ({NUM_EXPECTED_LANDMARKS},) and ({NUM_EXPECTED_LANDMARKS}, 3).")
             else:
-                print(f"Warning FLAME.__init__: Required MediaPipe landmark keys ('{used_face_key}', '{used_bary_key}') not found in {deca_landmark_embedding_path}. Keys: {list(deca_lmk_data.keys())}")
+                print(f"Warning FLAME.__init__: Neither DECA nor MediaPipe standard landmark keys found in {deca_landmark_embedding_path}. Keys: {list(deca_lmk_data.keys())}")
         except Exception as e:
             print(f"ERROR loading or processing landmark embedding from {deca_landmark_embedding_path}: {e}")
             import traceback; traceback.print_exc()

@@ -33,7 +33,7 @@ It is currently configured to use CUDA 12.1 due to the PyTorch and PyTorch3D dep
         *   FLAME Mediapipe Landmark Embedding (select "Landmark embedding for Mediapipe", e.g., `mediapipe_landmark_embedding.npz`). This is present in your `data/flame_model` directory.
     *   Unzip the downloaded files.
     *   Create a directory `data/flame_model/` in the root of this project (if it doesn't exist).
-    *   Place the unzipped model files into the `data/flame_model/` directory. Based on your files, you should have at least `flame2023.pkl`, `FLAME_masks.pkl`, and `mediapipe_landmark_embedding.npz`. The `head_template_mesh.obj` is also useful if provided in the FLAME download.
+    *   Place the unzipped model files into the `data/flame_model/` directory. Based on your files, you should have at least `flame2023.pkl`, `FLAME_masks.pkl`, and `deca_landmark_embedding.npz`. The `head_template_mesh.obj` is also useful if provided in the FLAME download.
 
 ## Usage
 
