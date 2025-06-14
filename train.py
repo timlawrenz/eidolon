@@ -52,7 +52,7 @@ print(f"TensorBoard logs will be saved to: {log_dir_name}")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 190 # Start small (e.g., 8-16) and increase if memory allows
-NUM_EPOCHS = 30 # Will be overridden by sum of stage epochs, but set for clarity
+NUM_EPOCHS = 20 # Total epochs for the final two-stage training schedule.
 IMAGE_DIR = "data/ffhq_thumbnails_128" # Directory for pre-processed images
 LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
 NUM_COEFFS = 227 # Total number of FLAME parameters the encoder will predict
@@ -119,22 +119,11 @@ TRAINING_STAGES = [
             'reg_detail': 1e-4,
         }
     },
-    {
-        'name': 'Stage3_FinalLandmarkFit',
-        'epochs': 10, # Final polish
-        'learning_rate': 1e-5, # Keep LR low
-        'loss_weights': {
-            'pixel': 0.0,
-            'landmark': 1.0,        # Now, strongly pull to landmarks
-            'reg_shape': 0.1,       # Relax shape regularization even more
-            'reg_transl': 0.05,
-            'reg_global_pose': 0.05,
-            'reg_jaw_pose': 0.2,    # Allow final pose tweaks
-            'reg_neck_pose': 0.2,
-            'reg_eye_pose': 0.2,
-            'reg_detail': 1e-5,
-        }
     }
+    # Stage 3 was removed. After experimentation, it was found that the aggressive
+    # landmark fitting in Stage 3 led to distorted, unrealistic face shapes (overfitting),
+    # while only providing a minor improvement in 2D landmark alignment. The model from
+    # the end of Stage 2 represents the best balance between accurate pose and plausible shape.
 ]
 
 total_epochs_all_stages = sum(stage['epochs'] for stage in TRAINING_STAGES)
@@ -554,7 +543,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
     print(f"DEBUG: MAIN LOOP - Finished Stage {stage_idx + 1}") # DEBUG PRINT
 
-print("Training finished (skeleton).")
+print("Training finished.")
 
 # --- Save the final model ---
 torch.save(encoder.state_dict(), 'eidolon_encoder_final.pth')
