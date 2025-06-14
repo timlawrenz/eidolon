@@ -75,7 +75,7 @@ NUM_DETAIL_COEFFS = NUM_COEFFS - (NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS + \
                                  NUM_TRANSLATION_COEFFS)
 # Ensure NUM_COEFFS == SUM_OF_ALL_DECONSTRUCTED_PARTS
 FLAME_MODEL_PKL_PATH = './data/flame_model/flame2023.pkl'
-DECA_LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npy' # Updated path for DECA landmarks
+LANDMARK_EMBEDDING_PATH = './data/flame_model/mediapipe_landmark_embedding.npz'
 
 # VISUALIZATION_INTERVAL = 500 # Removed, snapshots are now per epoch.
 # Define epochs for verbose LBS debugging (e.g., first, middle, last)
@@ -149,7 +149,7 @@ optimizer = torch.optim.Adam(encoder.parameters(), lr=INITIAL_LEARNING_RATE_FOR_
 # Pass paths and parameter dimensions to the FLAME model constructor
 flame_model = FLAME(
     flame_model_path=FLAME_MODEL_PKL_PATH,
-    deca_landmark_embedding_path=DECA_LANDMARK_EMBEDDING_PATH, # Updated argument name
+    deca_landmark_embedding_path=LANDMARK_EMBEDDING_PATH,
     n_shape=NUM_SHAPE_COEFFS,
     n_exp=NUM_EXPRESSION_COEFFS
 ).to(DEVICE)
