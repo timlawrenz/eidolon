@@ -94,9 +94,9 @@ TRAINING_STAGES = [
         'learning_rate': 1e-4,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 1.0,       # Strong landmark guidance is safe with orthographic camera
-            'reg_shape': 1.0,      # Keep shape close to average
-            'reg_transl': 0.1,     # Z-translation has no effect on projection size, can be relaxed
+            'landmark': 1.0,
+            'reg_shape': 1.0,
+            'reg_transl': 0.1,
             'reg_global_pose': 1.0,
             'reg_jaw_pose': 0.5,
             'reg_neck_pose': 0.5,
@@ -108,13 +108,13 @@ TRAINING_STAGES = [
         'name': 'Stage2_PerspectiveCoarse',
         'epochs': 10,
         'camera_type': 'perspective',
-        'learning_rate': 1e-5, # Lower LR for stability when switching to perspective
+        'learning_rate': 1e-5,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.5,
+            'landmark': 1.0,      # Emphasize landmarks to get a good initial fit
             'reg_shape': 0.5,
-            'reg_transl': 50.0,     # Re-introduce strong Z-translation regularization
-            'reg_global_pose': 5.0, # Re-introduce strong pose regularization
+            'reg_transl': 100.0,    # Use EXTREMELY strong Z-translation regularization to prevent cheating
+            'reg_global_pose': 10.0,# Keep pose stable during this transition
             'reg_jaw_pose': 1.0,
             'reg_neck_pose': 1.0,
             'reg_eye_pose': 1.0,
@@ -128,10 +128,10 @@ TRAINING_STAGES = [
         'learning_rate': 1e-5,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.2,
-            'reg_shape': 0.2,       # Further relax shape regularization
-            'reg_transl': 1.0,      # Relax translation
-            'reg_global_pose': 1.0, # Relax pose
+            'landmark': 0.5,      # Reduce landmark weight after initial fit
+            'reg_shape': 0.2,
+            'reg_transl': 10.0,     # Relax translation regularization, but keep it strong
+            'reg_global_pose': 5.0, # Relax pose regularization
             'reg_jaw_pose': 0.5,
             'reg_neck_pose': 0.5,
             'reg_eye_pose': 0.5,
@@ -269,7 +269,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     else: # 'perspective'
         print("--- Using Perspective Camera for this stage ---")
         R, T = look_at_view_transform(dist=2.7, elev=0, azim=0) 
-        cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=30.0)
+        # Using a smaller FoV makes the projection more orthographic-like and stable
+        cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=12.0)
 
     # The renderer needs to be re-initialized if the camera changes
     shader = SoftPhongShader(device=DEVICE, cameras=cameras, lights=lights)
