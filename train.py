@@ -263,9 +263,11 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         # Orthographic cameras are useful for initial alignment as they are not sensitive to depth.
         R, T = look_at_view_transform(dist=10.0, elev=0, azim=0) # dist is less meaningful here
         # The scale of the orthographic camera needs to be chosen carefully.
-        # In PyTorch3D v0.7.6, this is controlled by the default focal_length=(1.0, 1.0).
-        # An object of size 1 in world coordinates will be projected to a size of 1 in NDC space.
-        cameras = OrthographicCameras(device=DEVICE, R=R, T=T)
+        # In PyTorch3D v0.7.6, this is controlled by the focal_length.
+        # A larger focal length "zooms in", scaling up the projection.
+        # We'll use a value that makes the initial projection roughly the same
+        # size as the target landmarks, giving the optimizer better gradients.
+        cameras = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=120.0)
     else: # 'perspective'
         print("--- Using Perspective Camera for this stage ---")
         R, T = look_at_view_transform(dist=2.7, elev=0, azim=0) 
