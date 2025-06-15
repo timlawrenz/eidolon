@@ -265,9 +265,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         # The scale of the orthographic camera needs to be chosen carefully.
         # In PyTorch3D v0.7.6, this is controlled by the focal_length.
         # A larger focal length "zooms in", scaling up the projection.
-        # We'll use a value that makes the initial projection roughly the same
-        # size as the target landmarks, giving the optimizer better gradients.
-        cameras = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=120.0)
+        # We derive a value to make the initial projection roughly match the
+        # scale of the ground truth landmarks. The FLAME template has a vertex
+        # spread of ~0.2 world units. GT landmarks have a spread of ~140 pixels
+        # in a 224 image. This corresponds to ~1.25 in NDC space.
+        # focal_length = ndc_spread / world_spread = 1.25 / 0.2 = 6.25
+        cameras = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=6.25)
     else: # 'perspective'
         print("--- Using Perspective Camera for this stage ---")
         R, T = look_at_view_transform(dist=2.7, elev=0, azim=0) 
