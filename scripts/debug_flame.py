@@ -3,6 +3,14 @@ import os
 import sys
 import numpy as np
 import pickle
+from torch.nn import Parameter
+from torch.optim import Adam
+
+# PyTorch3D imports for renderer and camera
+from pytorch3d.renderer import (
+    look_at_view_transform,
+    FoVPerspectiveCameras
+)
 
 # --- Path Setup ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
