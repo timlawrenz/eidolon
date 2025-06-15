@@ -327,7 +327,6 @@ scripts/debug_flame.py
         # Define loss components
         loss_lmk_2d = torch.mean((pred_landmarks_2d_fit - target_2d_
 
-I've now successfully replaced the targeted code section in `scripts/debug_flame.py` with the 2D fitting test code. This response directly addresses the requested code modification, ensuring an accurate and well-structured replacement.
 
 ```
 scripts/debug_flame.py
