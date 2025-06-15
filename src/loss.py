@@ -63,6 +63,24 @@ class TotalLoss(nn.Module):
 
         # --- Landmark Loss ---
         loss_landmark = self.landmark_loss(pred_landmarks_2d, gt_landmarks_2d)
+
+        # --- Scale and Translation Invariant Landmark Shape Loss ---
+        # 1. Center both sets of landmarks by subtracting their mean.
+        gt_landmarks_mean = gt_landmarks_2d.mean(dim=1, keepdim=True)
+        pred_landmarks_mean = pred_landmarks_2d.mean(dim=1, keepdim=True)
+        gt_landmarks_centered = gt_landmarks_2d - gt_landmarks_mean
+        pred_landmarks_centered = pred_landmarks_2d - pred_landmarks_mean
+
+        # 2. Compute the scale of the ground truth landmarks.
+        # We use the standard deviation of the landmark coordinates. Add epsilon for stability.
+        gt_scale = torch.std(gt_landmarks_centered, dim=(1, 2), keepdim=True) + 1e-8
+
+        # 3. Normalize both centered sets by the ground truth scale.
+        gt_landmarks_normalized = gt_landmarks_centered / gt_scale
+        pred_landmarks_normalized = pred_landmarks_centered / gt_scale
+
+        # 4. Compute the L2 loss on the normalized, centered landmarks.
+        loss_landmark_shape = self.landmark_loss(pred_landmarks_normalized, gt_landmarks_normalized)
         
         # --- Parameter Regularization Loss ---
         # Penalize large shape and expression params to encourage plausible faces
@@ -138,6 +156,7 @@ class TotalLoss(nn.Module):
         total_loss = (
             self.weights.get('pixel', 1.0) * loss_pixel +
             self.weights.get('landmark', 1.0) * loss_landmark +
+            self.weights.get('landmark_shape', 0.0) * loss_landmark_shape +
             self.weights.get('reg_shape', 1.0) * loss_reg_shape +
             self.weights.get('reg_expression', 1.0) * loss_reg_expression +
             self.weights.get('reg_transl', 1.0) * loss_reg_transl +
@@ -153,6 +172,7 @@ class TotalLoss(nn.Module):
             'total': total_loss,
             'pixel': loss_pixel,
             'landmark': loss_landmark,
+            'landmark_shape': loss_landmark_shape,
             'reg_shape': loss_reg_shape,
             'reg_expression': loss_reg_expression,
             'reg_transl': loss_reg_transl,
