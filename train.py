@@ -52,7 +52,7 @@ print(f"TensorBoard logs will be saved to: {log_dir_name}")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 190 # Start small (e.g., 8-16) and increase if memory allows
-NUM_EPOCHS = 20 # Total epochs for the final two-stage training schedule.
+# NUM_EPOCHS is now determined by the sum of epochs in TRAINING_STAGES
 IMAGE_DIR = "data/ffhq_thumbnails_128" # Directory for pre-processed images
 LANDMARK_DIR = "data/ffhq_landmarks_128" # Directory for pre-computed landmarks
 NUM_COEFFS = 227 # Total number of FLAME parameters the encoder will predict
@@ -96,11 +96,11 @@ TRAINING_STAGES = [
             'pixel': 0.0,
             'landmark': 1.0,
             'reg_shape': 1.0,
-            'reg_transl': 0.1,
-            'reg_global_pose': 1.0,
-            'reg_jaw_pose': 0.5,
-            'reg_neck_pose': 0.5,
-            'reg_eye_pose': 0.5,
+            'reg_transl': 100.0,        # Heavily penalize translation to keep the face centered
+            'reg_global_pose': 10.0,   # Heavily penalize rotation to keep the face looking forward
+            'reg_jaw_pose': 1.0,       # Increase regularization on other poses too
+            'reg_neck_pose': 1.0,
+            'reg_eye_pose': 1.0,
             'reg_detail': 1e-4,
         }
     },
