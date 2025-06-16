@@ -102,7 +102,15 @@ def lbs(v_shaped_expressed,
     if current_pose_feature_vector.shape[1] != num_features_expected_by_posedirs:
         print(f"Warning: Pose feature vector shape mismatch. Using zeros for pose_blendshapes.")
         current_pose_feature_vector = torch.zeros(batch_size, num_features_expected_by_posedirs, device=device, dtype=dtype)
-    pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs)
+    
+    # --- DIAGNOSTIC: Temporarily disable pose-dependent blendshapes ---
+    # The posedirs component can be a source of instability. Disabling it helps
+    # to verify if the rest of the model is learning correctly. If the model
+    # performs much better with this disabled, it indicates an issue with
+    # how posedirs are being used.
+    # pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs)
+    pose_blendshapes = torch.zeros_like(v_shaped_expressed)
+
     v_to_skin = v_shaped_expressed + pose_blendshapes
     if debug_print:
         if v_to_skin.numel() > 0 and v_to_skin.shape[0] > 0:
