@@ -147,3 +147,47 @@ def plot_landmarks_ascii(landmarks_2d_batch, original_img_width, original_img_he
         output_str += "|" + "".join(row) + "|\n"
     output_str += "+" + "-" * grid_width + "+\n"
     return output_str
+
+def deconstruct_flame_coeffs(pred_coeffs_vec_batch,
+                               num_shape, num_expr, num_global_pose,
+                               num_jaw_pose, num_eye_pose, num_neck_pose,
+                               num_transl, num_detail):
+    """
+    Deconstructs a flat coefficient vector into a dictionary of FLAME parameters.
+    
+    Args:
+        pred_coeffs_vec_batch (torch.Tensor): A batch of flat coefficient vectors. Shape (B, N_coeffs).
+        (many) num_... (int): Number of coefficients for each parameter.
+
+    Returns:
+        dict: A dictionary of parameter tensors.
+    """
+    batch_size = pred_coeffs_vec_batch.shape[0]
+    current_idx = 0
+    
+    pred_coeffs_dict = {}
+
+    # Define the order and size of parameters to deconstruct
+    param_info = [
+        ('shape_params', num_shape),
+        ('expression_params', num_expr),
+        ('pose_params', num_global_pose),
+        ('jaw_pose_params', num_jaw_pose),
+        ('eye_pose_params', num_eye_pose),
+        ('neck_pose_params', num_neck_pose),
+        ('transl', num_transl),
+        ('detail_params', num_detail),
+    ]
+
+    for key, num_coeffs in param_info:
+        if num_coeffs > 0:
+            pred_coeffs_dict[key] = pred_coeffs_vec_batch[:, current_idx : current_idx + num_coeffs]
+            current_idx += num_coeffs
+        else:
+            pred_coeffs_dict[key] = torch.zeros(batch_size, 0, device=pred_coeffs_vec_batch.device)
+            
+    # Assert that all coefficients have been deconstructed
+    total_coeffs = sum(p[1] for p in param_info)
+    assert current_idx == total_coeffs, f"Mismatch in deconstructed coeffs: expected {total_coeffs}, got {current_idx}"
+
+    return pred_coeffs_dict

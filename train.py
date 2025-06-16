@@ -29,7 +29,7 @@ import os # For os.makedirs and os.path.join
 from src.dataset import FaceDataset
 from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
-from src.utils import save_validation_images, draw_landmarks_on_images_tensor, plot_landmarks_ascii # Import the new utility functions
+from src.utils import save_validation_images, draw_landmarks_on_images_tensor, plot_landmarks_ascii, deconstruct_flame_coeffs # Import the new utility functions
 import pickle # For loading FLAME model faces
 from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
 import torchvision # For making image grids for TensorBoard
@@ -188,56 +188,7 @@ data_loader = DataLoader(
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
 
-# Helper function to deconstruct the coefficient vector
-# This needs to match how your FLAME model expects its parameters
-# and the order/size defined by NUM_SHAPE_COEFFS, etc.
-def deconstruct_flame_coeffs(pred_coeffs_vec_batch):
-    batch_size = pred_coeffs_vec_batch.shape[0]
-    current_idx = 0
-    
-    shape_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_SHAPE_COEFFS]
-    current_idx += NUM_SHAPE_COEFFS
-    
-    expression_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_EXPRESSION_COEFFS]
-    current_idx += NUM_EXPRESSION_COEFFS
-    
-    # Global pose (e.g., axis-angle)
-    pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_GLOBAL_POSE_COEFFS]
-    current_idx += NUM_GLOBAL_POSE_COEFFS
-
-    # Jaw pose
-    jaw_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_JAW_POSE_COEFFS]
-    current_idx += NUM_JAW_POSE_COEFFS
-    
-    # Eye pose (left and right eye)
-    eye_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_EYE_POSE_COEFFS]
-    current_idx += NUM_EYE_POSE_COEFFS
-
-    # Neck pose
-    neck_pose_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_NECK_POSE_COEFFS]
-    current_idx += NUM_NECK_POSE_COEFFS
-
-    # Translation
-    transl_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_TRANSLATION_COEFFS]
-    current_idx += NUM_TRANSLATION_COEFFS
-
-    # Detail/Other parameters (e.g., texture, lighting)
-    detail_params = pred_coeffs_vec_batch[:, current_idx : current_idx + NUM_DETAIL_COEFFS]
-    current_idx += NUM_DETAIL_COEFFS
-    
-    # Assert that all coefficients have been deconstructed
-    assert current_idx == NUM_COEFFS, f"Mismatch in deconstructed coeffs: expected {NUM_COEFFS}, got {current_idx}"
-
-    return {
-        'shape_params': shape_params,
-        'expression_params': expression_params,
-        'pose_params': pose_params,
-        'jaw_pose_params': jaw_pose_params,
-        'eye_pose_params': eye_pose_params,
-        'neck_pose_params': neck_pose_params,
-        'transl': transl_params, # FLAME model might expect 'transl'
-        'detail_params': detail_params
-    }
+# Deconstruct helper function is now in src/utils.py
 
 # 3. The Training Loop
 global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
@@ -311,7 +262,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             pred_coeffs_vec = encoder(gt_images)
             
             # Deconstruct the predicted coefficient vector into a dictionary for FLAME
-            pred_coeffs_dict = deconstruct_flame_coeffs(pred_coeffs_vec)
+            pred_coeffs_dict = deconstruct_flame_coeffs(
+                pred_coeffs_vec,
+                NUM_SHAPE_COEFFS, NUM_EXPRESSION_COEFFS, NUM_GLOBAL_POSE_COEFFS,
+                NUM_JAW_POSE_COEFFS, NUM_EYE_POSE_COEFFS, NUM_NECK_POSE_COEFFS,
+                NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
+            )
             
             # Run the FLAME model to get 3D vertices and 3D landmarks
             pred_verts, pred_landmarks_3d = flame_model(
