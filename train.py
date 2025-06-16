@@ -360,7 +360,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             _vis_target_projection_img_height = float(raster_settings.image_size)
 
             val_pred_coeffs_vec = encoder(val_gt_images)
-            val_pred_coeffs_dict = deconstruct_flame_coeffs(val_pred_coeffs_vec)
+            val_pred_coeffs_dict = deconstruct_flame_coeffs(
+                val_pred_coeffs_vec,
+                NUM_SHAPE_COEFFS, NUM_EXPRESSION_COEFFS, NUM_GLOBAL_POSE_COEFFS,
+                NUM_JAW_POSE_COEFFS, NUM_EYE_POSE_COEFFS, NUM_NECK_POSE_COEFFS,
+                NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
+            )
             
             debug_lbs_this_epoch = epoch in VERBOSE_LBS_DEBUG_EPOCHS
             if debug_lbs_this_epoch:
@@ -506,12 +511,18 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         encoder.train() # Set model back to training mode
         print(f"DEBUG: MAIN LOOP - Completed Global Epoch {global_epoch_idx + 1}. Incrementing global_epoch_idx.") # DEBUG PRINT
         global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
-    print(f"DEBUG: MAIN LOOP - Finished Stage {stage_idx + 1}") # DEBUG PRINT
+    
+    # --- STAGE-END CHECKPOINT ---
+    stage_model_save_path = f"eidolon_encoder_stage_{stage_idx+1}.pth"
+    torch.save(encoder.state_dict(), stage_model_save_path)
+    print(f"\n--- Stage {stage_idx + 1} ({stage_config['name']}) Finished ---")
+    print(f"Saved model checkpoint to: {stage_model_save_path}\n")
 
-print("Training finished.")
+print("All training stages finished.")
 
-# --- Save the final model ---
-torch.save(encoder.state_dict(), 'eidolon_encoder_final.pth')
-print("Encoder model saved to eidolon_encoder_final.pth")
+# --- Save the final model name to a file for easy reference ---
+with open('latest_model.txt', 'w') as f:
+    f.write(stage_model_save_path)
+
 
 writer.close() # Close the TensorBoard SummaryWriter
