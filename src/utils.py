@@ -7,6 +7,93 @@ from tqdm import tqdm # Import tqdm
 import numpy as np
 import os
 
+def save_obj(filepath, vertices, faces=None):
+    """
+    Saves a 3D mesh to an .obj file.
+
+    Args:
+        filepath (str): Path to save the .obj file.
+        vertices (torch.Tensor or np.ndarray): Vertices of shape (N, 3).
+        faces (torch.Tensor or np.ndarray, optional): Faces of shape (F, 3). Indices are 0-based. Defaults to None.
+    """
+    assert vertices.ndim == 2 and vertices.shape[1] == 3, "Vertices must be of shape (N, 3)"
+    if hasattr(vertices, 'cpu'): # Check if it's a torch.Tensor
+        vertices = vertices.detach().cpu().numpy()
+
+    if faces is not None:
+        assert faces.ndim == 2 and faces.shape[1] == 3, "Faces must be of shape (F, 3)"
+        if hasattr(faces, 'cpu'): # Check if it's a torch.Tensor
+            faces = faces.detach().cpu().numpy()
+        assert np.issubdtype(faces.dtype, np.integer), f"Faces dtype must be integer, got {faces.dtype}"
+
+    with open(filepath, 'w') as f:
+        for v_idx in range(vertices.shape[0]):
+            v = vertices[v_idx]
+            f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+
+        if faces is not None:
+            # .obj files are 1-indexed
+            for face_idx in range(faces.shape[0]):
+                face = faces[face_idx]
+                f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+    # Use tqdm.write to avoid interfering with progress bars if used during training
+    tqdm.write(f"Saved mesh to {filepath}")
+
+
+def deconstruct_flame_coeffs(pred_coeffs_vec,
+                               num_shape_coeffs, num_expression_coeffs, num_global_pose_coeffs,
+                               num_jaw_pose_coeffs, num_eye_pose_coeffs, num_neck_pose_coeffs,
+                               num_translation_coeffs, num_detail_coeffs):
+    """
+    Deconstructs a flat FLAME coefficient vector into a dictionary of named parameters.
+
+    Args:
+        pred_coeffs_vec (torch.Tensor): A tensor of shape (B, N_coeffs) or (N_coeffs,).
+        num_..._coeffs (int): The number of coefficients for each parameter type.
+
+    Returns:
+        dict: A dictionary mapping parameter names to their corresponding tensor slices.
+    """
+    if pred_coeffs_vec.ndim == 1:
+        pred_coeffs_vec = pred_coeffs_vec.unsqueeze(0)  # Add batch dimension if missing
+
+    coeffs_dict = {}
+    current_idx = 0
+
+    # Shape
+    coeffs_dict['shape_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_shape_coeffs]
+    current_idx += num_shape_coeffs
+
+    # Expression
+    coeffs_dict['expression_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_expression_coeffs]
+    current_idx += num_expression_coeffs
+
+    # Global Pose
+    coeffs_dict['pose_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_global_pose_coeffs]
+    current_idx += num_global_pose_coeffs
+
+    # Jaw Pose
+    coeffs_dict['jaw_pose_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_jaw_pose_coeffs]
+    current_idx += num_jaw_pose_coeffs
+
+    # Eye Pose
+    coeffs_dict['eye_pose_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_eye_pose_coeffs]
+    current_idx += num_eye_pose_coeffs
+    
+    # Neck Pose
+    coeffs_dict['neck_pose_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_neck_pose_coeffs]
+    current_idx += num_neck_pose_coeffs
+
+    # Translation
+    coeffs_dict['transl'] = pred_coeffs_vec[:, current_idx:current_idx + num_translation_coeffs]
+    current_idx += num_translation_coeffs
+    
+    # Detail (e.g., for texture, lighting - not used by FLAME geometry but might be predicted by encoder)
+    coeffs_dict['detail_params'] = pred_coeffs_vec[:, current_idx:current_idx + num_detail_coeffs]
+
+    return coeffs_dict
+
+
 def save_validation_images(gt_images_display_unnormalized, rendered_images, 
                            gt_landmarks_for_display_scaled, pred_landmarks_for_display, 
                            save_path_prefix, num_images=4):
