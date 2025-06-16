@@ -188,8 +188,6 @@ data_loader = DataLoader(
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
 
-# Deconstruct helper function is now in src/utils.py
-
 # 3. The Training Loop
 global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
 for stage_idx, stage_config in enumerate(TRAINING_STAGES):

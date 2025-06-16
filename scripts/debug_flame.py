@@ -11,6 +11,7 @@ from pytorch3d.renderer import (
     look_at_view_transform,
     FoVPerspectiveCameras
 )
+from src.utils import save_obj
 
 # --- Path Setup ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,23 +25,7 @@ except ImportError:
     print(f"Please ensure 'src/model.py' exists and FLAME class is defined, and that '{project_root}' is in PYTHONPATH if running from elsewhere.")
     sys.exit(1)
 
-# --- .obj Saving Function ---
-def save_obj(filepath, vertices, faces=None):
-    assert vertices.ndim == 2 and vertices.shape[1] == 3, "Vertices must be of shape (N, 3)"
-    if faces is not None:
-        assert faces.ndim == 2 and faces.shape[1] == 3, "Faces must be of shape (F, 3)"
-        assert faces.dtype == torch.long or faces.dtype == np.int64 or faces.dtype == np.int32 or faces.dtype == torch.int32, f"Faces dtype must be integer, got {faces.dtype}"
-
-    with open(filepath, 'w') as f:
-        for v_idx in range(vertices.shape[0]):
-            v = vertices[v_idx]
-            f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
-
-        if faces is not None:
-            for face_idx in range(faces.shape[0]):
-                face = faces[face_idx]
-                f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
-    print(f"Saved to {filepath}")
+# --- .obj Saving Function is now in src/utils.py ---
 
 def main():
     flame_model_path = 'data/flame_model/flame2023.pkl'
