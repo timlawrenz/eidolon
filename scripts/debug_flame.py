@@ -6,16 +6,16 @@ import pickle
 from torch.nn import Parameter
 from torch.optim import Adam
 
+# --- Path Setup ---
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
 # PyTorch3D imports for renderer and camera
 from pytorch3d.renderer import (
     look_at_view_transform,
     FoVPerspectiveCameras
 )
 from src.utils import save_obj
-
-# --- Path Setup ---
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
 
 # --- Ensure REAL FLAME is imported ---
 try:
