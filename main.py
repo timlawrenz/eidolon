@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import pickle # Use the pickle library for .pkl files
 import matplotlib.pyplot as plt
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer.mesh import TexturesVertex
@@ -8,36 +7,29 @@ from pytorch3d.renderer import (
     look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
     MeshRenderer, MeshRasterizer, SoftPhongShader
 )
-from src.model import EidolonEncoder # Import the new encoder
+from src.model import EidolonEncoder, FLAME # Import the new encoder and FLAME
+from src.utils import deconstruct_flame_coeffs # Import the coefficient deconstructor
 
-# --- 1. Define the path to your FLAME model file ---
-# UPDATE THIS PATH to the actual .pkl file you found
-flame_model_path = './data/flame_model/flame2023.pkl' 
-
-# The chumpy library, used by the FLAME model pickle, relies on older NumPy aliases.
-# Pinning NumPy to version 1.23.5 in requirements.txt ensures these aliases are
-# available, allowing the pickle file to load correctly.
+# --- 1. Load FLAME Model ---
+flame_model_path = './data/flame_model/flame2023.pkl'
+landmark_path = './data/flame_model/deca_landmark_embedding.npz'
+# These must match the values used during training of the loaded model!
+NUM_SHAPE_COEFFS = 100
+NUM_EXPRESSION_COEFFS = 0
 
 try:
-    # Load the model using pickle
-    with open(flame_model_path, 'rb') as f:
-        flame_model = pickle.load(f, encoding='latin1')
-    print("FLAME 2023 model loaded successfully.")
-except FileNotFoundError:
-    print(f"ERROR: FLAME model not found at {flame_model_path}")
-    # Note: if this path is taken, flame_model will not be defined,
-    # and subsequent code relying on it will fail.
-# except Exception as e: # Optionally, catch other unpickling errors
-#     print(f"An error occurred during unpickling: {e}")
+    flame_model = FLAME(flame_model_path, landmark_path, NUM_SHAPE_COEFFS, NUM_EXPRESSION_COEFFS)
+    print("FLAME 2023 model loaded successfully via FLAME class.")
+except Exception as e:
+    print(f"ERROR: Could not instantiate FLAME model from {flame_model_path}")
+    print(f"Please ensure all model assets are downloaded as per the README. Error: {e}")
+    # Exit or handle error appropriately
+    exit()
 
 # --- 2. Extract and Prepare Key Components ---
-# The keys in the FLAME model dictionary are different from BFM's
-# v_template is the average face shape (the equivalent of BFM's shapeMU)
-mean_shape = torch.from_numpy(flame_model['v_template']).float()
-
-# f contains the face triangles (the equivalent of BFM's tl)
-# It's already 0-indexed, so we don't need to subtract 1
-triangles = torch.from_numpy(flame_model['f'].astype(np.int64))
+# Get the mean shape and face indices from the FLAME model instance
+mean_shape = flame_model.v_template.clone()
+triangles = flame_model.faces_idx.clone()
 
 # Get the number of vertices and faces
 num_vertices = mean_shape.shape[0]
@@ -90,41 +82,94 @@ renderer = MeshRenderer(
 
 # --- Move mesh to the correct device and render! ---
 average_face_mesh = average_face_mesh.to(device)
-images = renderer(average_face_mesh)
+rendered_average_face = renderer(average_face_mesh)
+print("Rendered the average FLAME face.")
 
-# --- Visualize the output ---
-plt.figure(figsize=(8, 8))
-plt.imshow(images[0, ..., :3].cpu().numpy())
-plt.axis("off")
-plt.title("Success! The Rendered Average Face")
-# plt.show() # Comment out or remove if running in a non-interactive environment for checks
-
-# --- 4. Basic Test for EidolonEncoder ---
-print("\n--- Testing EidolonEncoder ---")
+# --- 4. Full End-to-End Inference Test ---
+print("\n--- Running Full Inference Test ---")
 try:
-    # Define number of FLAME coefficients to predict.
-    # This should match NUM_COEFFS used in train.py for consistency.
-    # train.py currently uses 227.
-    num_flame_coeffs = 227 
-    encoder = EidolonEncoder(num_coeffs=num_flame_coeffs)
-    encoder.to(device) # Move encoder to the same device as other operations
-    
-    # Create a dummy input image (batch_size=1, channels=3, height=224, width=224)
-    # ResNet-50 typically expects 224x224 images
+    # --- Define Coefficient counts (must match training & inference.py) ---
+    NUM_GLOBAL_POSE_COEFFS = 6
+    NUM_JAW_POSE_COEFFS = 3
+    NUM_EYE_POSE_COEFFS = 6
+    NUM_NECK_POSE_COEFFS = 3
+    NUM_TRANSLATION_COEFFS = 3
+    num_total_coeffs = 227 # Total number of FLAME parameters
+    NUM_DETAIL_COEFFS = num_total_coeffs - (NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS + NUM_GLOBAL_POSE_COEFFS + \
+                                            NUM_JAW_POSE_COEFFS + NUM_EYE_POSE_COEFFS + NUM_NECK_POSE_COEFFS + \
+                                            NUM_TRANSLATION_COEFFS)
+
+    # --- Load Encoder with Pre-trained Weights ---
+    encoder = EidolonEncoder(num_coeffs=num_total_coeffs).to(device)
+    encoder_path = 'eidolon_encoder_v1_30_epochs.pth'
+    encoder.load_state_dict(torch.load(encoder_path, map_location=device))
+    encoder.eval()
+    print(f"Loaded trained encoder from '{encoder_path}'")
+
+    # --- Move FLAME model to device ---
+    flame_model.to(device)
+    flame_model.eval()
+
+    # --- Create a dummy input image ---
     dummy_image = torch.randn(1, 3, 224, 224).to(device)
+    print("Created a dummy random image for inference.")
+
+    # --- Run Full Inference Pipeline ---
+    with torch.no_grad():
+        # 1. Predict coefficients from the image
+        pred_coeffs_vec = encoder(dummy_image)
+
+        # 2. Deconstruct coefficients into a dictionary
+        pred_coeffs_dict = deconstruct_flame_coeffs(
+            pred_coeffs_vec,
+            NUM_SHAPE_COEFFS, NUM_EXPRESSION_COEFFS, NUM_GLOBAL_POSE_COEFFS,
+            NUM_JAW_POSE_COEFFS, NUM_EYE_POSE_COEFFS, NUM_NECK_POSE_COEFFS,
+            NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
+        )
+
+        # 3. Generate mesh vertices using the FLAME model
+        pred_verts, _ = flame_model(
+            shape_params=pred_coeffs_dict['shape_params'],
+            expression_params=pred_coeffs_dict['expression_params'],
+            pose_params=pred_coeffs_dict['pose_params'],
+            jaw_pose_params=pred_coeffs_dict['jaw_pose_params'],
+            eye_pose_params=pred_coeffs_dict['eye_pose_params'],
+            neck_pose_params=pred_coeffs_dict['neck_pose_params'],
+            transl=pred_coeffs_dict['transl']
+        )
+    print("Inference pipeline complete (encoder -> coeffs -> FLAME -> vertices).")
+
+    # --- Render Predicted Mesh ---
+    # We can reuse the `textures` and `renderer` from the average face rendering
+    pred_mesh = Meshes(
+        verts=pred_verts,
+        faces=[triangles],
+        textures=textures
+    ).to(device)
+
+    rendered_predicted_face = renderer(pred_mesh)
+    print("Rendered predicted mesh from dummy image.")
+
+    # --- Visualize Both Outputs Side-by-Side ---
+    plt.figure(figsize=(10, 5))
     
-    # Perform a forward pass
-    predicted_coeffs = encoder(dummy_image)
+    # Plot Average Face
+    plt.subplot(1, 2, 1)
+    plt.imshow(rendered_average_face[0, ..., :3].cpu().numpy())
+    plt.title("Average Face Shape")
+    plt.axis("off")
+
+    # Plot Predicted Face
+    plt.subplot(1, 2, 2)
+    plt.imshow(rendered_predicted_face[0, ..., :3].cpu().numpy())
+    plt.title("Predicted Face from Dummy Image")
+    plt.axis("off")
     
-    print(f"EidolonEncoder instantiated successfully on {device}.")
-    print(f"Performed a dummy forward pass. Output shape: {predicted_coeffs.shape}")
-    assert predicted_coeffs.shape == (1, num_flame_coeffs)
-    print("EidolonEncoder basic check passed.")
+    plt.suptitle("main.py: End-to-End Test Result")
+    plt.show()
+    print("Full inference test passed.")
+
 except Exception as e:
-    print(f"Error during EidolonEncoder test: {e}")
+    print(f"An error occurred during the full inference test: {e}")
     import traceback
     traceback.print_exc()
-
-# If plt.show() was commented out above for non-interactive checks, you might want to re-enable it
-# for interactive sessions or remove this comment.
-plt.show() 
