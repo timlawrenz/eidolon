@@ -3,19 +3,10 @@ import os
 import sys
 import numpy as np
 import pickle
-from torch.nn import Parameter
-from torch.optim import Adam
 
 # --- Path Setup ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
-
-# PyTorch3D imports for renderer and camera
-from pytorch3d.renderer import (
-    look_at_view_transform,
-    FoVPerspectiveCameras
-)
-from src.utils import save_obj
 
 # --- Ensure REAL FLAME is imported ---
 try:
@@ -25,7 +16,23 @@ except ImportError:
     print(f"Please ensure 'src/model.py' exists and FLAME class is defined, and that '{project_root}' is in PYTHONPATH if running from elsewhere.")
     sys.exit(1)
 
-# --- .obj Saving Function is now in src/utils.py ---
+# --- .obj Saving Function ---
+def save_obj(filepath, vertices, faces=None):
+    assert vertices.ndim == 2 and vertices.shape[1] == 3, "Vertices must be of shape (N, 3)"
+    if faces is not None:
+        assert faces.ndim == 2 and faces.shape[1] == 3, "Faces must be of shape (F, 3)"
+        assert faces.dtype == torch.long or faces.dtype == np.int64 or faces.dtype == np.int32 or faces.dtype == torch.int32, f"Faces dtype must be integer, got {faces.dtype}"
+
+    with open(filepath, 'w') as f:
+        for v_idx in range(vertices.shape[0]):
+            v = vertices[v_idx]
+            f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+
+        if faces is not None:
+            for face_idx in range(faces.shape[0]):
+                face = faces[face_idx]
+                f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+    print(f"Saved to {filepath}")
 
 def main():
     flame_model_path = 'data/flame_model/flame2023.pkl'
@@ -185,92 +192,6 @@ def main():
         except Exception as e: print(f"Error during manual barycentric check: {e}")
 
     print("\n--- Inspection ---") # ... (rest of inspection messages)
-
-
-    # --- Single-instance 2D Fitting Test ---
-    print("\n--- Single-instance 2D Fitting Test ---")
-    print("Testing if the perspective camera + 2D loss can guide parameters to a solution.")
-
-    # 1. Setup a device and renderer
-    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    flame_model.to(DEVICE)
-    R, T = look_at_view_transform(dist=2.7, elev=0, azim=0)
-    cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=30.0)
-    image_size_for_projection = (224, 224)
-
-    # 2. Create a target to fit to.
-    # We use the 2D projection of the canonical landmarks as our target.
-    # `pred_landmarks_3d` is from the initial forward pass with ideal params.
-    target_2d_landmarks = cameras.transform_points_screen(
-        pred_landmarks_3d.to(DEVICE), image_size=image_size_for_projection
-    )[:, :, :2].detach()
-
-    # 3. Create learnable FLAME parameters, initialized to be incorrect.
-    fit_shape_params = Parameter(torch.randn(1, n_shape, device=DEVICE) * 0.1)
-    # Start pose slightly off from identity
-    fit_pose_params = Parameter(torch.randn(1, 6, device=DEVICE) * 0.1)
-    # Start translation a bit in front of the ideal Z position, but wrong in X/Y
-    fit_transl = Parameter(torch.tensor([[0.1, 0.1, -0.2]], device=DEVICE))
-
-    # Keep other params zero
-    fit_expression_params = torch.zeros(1, n_exp if n_exp > 0 else 0, device=DEVICE)
-    fit_eye_pose_params = torch.zeros(1, 6, device=DEVICE)
-    fit_jaw_pose_params = torch.zeros(1, 3, device=DEVICE)
-    fit_neck_pose_params = torch.zeros(1, 3, device=DEVICE)
-    
-    # 4. Setup optimizer
-    optimizer = Adam([fit_shape_params, fit_pose_params, fit_transl], lr=0.01)
-
-    # 5. Fitting loop
-    print("\nStarting optimization loop for 2D fitting...")
-    for i in range(401): # More iterations might be needed for this more complex loss landscape
-        optimizer.zero_grad()
-
-        pose_params_for_model = fit_pose_params.clone()
-        pose_params_for_model[:, 0] += 1.0
-        pose_params_for_model[:, 4] += 1.0
-
-        pred_verts_fit, pred_landmarks_3d_fit = flame_model(
-            shape_params=fit_shape_params, expression_params=fit_expression_params,
-            pose_params=pose_params_for_model, eye_pose_params=fit_eye_pose_params,
-            jaw_pose_params=fit_jaw_pose_params, neck_pose_params=fit_neck_pose_params,
-            transl=fit_transl
-        )
-
-        pred_landmarks_2d_fit = cameras.transform_points_screen(
-            pred_landmarks_3d_fit, image_size=image_size_for_projection
-        )[:, :, :2]
-
-        # Define loss components
-        loss_lmk_2d = torch.mean((pred_landmarks_2d_fit - target_2d_landmarks)**2)
-        loss_reg_shape = torch.mean(fit_shape_params**2)
-        loss_reg_pose = torch.mean(fit_pose_params**2)
-        
-        # Use weights from Stage 2 where the problem started
-        lmk_weight = 0.5
-        shape_reg_weight = 0.5
-        pose_reg_weight = 5.0
-        # NOTE: We are intentionally NOT regularizing translation to see if it "cheats"
-
-        loss = (loss_lmk_2d * lmk_weight) + \
-               (loss_reg_shape * shape_reg_weight) + \
-               (loss_reg_pose * pose_reg_weight)
-        
-        loss.backward()
-        optimizer.step()
-
-        if i % 40 == 0:
-            print(f"Iter {i:03d}, Loss: {loss.item():.6f} "
-                  f"(Lmk_2D: {loss_lmk_2d.item():.6f}, "
-                  f"ShapeReg: {loss_reg_shape.item():.6f}, "
-                  f"PoseReg: {loss_reg_pose.item():.6f})")
-
-    print("\nFitting complete.")
-    print("--- Final Optimized Parameters (should be close to zero) ---")
-    print(f"Shape mean abs: {fit_shape_params.abs().mean().item():.6f}")
-    print(f"Pose mean abs:  {fit_pose_params.abs().mean().item():.6f}")
-    print(f"Transl: {fit_transl.detach().cpu().numpy().squeeze()} (Target should be [0, 0, 0])")
-
 
 if __name__ == '__main__':
     main()
