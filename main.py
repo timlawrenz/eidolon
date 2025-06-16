@@ -141,8 +141,10 @@ try:
 
     # --- Render Predicted Mesh ---
     # We can reuse the `textures` and `renderer` from the average face rendering
+    # The Meshes class expects a list of tensors for verts and faces.
+    # We convert the predicted verts tensor to a list to match the faces format.
     pred_mesh = Meshes(
-        verts=pred_verts,
+        verts=list(pred_verts),
         faces=[triangles],
         textures=textures
     ).to(device)

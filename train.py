@@ -452,6 +452,14 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                     eye_pose_params=template_eye_pose_params, neck_pose_params=template_neck_pose_params,
                     transl=template_transl_params, debug_print=True
                 )
+                print(f"--- DEBUG: TEMPLATE 3D LANDMARKS (Epoch {epoch+1}) ---")
+                if _template_landmarks_3d.numel() > 0:
+                    print(f"  Shape: {_template_landmarks_3d.shape}")
+                    print(f"  X: mean={_template_landmarks_3d[0, :, 0].mean().item():.4f}, std={_template_landmarks_3d[0, :, 0].std().item():.4f}")
+                    print(f"  Y: mean={_template_landmarks_3d[0, :, 1].mean().item():.4f}, std={_template_landmarks_3d[0, :, 1].std().item():.4f}")
+                    print(f"  Z: mean={_template_landmarks_3d[0, :, 2].mean().item():.4f}, std={_template_landmarks_3d[0, :, 2].std().item():.4f}")
+                else:
+                    print("  _template_landmarks_3d is empty.")
                 _template_landmarks_2d = cameras.transform_points_screen(
                     _template_landmarks_3d, image_size=_image_size_for_projection
                 )[:, :, :2]
