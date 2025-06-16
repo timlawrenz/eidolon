@@ -129,10 +129,15 @@ class EidolonEncoder(nn.Module):
         num_bottleneck_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Linear(num_bottleneck_features, num_coeffs)
         with torch.no_grad():
+            # Initialize weights to zero
+            nn.init.zeros_(self.backbone.fc.weight)
+            
+            # Initialize biases to represent a neutral, forward-facing pose
             n_shape, n_expr, n_global_pose, n_jaw_pose, n_eye_pose, n_neck_pose = 100, 0, 6, 3, 6, 3
             self.backbone.fc.bias.fill_(0.0)
             current_idx = n_shape + n_expr
             if num_coeffs >= current_idx + n_global_pose:
+                # Set bias for the 6D rotation representation of an identity matrix
                 self.backbone.fc.bias[current_idx + 0] = 1.0
                 self.backbone.fc.bias[current_idx + 4] = 1.0
     def forward(self, image): return self.backbone(image)
