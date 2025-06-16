@@ -255,6 +255,18 @@ class FLAME(nn.Module):
             # Ensure buffers exist even if loading fails, to prevent errors in forward pass.
             if not hasattr(self, 'landmark_face_idx'): self.register_buffer('landmark_face_idx', torch.empty(0, dtype=torch.long))
             if not hasattr(self, 'landmark_b_coords'): self.register_buffer('landmark_b_coords', torch.empty(0, dtype=torch.float32))
+        
+        # --- Center v_template based on the mean of the 3D landmarks ---
+        if self.using_barycentric_landmarks:
+            print("Centering v_template based on landmark mean...")
+            lmk_tri_verts = self.v_template[self.faces_idx[self.landmark_face_idx]]
+            initial_lmks_3d = torch.einsum('ijk,ij->ik', lmk_tri_verts, self.landmark_b_coords)
+            lmk_centroid = initial_lmks_3d.mean(dim=0)
+            print(f"  - Calculated 3D landmark centroid: {lmk_centroid.cpu().numpy()}")
+            self.v_template -= lmk_centroid
+            print("  - v_template centered successfully.")
+        else:
+            print("Warning: Could not center v_template as landmarks were not loaded.")
         # We no longer use landmark_vertex_ids, so no need for an else-if here.
 
 
