@@ -88,19 +88,19 @@ LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 # Each stage is a dictionary with 'epochs' and 'loss_weights'.
 TRAINING_STAGES = [
     {
-        'name': 'Stage1_OrthoLockdown',
+        'name': 'Stage1_OrthoCoarseFit',
         'epochs': 10,
         'camera_type': 'orthographic',
         'learning_rate': 1e-4,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 1.0,
-            'reg_shape': 1.0,
-            'reg_transl': 100.0,        # Heavily penalize translation to keep the face centered
-            'reg_global_pose': 10.0,   # Heavily penalize rotation to keep the face looking forward
-            'reg_jaw_pose': 1.0,       # Increase regularization on other poses too
-            'reg_neck_pose': 1.0,
-            'reg_eye_pose': 1.0,
+            'landmark': 1.0,           # Main objective
+            'reg_shape': 1.0,            # Keep shape from going crazy
+            'reg_transl': 1.0,           # Allow learning 2D translation
+            'reg_global_pose': 1.0,      # Allow learning coarse rotation
+            'reg_jaw_pose': 5.0,         # Keep jaw, neck, eye poses more constrained initially
+            'reg_neck_pose': 5.0,
+            'reg_eye_pose': 5.0,
             'reg_detail': 1e-4,
         }
     },
@@ -111,10 +111,10 @@ TRAINING_STAGES = [
         'learning_rate': 1e-5,
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 1.0,      # Emphasize landmarks to get a good initial fit
+            'landmark': 1.0,
             'reg_shape': 0.5,
-            'reg_transl': 100.0,    # Use EXTREMELY strong Z-translation regularization to prevent cheating
-            'reg_global_pose': 10.0,# Keep pose stable during this transition
+            'reg_transl': 1.0,        # Allow learning Z translation, rely on shape reg to prevent cheating
+            'reg_global_pose': 1.0,
             'reg_jaw_pose': 1.0,
             'reg_neck_pose': 1.0,
             'reg_eye_pose': 1.0,
