@@ -28,8 +28,10 @@ class TotalLoss(nn.Module):
         self.pixel_loss = nn.L1Loss()
         
         # 2. Landmark Loss (Geometric alignment)
-        # This measures the 2D distance between predicted and ground-truth landmarks
-        self.landmark_loss = nn.MSELoss()
+        # This measures the 2D distance between predicted and ground-truth landmarks.
+        # We use L1 loss as it is more robust to outliers than L2 (MSE) loss,
+        # which can help in achieving a tighter fit even if a few landmarks are noisy.
+        self.landmark_loss = nn.L1Loss()
         
         # 3. Perceptual Loss (Identity preservation)
         # TODO: Load a pre-trained face recognition model (e.g., VGG, ArcFace)
