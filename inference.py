@@ -13,7 +13,7 @@ import sys
 from torchvision.utils import save_image
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import (
-    FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    look_at_view_transform, FoVPerspectiveCameras, PointLights, RasterizationSettings,
     MeshRenderer, MeshRasterizer, SoftPhongShader, TexturesVertex
 )
 
