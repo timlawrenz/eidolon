@@ -103,8 +103,8 @@ def run_inference():
     # --- Render Mesh to Image ---
     print("Rendering predicted mesh...")
     # Set up renderer. We use a fixed camera as the pose is predicted by the model.
-    R = torch.eye(3).unsqueeze(0).to(DEVICE)
-    T = torch.tensor([[0, 0, 3.0]]).to(DEVICE) # Move camera back to see the head
+    # To match the FLAME convention (model faces +Z), we view it from the front by setting azim=180.
+    R, T = look_at_view_transform(dist=3.0, elev=0, azim=180)
     cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=12.0)
     raster_settings = RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
     lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])

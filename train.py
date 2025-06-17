@@ -217,7 +217,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     if stage_camera_type == 'orthographic':
         print("--- Using Orthographic Camera for this stage ---")
         # Orthographic cameras are useful for initial alignment as they are not sensitive to depth.
-        R, T = look_at_view_transform(dist=10.0, elev=0, azim=0) # dist is less meaningful here
+        # Use azim=180 to align with the FLAME model's convention (face looks towards +Z)
+        R, T = look_at_view_transform(dist=10.0, elev=0, azim=180) # dist is less meaningful here
         # The scale of the orthographic camera needs to be chosen carefully.
         # In PyTorch3D v0.7.6, this is controlled by the focal_length.
         # A larger focal length "zooms in", scaling up the projection.
@@ -229,7 +230,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         cameras = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=6.25)
     else: # 'perspective'
         print("--- Using Perspective Camera for this stage ---")
-        R, T = look_at_view_transform(dist=2.7, elev=0, azim=0) 
+        # Use azim=180 to align with the FLAME model's convention (face looks towards +Z)
+        R, T = look_at_view_transform(dist=2.7, elev=0, azim=180)
         # Using a smaller FoV makes the projection more orthographic-like and stable
         cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=12.0)
 
