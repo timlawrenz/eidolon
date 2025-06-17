@@ -146,7 +146,8 @@ TRAINING_STAGES = [
 total_epochs_all_stages = sum(stage['epochs'] for stage in TRAINING_STAGES)
 NUM_EPOCHS = total_epochs_all_stages # Update NUM_EPOCHS to be the total
 
-VERBOSE_LBS_DEBUG_EPOCHS = {0, total_epochs_all_stages // 2, total_epochs_all_stages - 1} if total_epochs_all_stages > 0 else {0}
+# Define epochs for verbose LBS debugging. Set to empty to disable.
+VERBOSE_LBS_DEBUG_EPOCHS = set()
 
 
 # Initial LOSS_WEIGHTS will be set by the first stage.
