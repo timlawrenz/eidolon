@@ -96,6 +96,7 @@ TRAINING_STAGES = [
         'loss_weights': {
             'pixel': 0.0,
             'landmark': 1.0,
+            'landmark_shape': 1.0,     # Enforce relative landmark configuration
             'reg_shape': 1.0,
             'reg_transl': 1.0,
             'reg_global_pose': 1.0,
