@@ -195,7 +195,6 @@ print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_
 # 3. The Training Loop
 global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
 for stage_idx, stage_config in enumerate(TRAINING_STAGES):
-    print(f"DEBUG: MAIN LOOP - Starting Stage {stage_idx + 1} ({stage_config['name']})") # DEBUG PRINT
     stage_name = stage_config['name']
     num_epochs_this_stage = stage_config['epochs']
     stage_loss_weights = stage_config['loss_weights']
@@ -244,12 +243,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
 
     for current_stage_epoch_idx in range(num_epochs_this_stage):
         # 'epoch' variable must be updated with the current global_epoch_idx for THIS iteration
-        epoch = global_epoch_idx 
-        # Conditional print for epoch progress: 1st, every 5th, last epoch of stage
-        if current_stage_epoch_idx == 0 or \
-           (current_stage_epoch_idx + 1) % 5 == 0 or \
-           current_stage_epoch_idx == num_epochs_this_stage - 1:
-            print(f"DEBUG: MAIN LOOP - Global Epoch: {epoch + 1}, Stage Epoch: {current_stage_epoch_idx + 1}/{num_epochs_this_stage}") # DEBUG PRINT
+        epoch = global_epoch_idx
         
         # <<< START of moved block: Batch processing and validation >>>
         for i, batch in enumerate(data_loader):
@@ -327,7 +321,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         
         # Log the final batch loss for the epoch to the console
         if (current_stage_epoch_idx + 1) % 1 == 0 or (current_stage_epoch_idx + 1) == num_epochs_this_stage:
-             print(f"  Epoch {epoch+1}/{NUM_EPOCHS} (Stage Epoch {current_stage_epoch_idx+1}/{num_epochs_this_stage}) | "
+             print(f"  Epoch {epoch+1}/{total_epochs_all_stages} (Stage Epoch {current_stage_epoch_idx+1}/{num_epochs_this_stage}) | "
                    f"LR: {optimizer.param_groups[0]['lr']:.1e} | "
                    f"Total Loss: {loss_total_val:.4f}")
 
@@ -338,12 +332,14 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 writer.add_scalar(f'Loss/train_{loss_name}_epoch_last_batch', val_to_log, current_tensorboard_step)
         writer.add_scalar('Hyperparameters/learning_rate_epoch', optimizer.param_groups[0]['lr'], current_tensorboard_step)
 
-        encoder.eval() 
-        with torch.no_grad(): 
-            num_val_samples = min(4, gt_images.shape[0]) 
+        encoder.eval()
+        with torch.no_grad():
+            # Get a small number of validation samples from the last batch
+            num_val_samples = min(4, gt_images.shape[0])
             val_gt_images = gt_images[:num_val_samples]
             val_gt_landmarks_for_vis = gt_landmarks_2d_scaled[:num_val_samples]
 
+            # Run validation forward pass
             val_pred_coeffs_vec = encoder(val_gt_images)
             val_pred_coeffs_dict = deconstruct_flame_coeffs(
                 val_pred_coeffs_vec,
@@ -351,18 +347,19 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 NUM_JAW_POSE_COEFFS, NUM_EYE_POSE_COEFFS, NUM_NECK_POSE_COEFFS,
                 NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
             )
-            
+
             val_pred_verts, val_pred_landmarks_3d = flame_model(
                 shape_params=val_pred_coeffs_dict['shape_params'],
                 expression_params=val_pred_coeffs_dict['expression_params'],
-                pose_params=val_pred_coeffs_dict['pose_params'], 
-                jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'], 
-                eye_pose_params=val_pred_coeffs_dict['eye_pose_params'], 
-                neck_pose_params=val_pred_coeffs_dict['neck_pose_params'], 
+                pose_params=val_pred_coeffs_dict['pose_params'],
+                jaw_pose_params=val_pred_coeffs_dict['jaw_pose_params'],
+                eye_pose_params=val_pred_coeffs_dict['eye_pose_params'],
+                neck_pose_params=val_pred_coeffs_dict['neck_pose_params'],
                 transl=val_pred_coeffs_dict['transl'],
                 use_posedirs=stage_use_posedirs
             )
-            
+
+            # Project landmarks and render mesh for visualization
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             val_pred_landmarks_2d_model = cameras.transform_points_screen(
                 val_pred_landmarks_3d, image_size=image_size_for_projection
@@ -370,28 +367,30 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
 
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
             val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
-            
+
             val_meshes_batch = Meshes(
                 verts=list(val_pred_verts),
                 faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
                 textures=val_textures_batch
             )
             val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
-            
+
+            # Un-normalize images for visualization
             mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
             std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
             val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
-            
+
+            # Draw landmarks and create image grids for TensorBoard
             gt_images_tb_with_landmarks = draw_landmarks_on_images_tensor(
                 val_gt_images_unnorm_tb, val_gt_landmarks_for_vis, color='red'
             )
             pred_images_tb_with_landmarks = draw_landmarks_on_images_tensor(
                 val_rendered_images, val_pred_landmarks_2d_model, color='blue'
             )
-            
+
             img_grid_gt = torchvision.utils.make_grid(gt_images_tb_with_landmarks.clamp(0,1))
             writer.add_image(f'Validation_Stage_{stage_idx+1}/ground_truth_with_landmarks', img_grid_gt, current_tensorboard_step)
-            
+
             img_grid_rendered = torchvision.utils.make_grid(pred_images_tb_with_landmarks.clamp(0,1))
             writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, current_tensorboard_step)
 
