@@ -101,7 +101,7 @@ try:
 
     # --- Load Encoder with Pre-trained Weights ---
     encoder = EidolonEncoder(num_coeffs=num_total_coeffs).to(device)
-    encoder_path = 'eidolon_encoder_v1_30_epochs.pth'
+    encoder_path = 'eidolon_encoder_stage_3.pth'
     encoder.load_state_dict(torch.load(encoder_path, map_location=device))
     encoder.eval()
     print(f"Loaded trained encoder from '{encoder_path}'")

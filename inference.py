@@ -21,7 +21,7 @@ def run_inference():
     # --- Argument Parsing ---
     parser = argparse.ArgumentParser(description="Run FLAME inference on a single image.")
     parser.add_argument('--image_path', type=str, required=True, help="Path to the input image.")
-    parser.add_argument('--model_path', type=str, default='eidolon_encoder_v1_30_epochs.pth', help="Path to the trained encoder weights.")
+    parser.add_argument('--model_path', type=str, default='eidolon_encoder_stage_3.pth', help="Path to the trained encoder weights.")
     parser.add_argument('--output_path', type=str, default='output/inference_result.obj', help="Path to save the output .obj mesh.")
     args = parser.parse_args()
 

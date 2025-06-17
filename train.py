@@ -317,35 +317,18 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 gt_landmarks_2d_scaled
             )
             
-            is_stage1_training_batch0 = (stage_idx == 0 and i == 0)
-            is_verbose_epoch_training_batch0 = (i == 0 and epoch in VERBOSE_LBS_DEBUG_EPOCHS)
-            
-            if is_stage1_training_batch0 or is_verbose_epoch_training_batch0:
-                print(f"--- DEBUG Training Landmark Coords (Epoch {epoch+1}, Batch {i}) ---")
-                print(f"  gt_landmarks_2d_scaled[0, :5, :]:\n{gt_landmarks_2d_scaled[0, :5, :]}")
-                print(f"  pred_landmarks_2d_model[0, :5, :]:\n{pred_landmarks_2d_model[0, :5, :]}")
-                print(f"----------------------------------------------------")
-
             total_loss.backward() 
             optimizer.step()
             
         # --- EPOCH-END SNAPSHOT: Visual validation, TensorBoard logging, and detailed console output ---
         current_tensorboard_step = epoch + 1
-        
-        loss_pixel_val = loss_dict.get('pixel', torch.tensor(0.0)).item()
-        loss_landmark_val = loss_dict.get('landmark', torch.tensor(0.0)).item()
-        loss_reg_shape_val = loss_dict.get('reg_shape', torch.tensor(0.0)).item()
-        loss_reg_expression_val = loss_dict.get('reg_expression', torch.tensor(0.0)).item()
         loss_total_val = total_loss.item()
-
-        print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} (Stage: {stage_name} - {current_stage_epoch_idx+1}/{num_epochs_this_stage}) Completed ---")
-        loss_summary_str = f"  Last Batch Losses: Total: {loss_total_val:.4f}"
-        for loss_name, loss_component in loss_dict.items():
-            if loss_name != 'total':
-                loss_summary_str += f", {loss_name.capitalize()}: {loss_component.item():.4f}"
-        print(loss_summary_str)
-        current_lr_for_log = optimizer.param_groups[0]['lr']
-        print(f"  Config: Batch Size: {BATCH_SIZE}, LR: {current_lr_for_log}")
+        
+        # Log the final batch loss for the epoch to the console
+        if (current_stage_epoch_idx + 1) % 1 == 0 or (current_stage_epoch_idx + 1) == num_epochs_this_stage:
+             print(f"  Epoch {epoch+1}/{NUM_EPOCHS} (Stage Epoch {current_stage_epoch_idx+1}/{num_epochs_this_stage}) | "
+                   f"LR: {optimizer.param_groups[0]['lr']:.1e} | "
+                   f"Total Loss: {loss_total_val:.4f}")
 
         writer.add_scalar('Loss/train_total_epoch_last_batch', loss_total_val, current_tensorboard_step)
         for loss_name, loss_value in loss_dict.items():
@@ -358,11 +341,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         with torch.no_grad(): 
             num_val_samples = min(4, gt_images.shape[0]) 
             val_gt_images = gt_images[:num_val_samples]
-            # Use the already-scaled landmarks from the last batch for visualization.
             val_gt_landmarks_for_vis = gt_landmarks_2d_scaled[:num_val_samples]
-            
-            _vis_target_projection_img_width = float(raster_settings.image_size)
-            _vis_target_projection_img_height = float(raster_settings.image_size)
 
             val_pred_coeffs_vec = encoder(val_gt_images)
             val_pred_coeffs_dict = deconstruct_flame_coeffs(
@@ -372,10 +351,6 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
             )
             
-            debug_lbs_this_epoch = epoch in VERBOSE_LBS_DEBUG_EPOCHS
-            if debug_lbs_this_epoch:
-                print(f"--- INFO: Enabling verbose LBS debug prints for epoch {epoch+1} (using actual predicted params) ---")
-            
             val_pred_verts, val_pred_landmarks_3d = flame_model(
                 shape_params=val_pred_coeffs_dict['shape_params'],
                 expression_params=val_pred_coeffs_dict['expression_params'],
@@ -384,50 +359,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 eye_pose_params=val_pred_coeffs_dict['eye_pose_params'], 
                 neck_pose_params=val_pred_coeffs_dict['neck_pose_params'], 
                 transl=val_pred_coeffs_dict['transl'],
-                debug_print=debug_lbs_this_epoch,
                 use_posedirs=stage_use_posedirs
             )
             
-            print(f"--- Predicted 3D Vertices Stats (Epoch {epoch+1} End, First Sample of Batch) ---")
-            if val_pred_verts.numel() > 0 and val_pred_verts.shape[0] > 0:
-                print(f"  Shape: {val_pred_verts.shape}")
-                print(f"  X: mean={val_pred_verts[0, :, 0].mean().item():.4f}, std={val_pred_verts[0, :, 0].std().item():.4f}, "
-                      f"min={val_pred_verts[0, :, 0].min().item():.4f}, max={val_pred_verts[0, :, 0].max().item():.4f}")
-                print(f"  Y: mean={val_pred_verts[0, :, 1].mean().item():.4f}, std={val_pred_verts[0, :, 1].std().item():.4f}, "
-                      f"min={val_pred_verts[0, :, 1].min().item():.4f}, max={val_pred_verts[0, :, 1].max().item():.4f}")
-                print(f"  Z: mean={val_pred_verts[0, :, 2].mean().item():.4f}, std={val_pred_verts[0, :, 2].std().item():.4f}, "
-                      f"min={val_pred_verts[0, :, 2].min().item():.4f}, max={val_pred_verts[0, :, 2].max().item():.4f}")
-            else:
-                print("  val_pred_verts is empty or has zero batch size.")
-            
-            print(f"--- Predicted 3D Landmarks Stats (Epoch {epoch+1} End, First Sample of Batch) ---")
-            if val_pred_landmarks_3d.numel() > 0 and val_pred_landmarks_3d.shape[0] > 0:
-                print(f"  Shape: {val_pred_landmarks_3d.shape}")
-                print(f"  X: mean={val_pred_landmarks_3d[0, :, 0].mean().item():.4f}, std={val_pred_landmarks_3d[0, :, 0].std().item():.4f}, "
-                      f"min={val_pred_landmarks_3d[0, :, 0].min().item():.4f}, max={val_pred_landmarks_3d[0, :, 0].max().item():.4f}")
-                print(f"  Y: mean={val_pred_landmarks_3d[0, :, 1].mean().item():.4f}, std={val_pred_landmarks_3d[0, :, 1].std().item():.4f}, "
-                      f"min={val_pred_landmarks_3d[0, :, 1].min().item():.4f}, max={val_pred_landmarks_3d[0, :, 1].max().item():.4f}")
-                print(f"  Z: mean={val_pred_landmarks_3d[0, :, 2].mean().item():.4f}, std={val_pred_landmarks_3d[0, :, 2].std().item():.4f}, "
-                      f"min={val_pred_landmarks_3d[0, :, 2].min().item():.4f}, max={val_pred_landmarks_3d[0, :, 2].max().item():.4f}")
-            else:
-                print("  val_pred_landmarks_3d is empty or has zero batch size.")
-
-            print(f"--- Validation Predicted FLAME Parameters (Epoch {epoch+1} End) ---")
-            for pname in ['shape_params', 'expression_params', 'pose_params', 'jaw_pose_params', 'neck_pose_params', 'eye_pose_params', 'transl']:
-                if pname in val_pred_coeffs_dict:
-                    p_tensor = val_pred_coeffs_dict[pname]
-                    if p_tensor is not None and p_tensor.numel() > 0:
-                        print(f"  {pname}: mean={p_tensor.mean().item():.4f}, std={p_tensor.std().item():.4f}, "
-                              f"min={p_tensor.min().item():.4f}, max={p_tensor.max().item():.4f}")
-                    else:
-                        print(f"  {pname}: Not used or empty tensor.")
-                else:
-                    print(f"  {pname}: Not found in predicted coefficients.")
-            print("--------------------------------------------------\n")
-
-            _image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
+            image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                val_pred_landmarks_3d, image_size=_image_size_for_projection
+                val_pred_landmarks_3d, image_size=image_size_for_projection
             )[:, :, :2]
 
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
@@ -439,75 +376,10 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 textures=val_textures_batch
             )
             val_rendered_images = renderer(val_meshes_batch).permute(0, 3, 1, 2)[:, :3, :, :]
-
-            if epoch == 0: 
-                print(f"\n--- DEBUG: TEMPLATE LANDMARK PROJECTION (Epoch {epoch+1}) ---")
-                _bs_one = 1 
-                template_shape_params = torch.zeros(_bs_one, NUM_SHAPE_COEFFS, device=DEVICE)
-                template_expr_params = torch.zeros(_bs_one, NUM_EXPRESSION_COEFFS, device=DEVICE)
-                template_pose_params = torch.zeros(_bs_one, NUM_GLOBAL_POSE_COEFFS, device=DEVICE)
-                template_pose_params[:, 0] = 1.0 
-                template_pose_params[:, 4] = 1.0
-                template_jaw_pose_params = torch.zeros(_bs_one, NUM_JAW_POSE_COEFFS, device=DEVICE)
-                template_eye_pose_params = torch.zeros(_bs_one, NUM_EYE_POSE_COEFFS, device=DEVICE)
-                template_neck_pose_params = torch.zeros(_bs_one, NUM_NECK_POSE_COEFFS, device=DEVICE)
-                template_transl_params = torch.zeros(_bs_one, NUM_TRANSLATION_COEFFS, device=DEVICE)
-                _template_verts, _template_landmarks_3d = flame_model(
-                    shape_params=template_shape_params, expression_params=template_expr_params,
-                    pose_params=template_pose_params, jaw_pose_params=template_jaw_pose_params,
-                    eye_pose_params=template_eye_pose_params, neck_pose_params=template_neck_pose_params,
-                    transl=template_transl_params, debug_print=True, use_posedirs=False
-                )
-                print(f"--- DEBUG: TEMPLATE 3D LANDMARKS (Epoch {epoch+1}) ---")
-                if _template_landmarks_3d.numel() > 0:
-                    print(f"  Shape: {_template_landmarks_3d.shape}")
-                    print(f"  X: mean={_template_landmarks_3d[0, :, 0].mean().item():.4f}, std={_template_landmarks_3d[0, :, 0].std().item():.4f}")
-                    print(f"  Y: mean={_template_landmarks_3d[0, :, 1].mean().item():.4f}, std={_template_landmarks_3d[0, :, 1].std().item():.4f}")
-                    print(f"  Z: mean={_template_landmarks_3d[0, :, 2].mean().item():.4f}, std={_template_landmarks_3d[0, :, 2].std().item():.4f}")
-                else:
-                    print("  _template_landmarks_3d is empty.")
-                _template_landmarks_2d = cameras.transform_points_screen(
-                    _template_landmarks_3d, image_size=_image_size_for_projection
-                )[:, :, :2]
-                print(f"  Template 2D Landmarks (first 5 points):\n{_template_landmarks_2d[0, :5, :]}")
-                ascii_plot_template_lmks = plot_landmarks_ascii(
-                    _template_landmarks_2d, 
-                    original_img_width=_vis_target_projection_img_width,
-                    original_img_height=_vis_target_projection_img_height,
-                    title=f"Template Projected Landmarks (Epoch {epoch+1}, 224x224)"
-                )
-                print(ascii_plot_template_lmks)
-                dummy_bg_for_template_lmks = torch.ones(1, 3, int(_vis_target_projection_img_height), int(_vis_target_projection_img_width), device=DEVICE) * 0.3
-                template_lmks_img_tb = draw_landmarks_on_images_tensor(
-                    dummy_bg_for_template_lmks, _template_landmarks_2d, color='green'
-                )
-                writer.add_image('Debug/template_projected_landmarks', torchvision.utils.make_grid(template_lmks_img_tb.clamp(0,1)), epoch + 1)
-                print(f"--- END DEBUG: TEMPLATE LANDMARK PROJECTION ---\n")
-
-            if epoch in VERBOSE_LBS_DEBUG_EPOCHS:
-                print(f"--- DEBUG Actual Predicted Landmark Coords (Validation, Epoch {epoch+1}) ---")
-                print(f"  val_gt_landmarks_scaled[0, :5, :]:\n{val_gt_landmarks_for_vis[0, :5, :]}") 
-                print(f"  val_pred_landmarks_2d_model[0, :5, :]:\n{val_pred_landmarks_2d_model[0, :5, :]}")
-                print(f"----------------------------------------------------")
-
+            
             mean_tb = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
             std_tb = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
             val_gt_images_unnorm_tb = val_gt_images * std_tb + mean_tb
-
-            ascii_plot_gt = plot_landmarks_ascii(
-                val_gt_landmarks_for_vis,
-                original_img_width=_vis_target_projection_img_width, 
-                original_img_height=_vis_target_projection_img_height,
-                title=f"GT Landmarks (Epoch {epoch+1}, Scaled to 224x224)"
-            )
-            print(ascii_plot_gt)
-            ascii_plot_pred = plot_landmarks_ascii(
-                val_pred_landmarks_2d_model,
-                original_img_width=_vis_target_projection_img_width,
-                original_img_height=_vis_target_projection_img_height,
-                title=f"Predicted Landmarks (Epoch {epoch+1}, 224x224)"
-            )
-            print(ascii_plot_pred)
             
             gt_images_tb_with_landmarks = draw_landmarks_on_images_tensor(
                 val_gt_images_unnorm_tb, val_gt_landmarks_for_vis, color='red'
@@ -523,7 +395,6 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             writer.add_image(f'Validation_Stage_{stage_idx+1}/prediction_with_landmarks', img_grid_rendered, current_tensorboard_step)
 
         encoder.train() # Set model back to training mode
-        print(f"DEBUG: MAIN LOOP - Completed Global Epoch {global_epoch_idx + 1}. Incrementing global_epoch_idx.") # DEBUG PRINT
         global_epoch_idx += 1 # Increment global_epoch_idx after each true epoch is completed
     
     # --- STAGE-END CHECKPOINT ---
