@@ -9,6 +9,14 @@ import argparse
 import os
 import sys
 
+# --- 3D  Rendering Imports ---
+from torchvision.utils import save_image
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import (
+    FoVPerspectiveCameras, PointLights, RasterizationSettings,
+    MeshRenderer, MeshRasterizer, SoftPhongShader, TexturesVertex
+)
+
 # --- Path Setup ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
@@ -23,6 +31,7 @@ def run_inference():
     parser.add_argument('--image_path', type=str, required=True, help="Path to the input image.")
     parser.add_argument('--model_path', type=str, default='eidolon_encoder_stage_3.pth', help="Path to the trained encoder weights.")
     parser.add_argument('--output_path', type=str, default='output/inference_result.obj', help="Path to save the output .obj mesh.")
+    parser.add_argument('--output_image_path', type=str, default='output/inference_render.png', help="Path to save the rendered output image.")
     args = parser.parse_args()
 
     # --- Config ---
@@ -87,15 +96,55 @@ def run_inference():
             jaw_pose_params=pred_coeffs_dict['jaw_pose_params'],
             eye_pose_params=pred_coeffs_dict['eye_pose_params'],
             neck_pose_params=pred_coeffs_dict['neck_pose_params'],
-            transl=pred_coeffs_dict['transl']
+            transl=pred_coeffs_dict['transl'],
+            use_posedirs=True # Use pose-dependent blendshapes for best quality
         )
 
+    # --- Render Mesh to Image ---
+    print("Rendering predicted mesh...")
+    # Set up renderer. We use a fixed camera as the pose is predicted by the model.
+    R = torch.eye(3).unsqueeze(0).to(DEVICE)
+    T = torch.tensor([[0, 0, 3.0]]).to(DEVICE) # Move camera back to see the head
+    cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=12.0)
+    raster_settings = RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
+    lights = PointLights(device=DEVICE, location=[[0.0, 0.0, 3.0]])
+    shader = SoftPhongShader(device=DEVICE, cameras=cameras, lights=lights)
+    renderer = MeshRenderer(
+        rasterizer=MeshRasterizer(cameras=cameras, raster_settings=raster_settings),
+        shader=shader
+    )
+
+    # Create a Meshes object for rendering
+    num_vertices = pred_verts.shape[1]
+    generic_color = torch.tensor([0.7, 0.7, 0.7], device=DEVICE) # Medium gray
+    vertex_colors = generic_color.view(1, 3).expand(num_vertices, 3)
+    verts_rgb = vertex_colors.unsqueeze(0) # (1, V, 3)
+    textures = TexturesVertex(verts_features=verts_rgb)
+    
+    pred_mesh = Meshes(
+        verts=pred_verts,
+        faces=flame.faces_idx.unsqueeze(0),
+        textures=textures
+    )
+
+    rendered_images = renderer(pred_mesh) # Shape: (1, H, W, 4)
+    # Convert to image format (C, H, W) and remove alpha channel
+    rendered_image_for_save = rendered_images[0, ..., :3].permute(2, 0, 1)
+
     # --- Save Output ---
-    output_dir = os.path.dirname(args.output_path)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Ensure output directories exist
+    output_obj_dir = os.path.dirname(args.output_path)
+    if output_obj_dir:
+        os.makedirs(output_obj_dir, exist_ok=True)
+    
+    output_img_dir = os.path.dirname(args.output_image_path)
+    if output_img_dir:
+        os.makedirs(output_img_dir, exist_ok=True)
         
+    # Save the 3D mesh and the rendered image
     save_obj(args.output_path, pred_verts[0], flame.faces_idx)
+    save_image(rendered_image_for_save, args.output_image_path)
+    print(f"Saved rendered image to {args.output_image_path}")
     print("Inference complete.")
 
 if __name__ == '__main__':
