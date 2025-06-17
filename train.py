@@ -375,8 +375,13 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
             val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
 
+            # Correct for coordinate system mismatch for rendering
+            val_pred_verts_for_render = val_pred_verts.clone()
+            val_pred_verts_for_render[:, :, 1] *= -1 # Flip Y-axis
+            val_pred_verts_for_render[:, :, 2] *= -1 # Flip Z-axis
+
             val_meshes_batch = Meshes(
-                verts=list(val_pred_verts),
+                verts=list(val_pred_verts_for_render),
                 faces=[flame_model.faces_idx] * val_pred_verts.shape[0],
                 textures=val_textures_batch
             )

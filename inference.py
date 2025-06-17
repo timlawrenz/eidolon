@@ -123,8 +123,16 @@ def run_inference():
     verts_rgb = vertex_colors.unsqueeze(0) # (1, V, 3)
     textures = TexturesVertex(verts_features=verts_rgb)
     
+    # --- Correct for Coordinate System Mismatch for Rendering ---
+    # PyTorch3D's camera assumes +Y is up and +Z is out of the screen.
+    # The FLAME model output seems to have +Y as down and +Z as into the screen.
+    # We apply a corrective rotation to the vertices before rendering.
+    verts_for_render = pred_verts.clone()
+    verts_for_render[:, :, 1] *= -1 # Flip Y-axis (up/down)
+    verts_for_render[:, :, 2] *= -1 # Flip Z-axis (front/back)
+
     pred_mesh = Meshes(
-        verts=pred_verts,
+        verts=verts_for_render,
         faces=flame.faces_idx.unsqueeze(0),
         textures=textures
     )
