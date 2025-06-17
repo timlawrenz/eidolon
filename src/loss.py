@@ -81,7 +81,7 @@ class TotalLoss(nn.Module):
         gt_landmarks_normalized = gt_landmarks_centered / gt_scale
         pred_landmarks_normalized = pred_landmarks_centered / gt_scale
 
-        # 4. Compute the L2 loss on the normalized, centered landmarks.
+        # 4. Compute the L1 loss on the normalized, centered landmarks.
         loss_landmark_shape = self.landmark_loss(pred_landmarks_normalized, gt_landmarks_normalized)
         
         # --- Parameter Regularization Loss ---

@@ -132,6 +132,7 @@ TRAINING_STAGES = [
         'loss_weights': {
             'pixel': 0.0,
             'landmark': 1.0,      # Focus strongly on final landmark accuracy
+            'landmark_shape': 1.0,
             'reg_shape': 0.1,     # Relax shape regularization slightly for fine adjustments
             'reg_transl': 1.0,
             'reg_global_pose': 0.5,
