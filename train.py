@@ -336,7 +336,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             if loss_name != 'total':
                 val_to_log = loss_value.item() if hasattr(loss_value, 'item') else loss_value
                 writer.add_scalar(f'Loss/train_{loss_name}_epoch_last_batch', val_to_log, current_tensorboard_step)
-        writer.add_scalar('Hyperparameters/learning_rate_epoch', current_lr_for_log, current_tensorboard_step)
+        writer.add_scalar('Hyperparameters/learning_rate_epoch', optimizer.param_groups[0]['lr'], current_tensorboard_step)
 
         encoder.eval() 
         with torch.no_grad(): 
