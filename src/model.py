@@ -53,7 +53,7 @@ def batch_rigid_transform(rot_mats, joints, parents, dtype=torch.float32):
 def lbs(v_shaped_expressed,
         global_pose_params_6d, neck_pose_params_ax, jaw_pose_params_ax, eye_pose_params_ax,
         J_transformed_rest_lbs, parents_lbs, lbs_weights, posedirs,
-        dtype=torch.float32, debug_print: bool = False):
+        dtype=torch.float32, debug_print: bool = False, use_posedirs: bool = True):
     if debug_print:
         print(f"--- ENTERING LBS FUNCTION (batch_size={v_shaped_expressed.shape[0]}) ---")
         if v_shaped_expressed.numel() > 0 and v_shaped_expressed.shape[0] > 0:
@@ -103,13 +103,12 @@ def lbs(v_shaped_expressed,
         print(f"Warning: Pose feature vector shape mismatch. Using zeros for pose_blendshapes.")
         current_pose_feature_vector = torch.zeros(batch_size, num_features_expected_by_posedirs, device=device, dtype=dtype)
     
-    # --- DIAGNOSTIC: Temporarily disable pose-dependent blendshapes ---
-    # The posedirs component can be a source of instability. Disabling it helps
-    # to verify if the rest of the model is learning correctly. If the model
-    # performs much better with this disabled, it indicates an issue with
-    # how posedirs are being used.
-    # pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs)
-    pose_blendshapes = torch.zeros_like(v_shaped_expressed)
+    # The posedirs component can be a source of instability, so it's often
+    # useful to disable it for initial training stages and enable it for fine-tuning.
+    if use_posedirs:
+        pose_blendshapes = torch.einsum('BP,VPC->BVC', current_pose_feature_vector, posedirs)
+    else:
+        pose_blendshapes = torch.zeros_like(v_shaped_expressed)
 
     v_to_skin = v_shaped_expressed + pose_blendshapes
     if debug_print:
@@ -285,7 +284,7 @@ class FLAME(nn.Module):
 
     def forward(self, shape_params=None, expression_params=None, pose_params=None,
                   eye_pose_params=None, jaw_pose_params=None, neck_pose_params=None, transl=None, detail_params=None,
-                  debug_print: bool = False):
+                  debug_print: bool = False, use_posedirs: bool = True):
         batch_size = shape_params.shape[0]
         device = shape_params.device
         shape_offset = torch.einsum('bS,VCS->bVC', shape_params, self.shapedirs).contiguous()
@@ -298,7 +297,8 @@ class FLAME(nn.Module):
             neck_pose_params_ax=neck_pose_params, jaw_pose_params_ax=jaw_pose_params,
             eye_pose_params_ax=eye_pose_params, J_transformed_rest_lbs=J_for_lbs_batched,
             parents_lbs=self.parents_lbs, lbs_weights=self.lbs_weights,
-            posedirs=self.posedirs, dtype=self.v_template.dtype, debug_print=debug_print
+            posedirs=self.posedirs, dtype=self.v_template.dtype, debug_print=debug_print,
+            use_posedirs=use_posedirs
         )
         if transl is not None: pred_verts = pred_verts_posed + transl.unsqueeze(1)
         else: pred_verts = pred_verts_posed

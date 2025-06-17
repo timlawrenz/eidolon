@@ -92,13 +92,14 @@ TRAINING_STAGES = [
         'epochs': 10,
         'camera_type': 'orthographic',
         'learning_rate': 1e-4,
+        'use_posedirs': False, # Learn coarse shape/pose without fine details
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 1.0,           # Main objective
-            'reg_shape': 1.0,            # Keep shape from going crazy
-            'reg_transl': 1.0,           # Allow learning 2D translation
-            'reg_global_pose': 1.0,      # Allow learning coarse rotation
-            'reg_jaw_pose': 5.0,         # Keep jaw, neck, eye poses more constrained initially
+            'landmark': 1.0,
+            'reg_shape': 1.0,
+            'reg_transl': 1.0,
+            'reg_global_pose': 1.0,
+            'reg_jaw_pose': 5.0,
             'reg_neck_pose': 5.0,
             'reg_eye_pose': 5.0,
             'reg_detail': 1e-4,
@@ -109,11 +110,12 @@ TRAINING_STAGES = [
         'epochs': 10,
         'camera_type': 'perspective',
         'learning_rate': 1e-5,
+        'use_posedirs': False, # Continue learning coarse shape/pose in perspective
         'loss_weights': {
             'pixel': 0.0,
             'landmark': 1.0,
             'reg_shape': 0.5,
-            'reg_transl': 1.0,        # Allow learning Z translation, rely on shape reg to prevent cheating
+            'reg_transl': 1.0,
             'reg_global_pose': 1.0,
             'reg_jaw_pose': 1.0,
             'reg_neck_pose': 1.0,
@@ -122,16 +124,17 @@ TRAINING_STAGES = [
         }
     },
     {
-        'name': 'Stage3_PerspectiveFinetune',
+        'name': 'Stage3_PoseDetailFinetune',
         'epochs': 10,
         'camera_type': 'perspective',
-        'learning_rate': 1e-5,
+        'learning_rate': 1e-6, # Use a very low learning rate for fine-tuning
+        'use_posedirs': True, # Re-enable posedirs to learn fine details
         'loss_weights': {
             'pixel': 0.0,
-            'landmark': 0.5,      # Reduce landmark weight after initial fit
-            'reg_shape': 0.2,
-            'reg_transl': 10.0,     # Relax translation regularization, but keep it strong
-            'reg_global_pose': 5.0, # Relax pose regularization
+            'landmark': 1.0,      # Focus strongly on final landmark accuracy
+            'reg_shape': 0.1,     # Relax shape regularization slightly for fine adjustments
+            'reg_transl': 1.0,
+            'reg_global_pose': 0.5,
             'reg_jaw_pose': 0.5,
             'reg_neck_pose': 0.5,
             'reg_eye_pose': 0.5,
@@ -196,7 +199,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     num_epochs_this_stage = stage_config['epochs']
     stage_loss_weights = stage_config['loss_weights']
     stage_lr = stage_config.get('learning_rate', LEARNING_RATE)
-    stage_camera_type = stage_config.get('camera_type', 'perspective') # Default to perspective
+    stage_camera_type = stage_config.get('camera_type', 'perspective')
+    stage_use_posedirs = stage_config.get('use_posedirs', True) # Default to True for safety
 
     # --- Stage-specific Setup ---
     # Update optimizer learning rate
@@ -275,7 +279,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 jaw_pose_params=pred_coeffs_dict['jaw_pose_params'],
                 eye_pose_params=pred_coeffs_dict['eye_pose_params'],
                 neck_pose_params=pred_coeffs_dict['neck_pose_params'],
-                transl=pred_coeffs_dict['transl']
+                transl=pred_coeffs_dict['transl'],
+                use_posedirs=stage_use_posedirs
             )
             
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
@@ -379,7 +384,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 eye_pose_params=val_pred_coeffs_dict['eye_pose_params'], 
                 neck_pose_params=val_pred_coeffs_dict['neck_pose_params'], 
                 transl=val_pred_coeffs_dict['transl'],
-                debug_print=debug_lbs_this_epoch
+                debug_print=debug_lbs_this_epoch,
+                use_posedirs=stage_use_posedirs
             )
             
             print(f"--- Predicted 3D Vertices Stats (Epoch {epoch+1} End, First Sample of Batch) ---")
@@ -450,7 +456,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                     shape_params=template_shape_params, expression_params=template_expr_params,
                     pose_params=template_pose_params, jaw_pose_params=template_jaw_pose_params,
                     eye_pose_params=template_eye_pose_params, neck_pose_params=template_neck_pose_params,
-                    transl=template_transl_params, debug_print=True
+                    transl=template_transl_params, debug_print=True, use_posedirs=False
                 )
                 print(f"--- DEBUG: TEMPLATE 3D LANDMARKS (Epoch {epoch+1}) ---")
                 if _template_landmarks_3d.numel() > 0:
