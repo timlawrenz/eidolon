@@ -168,6 +168,7 @@ encoder = EidolonEncoder(num_coeffs=NUM_COEFFS).to(DEVICE)
 # renderer = ... # Your PyTorch3D renderer, needed for projecting landmarks
 # cameras = ... # Your PyTorch3D camera, needed for projecting landmarks
 loss_fn = TotalLoss(loss_weights=INITIAL_LOSS_WEIGHTS_FOR_SETUP).to(DEVICE) # Use initial weights for setup
+print(f"DEBUG: Initial loss weights in loss_fn: {loss_fn.weights}")
 optimizer = torch.optim.Adam(encoder.parameters(), lr=INITIAL_LEARNING_RATE_FOR_SETUP) # Use initial LR for setup
 
 # Initialize FLAME model
@@ -239,6 +240,7 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     
     # Update loss function weights
     loss_fn.weights = stage_loss_weights
+    print(f"DEBUG: Stage {stage_idx+1} updated loss_fn.weights = {loss_fn.weights}")
     
     # Setup camera for the current stage
     if stage_camera_type == 'orthographic':
@@ -447,6 +449,11 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
             optimizer.step()
+            
+            # Check if model parameters are actually changing
+            if i == 0:  # First batch of epoch
+                print(f"DEBUG: First 5 encoder FC weights: {encoder.backbone.fc.weight[0, :5].detach().cpu().numpy()}")
+                print(f"DEBUG: First 5 encoder FC biases: {encoder.backbone.fc.bias[:5].detach().cpu().numpy()}")
             
         # --- EPOCH-END SNAPSHOT: Visual validation, TensorBoard logging, and detailed console output ---
         current_tensorboard_step = epoch + 1
