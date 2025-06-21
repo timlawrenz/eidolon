@@ -205,8 +205,7 @@ print("PERFORMING INITIAL SYSTEM VALIDATION")
 print("="*80)
 
 # First, test with orthographic camera (first stage)
-R = torch.eye(3).unsqueeze(0)
-T = torch.tensor([[0, 0, 10.0]])
+R, T = look_at_view_transform(dist=10.0, elev=0, azim=0, device=DEVICE)
 test_cameras_ortho = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=6.25)
 
 from src.utils import validate_coordinate_system_consistency
@@ -245,29 +244,13 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     # Setup camera for the current stage
     if stage_camera_type == 'orthographic':
         print("--- Using Orthographic Camera for this stage ---")
-        # Orthographic cameras are useful for initial alignment as they are not sensitive to depth.
-        # Apply 180-degree rotation around Y axis to view front of face
-        R = torch.tensor([[[1.0, 0.0, 0.0],
-                          [0.0, -1.0, 0.0], 
-                          [0.0, 0.0, -1.0]]], dtype=torch.float32)
-        T = torch.tensor([[0, 0, 10.0]]) # Simple Z-translation
-        # The scale of the orthographic camera needs to be chosen carefully.
-        # In PyTorch3D v0.7.6, this is controlled by the focal_length.
-        # A larger focal length "zooms in", scaling up the projection.
-        # We derive a value to make the initial projection roughly match the
-        # scale of the ground truth landmarks. The FLAME template has a vertex
-        # spread of ~0.2 world units. GT landmarks have a spread of ~140 pixels
-        # in a 224 image. This corresponds to ~1.25 in NDC space.
-        # focal_length = ndc_spread / world_spread = 1.25 / 0.2 = 6.25
+        # Use look_at_view_transform for proper front view
+        R, T = look_at_view_transform(dist=10.0, elev=0, azim=0, device=DEVICE)
         cameras = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=6.25)
     else: # 'perspective'
         print("--- Using Perspective Camera for this stage ---")
-        # Apply 180-degree rotation around Y axis to view front of face
-        R = torch.tensor([[[1.0, 0.0, 0.0],
-                          [0.0, -1.0, 0.0], 
-                          [0.0, 0.0, -1.0]]], dtype=torch.float32)
-        T = torch.tensor([[0, 0, 2.7]]) # Simple Z-translation
-        # Using a smaller FoV makes the projection more orthographic-like and stable
+        # Use look_at_view_transform for proper front view
+        R, T = look_at_view_transform(dist=2.7, elev=0, azim=0, device=DEVICE)
         cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=12.0)
 
     # The renderer needs to be re-initialized if the camera changes
@@ -401,13 +384,9 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 if np.all(verts_spread < 0.01):
                     print("*** CRITICAL: Mesh appears collapsed to a point! ***")
             
-            # Apply same coordinate system correction to landmarks for consistent projection
-            pred_landmarks_3d_for_projection = pred_landmarks_3d.clone()
-            pred_landmarks_3d_for_projection[:, :, 1] *= -1  # Flip Y-axis
-            pred_landmarks_3d_for_projection[:, :, 2] *= -1  # Flip Z-axis
-            
+            # Project landmarks directly without coordinate system correction
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
-            pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d_for_projection, image_size=image_size_for_projection)[:, :, :2]
+            pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size_for_projection)[:, :, :2]
             
             # --- DEBUG CAMERA PROJECTION ---
             if epoch == 0 and i == 0:
@@ -422,10 +401,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 print(validate_landmark_data(gt_landmarks_2d_scaled, pred_landmarks_2d_model, 
                                            image_size=224, title="GT vs Predicted Landmarks"))
 
-            # Apply coordinate system correction for rendering (same as validation)
-            pred_verts_for_render = pred_verts.clone()
-            pred_verts_for_render[:, :, 1] *= -1  # Flip Y-axis
-            pred_verts_for_render[:, :, 2] *= -1  # Flip Z-axis
+            # Use vertices directly for rendering
+            pred_verts_for_render = pred_verts
             
             num_vertices_flame = pred_verts_for_render.shape[1]
             generic_vertex_colors = torch.ones_like(pred_verts_for_render) * 0.7 
@@ -573,24 +550,17 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 use_posedirs=stage_use_posedirs
             )
 
-            # Apply coordinate system correction to landmarks for projection consistency
-            val_pred_landmarks_3d_for_projection = val_pred_landmarks_3d.clone()
-            val_pred_landmarks_3d_for_projection[:, :, 1] *= -1  # Flip Y-axis
-            val_pred_landmarks_3d_for_projection[:, :, 2] *= -1  # Flip Z-axis
-            
-            # Project landmarks and render mesh for visualization
+            # Project landmarks directly for visualization
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                val_pred_landmarks_3d_for_projection, image_size=image_size_for_projection
+                val_pred_landmarks_3d, image_size=image_size_for_projection
             )[:, :, :2]
 
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
             val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
 
-            # Correct for coordinate system mismatch for rendering
-            val_pred_verts_for_render = val_pred_verts.clone()
-            val_pred_verts_for_render[:, :, 1] *= -1 # Flip Y-axis
-            val_pred_verts_for_render[:, :, 2] *= -1 # Flip Z-axis
+            # Use vertices directly for rendering
+            val_pred_verts_for_render = val_pred_verts
 
             val_meshes_batch = Meshes(
                 verts=list(val_pred_verts_for_render),
