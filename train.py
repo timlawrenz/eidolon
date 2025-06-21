@@ -198,6 +198,24 @@ data_loader = DataLoader(
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
 
+# --- INITIAL COORDINATE SYSTEM VALIDATION ---
+print("\n" + "="*80)
+print("PERFORMING INITIAL SYSTEM VALIDATION")
+print("="*80)
+
+# First, test with orthographic camera (first stage)
+R = torch.eye(3).unsqueeze(0)
+T = torch.tensor([[0, 0, 10.0]])
+test_cameras_ortho = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=6.25)
+
+from src.utils import validate_coordinate_system_consistency
+validation_report = validate_coordinate_system_consistency(flame_model, test_cameras_ortho, DEVICE)
+print(validation_report)
+
+print("="*80)
+print("SYSTEM VALIDATION COMPLETE - STARTING TRAINING")
+print("="*80)
+
 # 3. The Training Loop
 global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
 for stage_idx, stage_config in enumerate(TRAINING_STAGES):
@@ -276,22 +294,47 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
             )
             
-            # --- DEBUG: Print pose parameters before FLAME call ---
-            print("\n--- Pose Parameters Before FLAME Call (Batch 0) ---")
-            for param_name, params in {
-                'global_pose': pred_coeffs_dict['pose_params'][0],
-                'jaw_pose': pred_coeffs_dict['jaw_pose_params'][0],
-                'neck_pose': pred_coeffs_dict['neck_pose_params'][0],
-                'eye_pose': pred_coeffs_dict['eye_pose_params'][0]
-            }.items():
-                print(f"  {param_name}:")
-                if param_name in ['global_pose']:
-                    # Convert to rotation matrix for better visualization
-                    rot_matrix = rotation_6d_to_matrix(params.unsqueeze(0))
-                    print("    Rotation Matrix:")
-                    print(rot_matrix.detach().cpu().numpy())
-                else:
-                    print(f"  Axis-Angle Values: {params.detach().cpu().numpy()}")
+            # --- COMPREHENSIVE DEBUGGING ---
+            if epoch == 0 and i == 0:  # First batch of first epoch
+                print("\n" + "="*80)
+                print("COMPREHENSIVE DEBUG OUTPUT - FIRST BATCH")
+                print("="*80)
+                
+                # 1. Validate input data
+                from src.utils import validate_landmark_data, plot_landmarks_ascii
+                print(validate_landmark_data(gt_landmarks_2d_scaled, gt_landmarks_2d_scaled, 
+                                           image_size=224, title="Input Data Validation"))
+                
+                print(plot_landmarks_ascii(gt_landmarks_2d_scaled, 224, 224, 
+                                         title="GT Landmarks Visualization"))
+                
+                # 2. Check pose parameters before FLAME
+                pose_debug_dict = {
+                    'shape_params': pred_coeffs_dict['shape_params'],
+                    'global_pose': pred_coeffs_dict['pose_params'],
+                    'jaw_pose': pred_coeffs_dict['jaw_pose_params'], 
+                    'neck_pose': pred_coeffs_dict['neck_pose_params'],
+                    'eye_pose': pred_coeffs_dict['eye_pose_params'],
+                    'translation': pred_coeffs_dict['transl']
+                }
+                
+                from src.utils import plot_pose_parameters_ascii
+                print(plot_pose_parameters_ascii(pose_debug_dict, title="Predicted FLAME Parameters"))
+                
+                print("="*80)
+            
+            # Every few batches, do lighter debugging
+            if i % 50 == 0:  # Every 50 batches
+                print(f"\n--- Quick Debug: Epoch {epoch+1}, Batch {i} ---")
+                
+                # Check for extreme pose values
+                global_pose_vals = pred_coeffs_dict['pose_params'][0].detach().cpu().numpy()
+                transl_vals = pred_coeffs_dict['transl'][0].detach().cpu().numpy()
+                
+                if np.abs(global_pose_vals).max() > 2.0:
+                    print(f"*** WARNING: Extreme global pose detected: {global_pose_vals} ***")
+                if np.abs(transl_vals).max() > 5.0:
+                    print(f"*** WARNING: Extreme translation detected: {transl_vals} ***")
 
             # Run the FLAME model to get 3D vertices and 3D landmarks
             pred_verts, pred_landmarks_3d = flame_model(
@@ -305,8 +348,42 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 use_posedirs=stage_use_posedirs
             )
             
+            # --- DEBUG FLAME OUTPUT ---
+            if epoch == 0 and i == 0:  # First batch debugging
+                print("\n--- FLAME Output Analysis ---")
+                
+                # Check 3D landmarks
+                lmks_3d_sample = pred_landmarks_3d[0].detach().cpu().numpy()
+                print(f"3D Landmarks shape: {pred_landmarks_3d.shape}")
+                for axis_idx, axis_name in enumerate(['X', 'Y', 'Z']):
+                    values = lmks_3d_sample[:, axis_idx]
+                    print(f"  3D {axis_name}: range=[{values.min():.4f}, {values.max():.4f}], mean={values.mean():.4f}")
+                
+                # Check for degenerate mesh (all vertices at origin, etc.)
+                verts_sample = pred_verts[0].detach().cpu().numpy()
+                verts_center = verts_sample.mean(axis=0)
+                verts_spread = verts_sample.std(axis=0)
+                print(f"Mesh center: {verts_center}")
+                print(f"Mesh spread (std): {verts_spread}")
+                
+                if np.all(verts_spread < 0.01):
+                    print("*** CRITICAL: Mesh appears collapsed to a point! ***")
+            
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size_for_projection)[:, :, :2]
+            
+            # --- DEBUG CAMERA PROJECTION ---
+            if epoch == 0 and i == 0:
+                from src.utils import validate_camera_projection, plot_landmarks_ascii
+                print(validate_camera_projection(pred_landmarks_3d, cameras, image_size_for_projection, 
+                                               "Camera Projection Debug"))
+                
+                print(plot_landmarks_ascii(pred_landmarks_2d_model, 224, 224, 
+                                         title="Projected Landmarks Visualization"))
+                
+                # Validate projected landmarks against GT
+                print(validate_landmark_data(gt_landmarks_2d_scaled, pred_landmarks_2d_model, 
+                                           image_size=224, title="GT vs Predicted Landmarks"))
 
             num_vertices_flame = pred_verts.shape[1]
             generic_vertex_colors = torch.ones_like(pred_verts) * 0.7 
@@ -338,6 +415,28 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 gt_images,
                 gt_landmarks_2d_scaled
             )
+            
+            # --- DEBUG LOSS COMPONENTS ---
+            if epoch == 0 and i == 0:
+                from src.utils import plot_loss_components_ascii
+                print(plot_loss_components_ascii(loss_dict, title="Loss Components Analysis"))
+                
+                # Check for problematic loss values
+                for loss_name, loss_val in loss_dict.items():
+                    val = loss_val.item() if hasattr(loss_val, 'item') else float(loss_val)
+                    if val > 1000:
+                        print(f"*** WARNING: Very high {loss_name} loss: {val} ***")
+                    elif val != val:  # Check for NaN
+                        print(f"*** CRITICAL: NaN detected in {loss_name} loss! ***")
+            
+            # Monitor loss components every 50 batches
+            if i % 50 == 0:
+                landmark_loss_val = loss_dict['landmark'].item()
+                total_loss_val = loss_dict['total'].item()
+                print(f"  Landmark Loss: {landmark_loss_val:.6f}, Total Loss: {total_loss_val:.6f}")
+                
+                if landmark_loss_val > 100:
+                    print(f"  *** WARNING: High landmark loss suggests misalignment! ***")
             
             total_loss.backward() 
             optimizer.step()
