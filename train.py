@@ -451,6 +451,35 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         current_tensorboard_step = epoch + 1
         loss_total_val = total_loss.item()
         
+        # Add to loss history for convergence tracking
+        loss_history.append(loss_total_val)
+        
+        # Analyze training health every few epochs
+        if (current_stage_epoch_idx + 1) % 5 == 0 or (current_stage_epoch_idx + 1) == num_epochs_this_stage:
+            from src.utils import track_convergence, analyze_gradient_health, monitor_parameter_changes
+            
+            # Track convergence
+            convergence_info = track_convergence(loss_history)
+            
+            # Analyze gradient health  
+            grad_health = analyze_gradient_health(encoder)
+            
+            # Monitor parameter changes (just encoder backbone vs head)
+            param_changes = monitor_parameter_changes(encoder, param_history, 
+                                                    ['backbone.fc.weight', 'backbone.fc.bias'])
+            
+            print(f"\n--- Training Health Report (Epoch {epoch+1}) ---")
+            print(f"Convergence: {convergence_info['trend']} | Improvement: {convergence_info['improvement']:.6f}")
+            print(f"Gradients: {grad_health['status']} | Total norm: {grad_health['total_norm']:.6f}")
+            
+            for param_name, change_info in param_changes.items():
+                print(f"Param {param_name}: rel_change={change_info['relative_change']:.6f}")
+            
+            if convergence_info['trend'] == 'plateaued':
+                print("*** INFO: Loss has plateaued - consider adjusting learning rate ***")
+            if grad_health['status'] != 'healthy':
+                print(f"*** WARNING: {grad_health['status']} gradients detected! ***")
+        
         # Log the final batch loss for the epoch to the console
         if (current_stage_epoch_idx + 1) % 1 == 0 or (current_stage_epoch_idx + 1) == num_epochs_this_stage:
              print(f"  Epoch {epoch+1}/{total_epochs_all_stages} (Stage Epoch {current_stage_epoch_idx+1}/{num_epochs_this_stage}) | "
