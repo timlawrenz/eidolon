@@ -316,6 +316,14 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 print(plot_landmarks_ascii(gt_landmarks_2d_scaled, 224, 224, 
                                          title="GT Landmarks Visualization"))
                 
+                # Check Ground Truth Landmark Validity
+                gt_sample = gt_landmarks_2d_scaled[0].cpu().numpy()
+                print(f"\nDEBUG: GT Landmark positions:")
+                print(f"  Chin center (landmark 8): {gt_sample[8]}")
+                print(f"  Left eye center (landmark 36): {gt_sample[36]}")
+                print(f"  Right eye center (landmark 45): {gt_sample[45]}")
+                print(f"  Nose tip (landmark 30): {gt_sample[30]}")
+                
                 # 2. Check pose parameters before FLAME
                 pose_debug_dict = {
                     'shape_params': pred_coeffs_dict['shape_params'],
@@ -328,6 +336,18 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 
                 from src.utils import plot_pose_parameters_ascii
                 print(plot_pose_parameters_ascii(pose_debug_dict, title="Predicted FLAME Parameters"))
+                
+                # Validate loss function calculations  
+                print(f"\nDEBUG: Raw parameter values for regularization:")
+                print(f"  global_pose: {pred_coeffs_dict['pose_params'][0].detach().cpu().numpy()}")
+                print(f"  Target global_pose: [1, 0, 0, 0, 1, 0]")
+                
+                # Manual loss calculation
+                target = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], device=DEVICE)
+                manual_reg_loss = ((pred_coeffs_dict['pose_params'][0] - target) ** 2).mean()
+                print(f"  Manual reg_global_pose loss: {manual_reg_loss.item()}")
+                print(f"  Weight: {stage_loss_weights['reg_global_pose']}")
+                print(f"  Expected weighted loss: {manual_reg_loss.item() * stage_loss_weights['reg_global_pose']}")
                 
                 print("="*80)
             
@@ -445,6 +465,17 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 
                 if landmark_loss_val > 100:
                     print(f"  *** WARNING: High landmark loss suggests misalignment! ***")
+                
+                # Additional parameter monitoring
+                current_weights = loss_fn.weights
+                pose_vals = pred_coeffs_dict['pose_params'][0].detach().cpu().numpy()
+                print(f"  Current reg_global_pose weight: {current_weights['reg_global_pose']}")
+                print(f"  Current pose params: {pose_vals}")
+                print(f"  Deviation from identity: {np.abs(pose_vals - np.array([1,0,0,0,1,0])).max():.6f}")
+                
+                # Check if loss function is broken
+                if abs(loss_dict['reg_global_pose'].item()) < 1e-8 and current_weights['reg_global_pose'] > 0:
+                    print(f"  *** CRITICAL: reg_global_pose loss is 0 but weight is {current_weights['reg_global_pose']} ***")
             
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
