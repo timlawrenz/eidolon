@@ -94,6 +94,9 @@ class TotalLoss(nn.Module):
            pred_coeffs['shape'].numel() > 0 and \
            self.weights.get('reg_shape', 0.0) > 0:
             loss_reg_shape = (pred_coeffs['shape'] ** 2).mean()
+            print(f"LOSS DEBUG: computed reg_shape loss={loss_reg_shape.item()}")
+        else:
+            print(f"LOSS DEBUG: shape check failed: 'shape' in pred_coeffs={'shape' in pred_coeffs}")
         
         loss_reg_expression = torch.tensor(0.0, device=rendered_image.device) # Use a common device
         if 'expression' in pred_coeffs and \
@@ -114,6 +117,11 @@ class TotalLoss(nn.Module):
            pred_coeffs['global_pose'] is not None and \
            pred_coeffs['global_pose'].numel() > 0 and \
            self.weights.get('reg_global_pose', 0.0) > 0:
+            # DEBUG: Print what we're actually checking
+            print(f"LOSS DEBUG: global_pose found, shape={pred_coeffs['global_pose'].shape}")
+            print(f"LOSS DEBUG: global_pose values[0]={pred_coeffs['global_pose'][0]}")
+            print(f"LOSS DEBUG: weight={self.weights.get('reg_global_pose', 0.0)}")
+            
             # Target for 6D global pose is (1,0,0, 0,1,0) for identity rotation.
             # This corresponds to a frontal, neutral head pose.
             target_global_pose_6d = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], 
@@ -122,6 +130,15 @@ class TotalLoss(nn.Module):
             # Expand target to match batch size
             target_global_pose_6d_batch = target_global_pose_6d.unsqueeze(0).expand_as(pred_coeffs['global_pose'])
             loss_reg_global_pose = ((pred_coeffs['global_pose'] - target_global_pose_6d_batch) ** 2).mean()
+            print(f"LOSS DEBUG: computed reg_global_pose loss={loss_reg_global_pose.item()}")
+        else:
+            print(f"LOSS DEBUG: global_pose check failed:")
+            print(f"  'global_pose' in pred_coeffs: {'global_pose' in pred_coeffs}")
+            if 'global_pose' in pred_coeffs:
+                print(f"  pred_coeffs['global_pose'] is not None: {pred_coeffs['global_pose'] is not None}")
+                if pred_coeffs['global_pose'] is not None:
+                    print(f"  pred_coeffs['global_pose'].numel() > 0: {pred_coeffs['global_pose'].numel() > 0}")
+            print(f"  self.weights.get('reg_global_pose', 0.0) > 0: {self.weights.get('reg_global_pose', 0.0) > 0}")
 
         loss_reg_jaw_pose = torch.tensor(0.0, device=rendered_image.device)
         if 'jaw_pose' in pred_coeffs and \
