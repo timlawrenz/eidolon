@@ -40,6 +40,8 @@ class TotalLoss(nn.Module):
         # 4. Regularization Loss (Plausibility of parameters)
         # This penalizes the model for predicting extreme, unrealistic shape/expression params
         # It's often a simple L2 norm (sum of squares) on the coefficient vectors.
+        # This section also includes pose regularization, which is crucial for
+        # preventing extreme head rotations and ensuring a stable, frontal initial fit.
         # We can implement this directly in the forward pass.
 
     def forward(self, pred_coeffs, pred_verts, pred_landmarks_2d, rendered_image, gt_image, gt_landmarks_2d):
