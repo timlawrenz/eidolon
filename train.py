@@ -276,6 +276,23 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
             )
             
+            # --- DEBUG: Print pose parameters before FLAME call ---
+            print("\n--- Pose Parameters Before FLAME Call (Batch 0) ---")
+            for param_name, params in {
+                'global_pose': pred_coeffs_dict['pose_params'][0],
+                'jaw_pose': pred_coeffs_dict['jaw_pose_params'][0],
+                'neck_pose': pred_coeffs_dict['neck_pose_params'][0],
+                'eye_pose': pred_coeffs_dict['eye_pose_params'][0]
+            }.items():
+                print(f"  {param_name}:")
+                if param_name in ['global_pose']:
+                    # Convert to rotation matrix for better visualization
+                    rot_matrix = rotation_6d_to_matrix(params.unsqueeze(0))
+                    print("    Rotation Matrix:")
+                    print(rot_matrix.detach().cpu().numpy())
+                else:
+                    print(f"  Axis-Angle Values: {params.detach().cpu().numpy()}")
+
             # Run the FLAME model to get 3D vertices and 3D landmarks
             pred_verts, pred_landmarks_3d = flame_model(
                 shape_params=pred_coeffs_dict['shape_params'],
