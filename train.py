@@ -444,7 +444,8 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 if landmark_loss_val > 100:
                     print(f"  *** WARNING: High landmark loss suggests misalignment! ***")
             
-            total_loss.backward() 
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
             optimizer.step()
             
         # --- EPOCH-END SNAPSHOT: Visual validation, TensorBoard logging, and detailed console output ---
