@@ -575,3 +575,142 @@ def validate_camera_projection(landmarks_3d, camera, image_size=(224, 224), titl
     
     report += "=" * 60 + "\n"
     return report
+
+
+def track_convergence(loss_history, window_size=10, patience_threshold=0.001):
+    """
+    Tracks training convergence based on loss history.
+    
+    Args:
+        loss_history (list): List of recent loss values
+        window_size (int): Number of recent epochs to consider
+        patience_threshold (float): Minimum improvement threshold
+        
+    Returns:
+        dict: Convergence statistics
+    """
+    if len(loss_history) < window_size:
+        return {'converged': False, 'trend': 'insufficient_data', 'improvement': 0.0}
+    
+    recent_losses = loss_history[-window_size:]
+    early_losses = loss_history[-2*window_size:-window_size] if len(loss_history) >= 2*window_size else []
+    
+    # Calculate trend
+    recent_mean = np.mean(recent_losses)
+    recent_std = np.std(recent_losses)
+    
+    improvement = 0.0
+    trend = 'stable'
+    
+    if early_losses:
+        early_mean = np.mean(early_losses)
+        improvement = early_mean - recent_mean
+        
+        if improvement > patience_threshold:
+            trend = 'improving'
+        elif improvement < -patience_threshold:
+            trend = 'worsening' 
+        else:
+            trend = 'plateaued'
+    
+    # Check for convergence (low variance in recent losses)
+    converged = recent_std < patience_threshold and len(loss_history) >= window_size
+    
+    return {
+        'converged': converged,
+        'trend': trend,
+        'improvement': improvement,
+        'recent_mean': recent_mean,
+        'recent_std': recent_std,
+        'window_size': window_size
+    }
+
+
+def analyze_gradient_health(model, threshold_low=1e-7, threshold_high=1.0):
+    """
+    Analyzes gradient health to detect vanishing/exploding gradients.
+    
+    Args:
+        model: PyTorch model
+        threshold_low (float): Threshold for vanishing gradients
+        threshold_high (float): Threshold for exploding gradients
+        
+    Returns:
+        dict: Gradient health statistics
+    """
+    grad_norms = []
+    grad_stats = {}
+    
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            grad_norm = param.grad.data.norm().item()
+            grad_norms.append(grad_norm)
+            grad_stats[name] = {
+                'norm': grad_norm,
+                'shape': list(param.shape),
+                'mean': param.grad.data.abs().mean().item(),
+                'max': param.grad.data.abs().max().item()
+            }
+    
+    if not grad_norms:
+        return {'status': 'no_gradients', 'stats': {}}
+    
+    total_norm = np.sqrt(sum(g**2 for g in grad_norms))
+    
+    # Analyze gradient health
+    vanishing_count = sum(1 for g in grad_norms if g < threshold_low)
+    exploding_count = sum(1 for g in grad_norms if g > threshold_high)
+    
+    if exploding_count > 0:
+        status = 'exploding'
+    elif vanishing_count > len(grad_norms) * 0.5:  # More than half vanishing
+        status = 'vanishing'
+    else:
+        status = 'healthy'
+    
+    return {
+        'status': status,
+        'total_norm': total_norm,
+        'mean_norm': np.mean(grad_norms),
+        'max_norm': np.max(grad_norms),
+        'min_norm': np.min(grad_norms),
+        'vanishing_count': vanishing_count,
+        'exploding_count': exploding_count,
+        'layer_stats': grad_stats
+    }
+
+
+def monitor_parameter_changes(model, param_history, param_names=None):
+    """
+    Monitors which parameters are changing during training.
+    
+    Args:
+        model: PyTorch model
+        param_history (dict): Dictionary storing parameter history
+        param_names (list): Specific parameter names to monitor (None for all)
+        
+    Returns:
+        dict: Parameter change statistics
+    """
+    current_params = {}
+    param_changes = {}
+    
+    for name, param in model.named_parameters():
+        if param_names is None or name in param_names:
+            current_params[name] = param.data.clone().cpu()
+            
+            if name in param_history:
+                # Calculate change from last checkpoint
+                change = torch.norm(current_params[name] - param_history[name]).item()
+                relative_change = change / (torch.norm(param_history[name]).item() + 1e-8)
+                
+                param_changes[name] = {
+                    'absolute_change': change,
+                    'relative_change': relative_change,
+                    'current_norm': torch.norm(current_params[name]).item()
+                }
+            
+            # Update history
+            param_history[name] = current_params[name]
+    
+    return param_changes

@@ -218,6 +218,12 @@ print("="*80)
 
 # 3. The Training Loop
 global_epoch_idx = 0 # Tracks the true overall epoch number (0-indexed)
+
+# Initialize tracking variables for complete run analysis
+loss_history = []
+param_history = {}
+convergence_info = {}
+
 for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     stage_name = stage_config['name']
     num_epochs_this_stage = stage_config['epochs']
@@ -531,8 +537,26 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     # --- STAGE-END CHECKPOINT ---
     stage_model_save_path = f"eidolon_encoder_stage_{stage_idx+1}.pth"
     torch.save(encoder.state_dict(), stage_model_save_path)
+    
+    # Save training metadata
+    metadata = {
+        'stage_name': stage_config['name'],
+        'final_loss': loss_history[-1] if loss_history else 0,
+        'loss_history': loss_history,
+        'convergence_info': convergence_info,
+        'total_epochs_completed': epoch + 1
+    }
+    metadata_path = f"training_metadata_stage_{stage_idx+1}.pkl"
+    
+    import pickle
+    with open(metadata_path, 'wb') as f:
+        pickle.dump(metadata, f)
+    
     print(f"\n--- Stage {stage_idx + 1} ({stage_config['name']}) Finished ---")
-    print(f"Saved model checkpoint to: {stage_model_save_path}\n")
+    print(f"Final Loss: {loss_history[-1]:.6f}")
+    print(f"Loss Trend: {convergence_info.get('trend', 'unknown')}")
+    print(f"Saved model checkpoint to: {stage_model_save_path}")
+    print(f"Saved training metadata to: {metadata_path}\n")
 
 print("All training stages finished.")
 
