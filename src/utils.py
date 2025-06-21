@@ -349,7 +349,7 @@ def plot_landmarks_ascii(landmarks_2d_batch, original_img_width, original_img_he
     if landmarks_2d_batch.numel() == 0:
         return f"{title}:\nNo landmarks to plot.\n"
 
-    landmarks_sample = landmarks_2d_batch[0].cpu().numpy() # Take the first sample (N_landmarks, 2)
+    landmarks_sample = landmarks_2d_batch[0].detach().cpu().numpy() # Take the first sample (N_landmarks, 2)
 
     grid = [[' ' for _ in range(grid_width)] for _ in range(grid_height)]
 
