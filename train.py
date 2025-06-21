@@ -99,10 +99,13 @@ TRAINING_STAGES = [
             'landmark_shape': 1.0,     # Enforce relative landmark configuration
             'reg_shape': 1.0,
             'reg_transl': 1.0,
-            'reg_global_pose': 1.0,
-            'reg_jaw_pose': 5.0,
-            'reg_neck_pose': 5.0,
-            'reg_eye_pose': 5.0,
+            # --- Increased Pose Regularization ---
+            # Penalize deviation from a frontal pose more strongly in the first stage
+            # to ensure a stable starting point for the fit.
+            'reg_global_pose': 10.0,
+            'reg_jaw_pose': 10.0,
+            'reg_neck_pose': 10.0,
+            'reg_eye_pose': 10.0,
             'reg_detail': 1e-4,
         }
     },

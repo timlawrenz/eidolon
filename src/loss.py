@@ -112,7 +112,8 @@ class TotalLoss(nn.Module):
            pred_coeffs['global_pose'] is not None and \
            pred_coeffs['global_pose'].numel() > 0 and \
            self.weights.get('reg_global_pose', 0.0) > 0:
-            # Target for 6D global pose is (1,0,0, 0,1,0) for identity rotation
+            # Target for 6D global pose is (1,0,0, 0,1,0) for identity rotation.
+            # This corresponds to a frontal, neutral head pose.
             target_global_pose_6d = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], 
                                                  device=pred_coeffs['global_pose'].device, 
                                                  dtype=pred_coeffs['global_pose'].dtype)
@@ -125,6 +126,8 @@ class TotalLoss(nn.Module):
            pred_coeffs['jaw_pose'] is not None and \
            pred_coeffs['jaw_pose'].numel() > 0 and \
            self.weights.get('reg_jaw_pose', 0.0) > 0:
+            # For other pose parameters (jaw, neck, eyes), which are axis-angle,
+            # we regularize towards zero, which is the neutral pose (e.g., mouth closed).
             loss_reg_jaw_pose = (pred_coeffs['jaw_pose'] ** 2).mean()
 
         loss_reg_neck_pose = torch.tensor(0.0, device=rendered_image.device)
