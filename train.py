@@ -29,7 +29,7 @@ import os # For os.makedirs and os.path.join
 from src.dataset import FaceDataset
 from src.model import EidolonEncoder, FLAME # Import FLAME model
 from src.loss import TotalLoss
-from src.utils import save_validation_images, draw_landmarks_on_images_tensor, plot_landmarks_ascii, deconstruct_flame_coeffs # Import the new utility functions
+from src.utils import save_validation_images, draw_landmarks_on_images_tensor, plot_landmarks_ascii, deconstruct_flame_coeffs, apply_coordinate_system_correction # Import the new utility functions
 import pickle # For loading FLAME model faces
 from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
 import torchvision # For making image grids for TensorBoard
@@ -83,6 +83,10 @@ LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 # NUM_EPOCHS will now be the total epochs across all stages.
 # VERBOSE_LBS_DEBUG_EPOCHS will be calculated after total_epochs_all_stages is known.
 
+# --- Coordinate System Configuration ---
+# Set this to enable/disable coordinate system correction for landmarks
+USE_COORDINATE_CORRECTION = True
+COORDINATE_CORRECTION_TYPE = 'flame_to_pytorch3d'  # Options: 'flame_to_pytorch3d', 'flame_to_pytorch3d_alt', 'none'
 
 # --- Multi-Stage Training Configuration ---
 # Each stage is a dictionary with 'epochs' and 'loss_weights'.
@@ -198,6 +202,7 @@ data_loader = DataLoader(
 
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
+print(f"Coordinate system correction: {'ENABLED' if USE_COORDINATE_CORRECTION else 'DISABLED'} ({COORDINATE_CORRECTION_TYPE})")
 
 # --- INITIAL COORDINATE SYSTEM VALIDATION ---
 print("\n" + "="*80)
@@ -384,24 +389,69 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 if np.all(verts_spread < 0.01):
                     print("*** CRITICAL: Mesh appears collapsed to a point! ***")
             
-            # Project landmarks directly without coordinate system correction
+            # === COORDINATE SYSTEM CORRECTION FOR LANDMARKS ===
+            # Apply coordinate system correction to 3D landmarks before projection
+            if USE_COORDINATE_CORRECTION:
+                pred_landmarks_3d_corrected = apply_coordinate_system_correction(
+                    pred_landmarks_3d, COORDINATE_CORRECTION_TYPE
+                )
+                if epoch == 0 and i == 0:
+                    print(f"\n--- Coordinate System Correction Applied ---")
+                    print(f"Correction type: {COORDINATE_CORRECTION_TYPE}")
+                    
+                    # Show before/after for first few landmarks
+                    orig_sample = pred_landmarks_3d[0][:5].detach().cpu().numpy()
+                    corr_sample = pred_landmarks_3d_corrected[0][:5].detach().cpu().numpy()
+                    print(f"Original 3D landmarks (first 5):")
+                    for j, (orig, corr) in enumerate(zip(orig_sample, corr_sample)):
+                        print(f"  Landmark {j}: {orig} -> {corr}")
+            else:
+                pred_landmarks_3d_corrected = pred_landmarks_3d
+                if epoch == 0 and i == 0:
+                    print(f"\n--- No Coordinate System Correction Applied ---")
+            
+            # Project corrected landmarks to 2D
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
-            pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size_for_projection)[:, :, :2]
+            pred_landmarks_2d_model = cameras.transform_points_screen(
+                pred_landmarks_3d_corrected, image_size=image_size_for_projection
+            )[:, :, :2]
             
             # --- DEBUG CAMERA PROJECTION ---
             if epoch == 0 and i == 0:
                 from src.utils import validate_camera_projection, plot_landmarks_ascii
-                print(validate_camera_projection(pred_landmarks_3d, cameras, image_size_for_projection, 
-                                               "Camera Projection Debug"))
                 
-                print(plot_landmarks_ascii(pred_landmarks_2d_model, 224, 224, 
-                                         title="Projected Landmarks Visualization"))
+                # Test both uncorrected and corrected projections
+                if USE_COORDINATE_CORRECTION:
+                    print("\n--- Projection Comparison (Uncorrected vs Corrected) ---")
+                    
+                    # Project uncorrected for comparison
+                    landmarks_2d_uncorrected = cameras.transform_points_screen(
+                        pred_landmarks_3d, image_size=image_size_for_projection
+                    )[:, :, :2]
+                    
+                    print(validate_camera_projection(pred_landmarks_3d, cameras, image_size_for_projection, 
+                                                   "UNCORRECTED Camera Projection"))
+                    
+                    print(plot_landmarks_ascii(landmarks_2d_uncorrected, 224, 224, 
+                                             title="UNCORRECTED Projected Landmarks"))
+                    
+                    print(validate_camera_projection(pred_landmarks_3d_corrected, cameras, image_size_for_projection, 
+                                                   "CORRECTED Camera Projection"))
+                    
+                    print(plot_landmarks_ascii(pred_landmarks_2d_model, 224, 224, 
+                                             title="CORRECTED Projected Landmarks"))
+                else:
+                    print(validate_camera_projection(pred_landmarks_3d, cameras, image_size_for_projection, 
+                                                   "Camera Projection Debug"))
+                    
+                    print(plot_landmarks_ascii(pred_landmarks_2d_model, 224, 224, 
+                                             title="Projected Landmarks Visualization"))
                 
                 # Validate projected landmarks against GT
                 print(validate_landmark_data(gt_landmarks_2d_scaled, pred_landmarks_2d_model, 
                                            image_size=224, title="GT vs Predicted Landmarks"))
 
-            # Use vertices directly for rendering
+            # Use vertices directly for rendering (no coordinate correction needed for mesh)
             pred_verts_for_render = pred_verts
             
             num_vertices_flame = pred_verts_for_render.shape[1]
@@ -550,10 +600,18 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 use_posedirs=stage_use_posedirs
             )
 
+            # Apply coordinate correction for validation landmarks too
+            if USE_COORDINATE_CORRECTION:
+                val_pred_landmarks_3d_corrected = apply_coordinate_system_correction(
+                    val_pred_landmarks_3d, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                val_pred_landmarks_3d_corrected = val_pred_landmarks_3d
+
             # Project landmarks directly for visualization
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                val_pred_landmarks_3d, image_size=image_size_for_projection
+                val_pred_landmarks_3d_corrected, image_size=image_size_for_projection
             )[:, :, :2]
 
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7

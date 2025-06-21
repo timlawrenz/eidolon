@@ -8,6 +8,49 @@ import numpy as np
 import os
 
 
+def apply_coordinate_system_correction(landmarks_3d, correction_type='flame_to_pytorch3d'):
+    """
+    Applies coordinate system corrections to 3D landmarks before camera projection.
+    
+    FLAME typically uses a different coordinate system than PyTorch3D cameras.
+    This function converts between coordinate systems.
+    
+    Args:
+        landmarks_3d (torch.Tensor): 3D landmarks of shape (B, N, 3)
+        correction_type (str): Type of correction to apply
+        
+    Returns:
+        torch.Tensor: Corrected 3D landmarks of shape (B, N, 3)
+    """
+    if correction_type == 'flame_to_pytorch3d':
+        # FLAME typically uses: +X right, +Y up, +Z forward (towards viewer)
+        # PyTorch3D cameras expect: +X right, +Y down, +Z into screen (away from viewer)
+        
+        corrected_landmarks = landmarks_3d.clone()
+        
+        # Flip Y coordinate (up/down)
+        corrected_landmarks[:, :, 1] = -corrected_landmarks[:, :, 1]
+        
+        # Flip Z coordinate (forward/backward) 
+        corrected_landmarks[:, :, 2] = -corrected_landmarks[:, :, 2]
+        
+        return corrected_landmarks
+        
+    elif correction_type == 'flame_to_pytorch3d_alt':
+        # Alternative correction if the above doesn't work
+        # Sometimes just Y flip is needed
+        corrected_landmarks = landmarks_3d.clone()
+        corrected_landmarks[:, :, 1] = -corrected_landmarks[:, :, 1]
+        return corrected_landmarks
+        
+    elif correction_type == 'none':
+        # No correction - for testing
+        return landmarks_3d
+        
+    else:
+        raise ValueError(f"Unknown correction_type: {correction_type}")
+
+
 def validate_coordinate_system_consistency(flame_model, cameras, device='cuda', title="Coordinate System Validation"):
     """
     Validates coordinate system consistency between FLAME, camera, and expected outputs.
@@ -78,63 +121,62 @@ def validate_coordinate_system_consistency(flame_model, cameras, device='cuda', 
             report += f"  Landmark center: [{lmks_center[0]:.4f}, {lmks_center[1]:.4f}, {lmks_center[2]:.4f}]\n"
             report += f"  Landmark extent: [{lmks_extent[0]:.4f}, {lmks_extent[1]:.4f}, {lmks_extent[2]:.4f}]\n"
             
-            # Test camera projection
+            # Test camera projection - both with and without coordinate correction
             image_size = (224, 224)
-            landmarks_2d_proj = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size)[:, :, :2]
-            lmks_2d_np = landmarks_2d_proj[0].cpu().numpy()
+            
+            # Test without correction
+            landmarks_2d_no_correction = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size)[:, :, :2]
+            lmks_2d_no_corr_np = landmarks_2d_no_correction[0].cpu().numpy()
+            
+            # Test with coordinate correction
+            landmarks_3d_corrected = apply_coordinate_system_correction(pred_landmarks_3d, 'flame_to_pytorch3d')
+            landmarks_2d_corrected = cameras.transform_points_screen(landmarks_3d_corrected, image_size=image_size)[:, :, :2]
+            lmks_2d_corr_np = landmarks_2d_corrected[0].cpu().numpy()
             
             report += f"\nCamera Projection Analysis:\n"
             report += f"  Camera type: {type(cameras).__name__}\n"
             
-            # Check 2D landmark distribution
-            lmks_2d_center = lmks_2d_np.mean(axis=0)
-            lmks_2d_extent = lmks_2d_np.max(axis=0) - lmks_2d_np.min(axis=0)
-            report += f"  2D Landmark center: [{lmks_2d_center[0]:.2f}, {lmks_2d_center[1]:.2f}]\n"
-            report += f"  2D Landmark extent: [{lmks_2d_extent[0]:.2f}, {lmks_2d_extent[1]:.2f}]\n"
+            # Compare projections
+            report += f"\n  WITHOUT coordinate correction:\n"
+            lmks_2d_center_no_corr = lmks_2d_no_corr_np.mean(axis=0)
+            lmks_2d_extent_no_corr = lmks_2d_no_corr_np.max(axis=0) - lmks_2d_no_corr_np.min(axis=0)
+            report += f"    2D Landmark center: [{lmks_2d_center_no_corr[0]:.2f}, {lmks_2d_center_no_corr[1]:.2f}]\n"
+            report += f"    2D Landmark extent: [{lmks_2d_extent_no_corr[0]:.2f}, {lmks_2d_extent_no_corr[1]:.2f}]\n"
+            
+            report += f"\n  WITH coordinate correction:\n"
+            lmks_2d_center_corr = lmks_2d_corr_np.mean(axis=0)
+            lmks_2d_extent_corr = lmks_2d_corr_np.max(axis=0) - lmks_2d_corr_np.min(axis=0)
+            report += f"    2D Landmark center: [{lmks_2d_center_corr[0]:.2f}, {lmks_2d_center_corr[1]:.2f}]\n"
+            report += f"    2D Landmark extent: [{lmks_2d_extent_corr[0]:.2f}, {lmks_2d_extent_corr[1]:.2f}]\n"
             
             # Expected: landmarks should be roughly centered in image and span reasonable area
             expected_center = np.array([112, 112])  # Center of 224x224 image
-            center_offset = np.abs(lmks_2d_center - expected_center)
             
-            if np.any(center_offset > 50):
-                report += f"  *** WARNING: Landmarks significantly off-center! Offset: {center_offset} ***\n"
+            center_offset_no_corr = np.abs(lmks_2d_center_no_corr - expected_center)
+            center_offset_corr = np.abs(lmks_2d_center_corr - expected_center)
             
-            if lmks_2d_extent[0] < 30 or lmks_2d_extent[1] < 30:
-                report += f"  *** WARNING: Landmarks very small in image! ***\n"
-            elif lmks_2d_extent[0] > 200 or lmks_2d_extent[1] > 200:
-                report += f"  *** WARNING: Landmarks extend beyond reasonable image area! ***\n"
+            report += f"\n  Centering Analysis:\n"
+            report += f"    No correction offset: [{center_offset_no_corr[0]:.2f}, {center_offset_no_corr[1]:.2f}]\n"
+            report += f"    With correction offset: [{center_offset_corr[0]:.2f}, {center_offset_corr[1]:.2f}]\n"
             
-            # Check for landmarks outside image bounds
-            out_of_bounds = np.sum((lmks_2d_np < 0) | (lmks_2d_np > 224))
-            if out_of_bounds > 0:
-                report += f"  *** WARNING: {out_of_bounds} landmarks outside image bounds! ***\n"
+            # Determine which is better
+            if np.linalg.norm(center_offset_corr) < np.linalg.norm(center_offset_no_corr):
+                report += f"    *** RECOMMENDATION: Use coordinate correction ***\n"
+            else:
+                report += f"    *** RECOMMENDATION: Do NOT use coordinate correction ***\n"
             
-            # Test with extreme pose to see if system behaves reasonably
-            extreme_pose_params = pose_params.clone()
-            extreme_pose_params[0, 1] = 0.5  # Rotate around Y axis
+            # Check for landmarks outside image bounds for both cases
+            out_of_bounds_no_corr = np.sum((lmks_2d_no_corr_np < 0) | (lmks_2d_no_corr_np > 224))
+            out_of_bounds_corr = np.sum((lmks_2d_corr_np < 0) | (lmks_2d_corr_np > 224))
             
-            extreme_verts, extreme_landmarks_3d = flame_model(
-                shape_params=shape_params,
-                expression_params=expression_params,
-                pose_params=extreme_pose_params,
-                jaw_pose_params=jaw_pose_params,
-                eye_pose_params=eye_pose_params,
-                neck_pose_params=neck_pose_params,
-                transl=transl
-            )
+            report += f"\n  Out of bounds landmarks:\n"
+            report += f"    No correction: {out_of_bounds_no_corr}\n"
+            report += f"    With correction: {out_of_bounds_corr}\n"
             
-            extreme_landmarks_2d = cameras.transform_points_screen(extreme_landmarks_3d, image_size=image_size)[:, :, :2]
-            extreme_lmks_2d_np = extreme_landmarks_2d[0].cpu().numpy()
-            
-            # Check if rotation changes landmark positions reasonably
-            movement = np.abs(extreme_lmks_2d_np - lmks_2d_np).mean()
-            report += f"\nPose Sensitivity Test:\n"
-            report += f"  Average landmark movement with rotation: {movement:.2f} pixels\n"
-            
-            if movement < 5:
-                report += f"  *** WARNING: Pose changes have little effect on landmarks! ***\n"
-            elif movement > 100:
-                report += f"  *** WARNING: Small pose changes cause extreme landmark movement! ***\n"
+            if out_of_bounds_no_corr > 0:
+                report += f"    *** WARNING: {out_of_bounds_no_corr} landmarks outside image bounds without correction! ***\n"
+            if out_of_bounds_corr > 0:
+                report += f"    *** WARNING: {out_of_bounds_corr} landmarks outside image bounds with correction! ***\n"
                 
         except Exception as e:
             report += f"FLAME Forward Pass: FAILED - {str(e)}\n"
