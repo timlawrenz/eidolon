@@ -246,8 +246,10 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
     if stage_camera_type == 'orthographic':
         print("--- Using Orthographic Camera for this stage ---")
         # Orthographic cameras are useful for initial alignment as they are not sensitive to depth.
-        # Explicitly define camera extrinsics for a standard view
-        R = torch.eye(3).unsqueeze(0)  # Identity rotation
+        # Apply 180-degree rotation around Y axis to view front of face
+        R = torch.tensor([[[1.0, 0.0, 0.0],
+                          [0.0, -1.0, 0.0], 
+                          [0.0, 0.0, -1.0]]], dtype=torch.float32)
         T = torch.tensor([[0, 0, 10.0]]) # Simple Z-translation
         # The scale of the orthographic camera needs to be chosen carefully.
         # In PyTorch3D v0.7.6, this is controlled by the focal_length.
@@ -260,8 +262,10 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
         cameras = OrthographicCameras(device=DEVICE, R=R, T=T, focal_length=6.25)
     else: # 'perspective'
         print("--- Using Perspective Camera for this stage ---")
-        # Explicitly define camera extrinsics for a standard view
-        R = torch.eye(3).unsqueeze(0)  # Identity rotation
+        # Apply 180-degree rotation around Y axis to view front of face
+        R = torch.tensor([[[1.0, 0.0, 0.0],
+                          [0.0, -1.0, 0.0], 
+                          [0.0, 0.0, -1.0]]], dtype=torch.float32)
         T = torch.tensor([[0, 0, 2.7]]) # Simple Z-translation
         # Using a smaller FoV makes the projection more orthographic-like and stable
         cameras = FoVPerspectiveCameras(device=DEVICE, R=R, T=T, fov=12.0)
@@ -397,8 +401,13 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 if np.all(verts_spread < 0.01):
                     print("*** CRITICAL: Mesh appears collapsed to a point! ***")
             
+            # Apply same coordinate system correction to landmarks for consistent projection
+            pred_landmarks_3d_for_projection = pred_landmarks_3d.clone()
+            pred_landmarks_3d_for_projection[:, :, 1] *= -1  # Flip Y-axis
+            pred_landmarks_3d_for_projection[:, :, 2] *= -1  # Flip Z-axis
+            
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
-            pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d, image_size=image_size_for_projection)[:, :, :2]
+            pred_landmarks_2d_model = cameras.transform_points_screen(pred_landmarks_3d_for_projection, image_size=image_size_for_projection)[:, :, :2]
             
             # --- DEBUG CAMERA PROJECTION ---
             if epoch == 0 and i == 0:
@@ -413,12 +422,17 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 print(validate_landmark_data(gt_landmarks_2d_scaled, pred_landmarks_2d_model, 
                                            image_size=224, title="GT vs Predicted Landmarks"))
 
-            num_vertices_flame = pred_verts.shape[1]
-            generic_vertex_colors = torch.ones_like(pred_verts) * 0.7 
+            # Apply coordinate system correction for rendering (same as validation)
+            pred_verts_for_render = pred_verts.clone()
+            pred_verts_for_render[:, :, 1] *= -1  # Flip Y-axis
+            pred_verts_for_render[:, :, 2] *= -1  # Flip Z-axis
+            
+            num_vertices_flame = pred_verts_for_render.shape[1]
+            generic_vertex_colors = torch.ones_like(pred_verts_for_render) * 0.7 
             textures_batch = TexturesVertex(verts_features=generic_vertex_colors.to(DEVICE))
 
             meshes_batch = Meshes(
-                verts=list(pred_verts), 
+                verts=list(pred_verts_for_render), 
                 faces=[flame_model.faces_idx] * current_batch_size, 
                 textures=textures_batch
             )
@@ -559,10 +573,15 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 use_posedirs=stage_use_posedirs
             )
 
+            # Apply coordinate system correction to landmarks for projection consistency
+            val_pred_landmarks_3d_for_projection = val_pred_landmarks_3d.clone()
+            val_pred_landmarks_3d_for_projection[:, :, 1] *= -1  # Flip Y-axis
+            val_pred_landmarks_3d_for_projection[:, :, 2] *= -1  # Flip Z-axis
+            
             # Project landmarks and render mesh for visualization
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
             val_pred_landmarks_2d_model = cameras.transform_points_screen(
-                val_pred_landmarks_3d, image_size=image_size_for_projection
+                val_pred_landmarks_3d_for_projection, image_size=image_size_for_projection
             )[:, :, :2]
 
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
