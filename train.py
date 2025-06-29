@@ -451,8 +451,13 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 print(validate_landmark_data(gt_landmarks_2d_scaled, pred_landmarks_2d_model, 
                                            image_size=224, title="GT vs Predicted Landmarks"))
 
-            # Use vertices directly for rendering (no coordinate correction needed for mesh)
-            pred_verts_for_render = pred_verts
+            # Apply coordinate correction to vertices for rendering to match camera system
+            if USE_COORDINATE_CORRECTION:
+                pred_verts_for_render = apply_coordinate_system_correction(
+                    pred_verts, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                pred_verts_for_render = pred_verts
             
             num_vertices_flame = pred_verts_for_render.shape[1]
             generic_vertex_colors = torch.ones_like(pred_verts_for_render) * 0.7 
@@ -617,8 +622,13 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             val_generic_vertex_colors = torch.ones_like(val_pred_verts) * 0.7
             val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
 
-            # Use vertices directly for rendering
-            val_pred_verts_for_render = val_pred_verts
+            # Apply coordinate correction to vertices for rendering to match camera system
+            if USE_COORDINATE_CORRECTION:
+                val_pred_verts_for_render = apply_coordinate_system_correction(
+                    val_pred_verts, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                val_pred_verts_for_render = val_pred_verts
 
             val_meshes_batch = Meshes(
                 verts=list(val_pred_verts_for_render),
