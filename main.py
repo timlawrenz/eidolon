@@ -82,11 +82,9 @@ else:
 print(f"Using device: {device}")
 
 # --- Set up the renderer (camera, lights, etc.) ---
-# We reduce `dist` to zoom in on the face for better detail.
-R, T = look_at_view_transform(dist=1.0, elev=0, azim=0)
+R, T = look_at_view_transform(dist=2.7, elev=0, azim=0)
 cameras = FoVPerspectiveCameras(device=device, R=R, T=T)
-# We increase `image_size` for a higher resolution output.
-raster_settings = RasterizationSettings(image_size=1024, blur_radius=0.0, faces_per_pixel=1)
+raster_settings = RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
 lights = PointLights(device=device, location=[[0.0, 0.0, 3.0]])
 shader = SoftPhongShader(device=device, cameras=cameras, lights=lights)
 
@@ -133,19 +131,6 @@ try:
     with torch.no_grad():
         # 1. Predict coefficients from the image
         pred_coeffs_vec = encoder(dummy_image)
-        print(f"DEBUG: Encoder output coefficients (shape: {pred_coeffs_vec.shape})")
-        # For brevity, let's print a summary of the key coefficient groups
-        pose_start_idx = NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS
-        jaw_start_idx = pose_start_idx + NUM_GLOBAL_POSE_COEFFS
-        eye_start_idx = jaw_start_idx + NUM_JAW_POSE_COEFFS
-        neck_start_idx = eye_start_idx + NUM_EYE_POSE_COEFFS
-        transl_start_idx = neck_start_idx + NUM_NECK_POSE_COEFFS
-        
-        print(f"  - Shape (first 5): {pred_coeffs_vec[0, :5]}")
-        print(f"  - Global Pose (all 6): {pred_coeffs_vec[0, pose_start_idx:jaw_start_idx]}")
-        print(f"  - Jaw Pose (all 3): {pred_coeffs_vec[0, jaw_start_idx:eye_start_idx]}")
-        print(f"  - Translation (all 3): {pred_coeffs_vec[0, transl_start_idx:transl_start_idx+NUM_TRANSLATION_COEFFS]}")
-
 
         # 2. Deconstruct coefficients into a dictionary
         pred_coeffs_dict = deconstruct_flame_coeffs(
@@ -154,19 +139,6 @@ try:
             NUM_JAW_POSE_COEFFS, NUM_EYE_POSE_COEFFS, NUM_NECK_POSE_COEFFS,
             NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
         )
-
-        # --- DEBUG: Force neutral pose AND shape to confirm pipeline health ---
-        # We override ALL parameters from the encoder with neutral values to confirm
-        # that the full pipeline (deconstruction, FLAME, rendering) is correct.
-        print("DEBUG: Overriding ALL predicted coeffs with neutral values for testing.")
-        pred_coeffs_dict['shape_params'] = torch.zeros_like(pred_coeffs_dict['shape_params'])
-        # The 6D representation for an identity rotation matrix.
-        identity_pose_6d = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], device=device).view(1, 6)
-        pred_coeffs_dict['pose_params'] = identity_pose_6d
-        pred_coeffs_dict['jaw_pose_params'] = torch.zeros_like(pred_coeffs_dict['jaw_pose_params'])
-        pred_coeffs_dict['eye_pose_params'] = torch.zeros_like(pred_coeffs_dict['eye_pose_params'])
-        pred_coeffs_dict['neck_pose_params'] = torch.zeros_like(pred_coeffs_dict['neck_pose_params'])
-        pred_coeffs_dict['transl'] = torch.zeros_like(pred_coeffs_dict['transl'])
 
         # 3. Generate mesh vertices using the FLAME model
         pred_verts, _ = flame_model(
@@ -177,7 +149,7 @@ try:
             eye_pose_params=pred_coeffs_dict['eye_pose_params'],
             neck_pose_params=pred_coeffs_dict['neck_pose_params'],
             transl=pred_coeffs_dict['transl'],
-            use_posedirs=False # Disable posedirs to isolate rotation issue
+            use_posedirs=True # Use pose-dependent blendshapes for full model expressivity
         )
     print("Inference pipeline complete (encoder -> coeffs -> FLAME -> vertices).")
 
