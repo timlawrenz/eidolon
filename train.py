@@ -97,9 +97,8 @@ LANDMARK_EMBEDDING_PATH = './data/flame_model/deca_landmark_embedding.npz'
 # VERBOSE_LBS_DEBUG_EPOCHS will be calculated after total_epochs_all_stages is known.
 
 # --- Coordinate System Configuration ---
-# NOTE: Coordinate correction is now applied manually in the training loop
-# to ensure consistency between landmark projection and vertex rendering.
-# USE_COORDINATE_CORRECTION = False # This flag is no longer used.
+# Set this to enable/disable coordinate system correction for landmarks
+USE_COORDINATE_CORRECTION = True
 COORDINATE_CORRECTION_TYPE = 'flame_to_pytorch3d'  # Options: 'flame_to_pytorch3d', 'flame_to_pytorch3d_alt', 'none'
 
 # --- Multi-Stage Training Configuration ---
@@ -119,9 +118,10 @@ TRAINING_STAGES = [
             'reg_transl': 1.0,
             # --- Increased Pose Regularization ---
             # Penalize deviation from a frontal pose more strongly in the first stage
-            # to ensure a stable starting point for the fit.
-            'reg_global_pose': 10.0,
-            'reg_jaw_pose': 10.0,
+            # to ensure a stable starting point for the fit. We increase this further
+            # to prevent the model from rotating to compensate for landmark mismatch.
+            'reg_global_pose': 100.0,
+            'reg_jaw_pose': 100.0,
             'reg_neck_pose': 10.0,
             'reg_eye_pose': 10.0,
             'reg_detail': 1e-4,
@@ -139,8 +139,8 @@ TRAINING_STAGES = [
             'landmark_shape': 1.0,
             'reg_shape': 0.5,
             'reg_transl': 1.0,
-            'reg_global_pose': 1.0,
-            'reg_jaw_pose': 1.0,
+            'reg_global_pose': 10.0,
+            'reg_jaw_pose': 10.0,
             'reg_neck_pose': 1.0,
             'reg_eye_pose': 1.0,
             'reg_detail': 1e-3,
@@ -158,8 +158,8 @@ TRAINING_STAGES = [
             'landmark_shape': 1.0,
             'reg_shape': 0.1,     # Relax shape regularization slightly for fine adjustments
             'reg_transl': 1.0,
-            'reg_global_pose': 0.5,
-            'reg_jaw_pose': 0.5,
+            'reg_global_pose': 5.0,
+            'reg_jaw_pose': 5.0,
             'reg_neck_pose': 0.5,
             'reg_eye_pose': 0.5,
             'reg_detail': 1e-4,
@@ -216,7 +216,7 @@ data_loader = DataLoader(
 
 print(f"Using device: {DEVICE}")
 print(f"Starting training with LEARNING_RATE={LEARNING_RATE}, BATCH_SIZE={BATCH_SIZE}, NUM_EPOCHS={NUM_EPOCHS}")
-print(f"Coordinate system correction: Manual Y/Z flip applied for PyTorch3D compatibility.")
+print(f"Coordinate system correction: {'ENABLED' if USE_COORDINATE_CORRECTION else 'DISABLED'} ({COORDINATE_CORRECTION_TYPE})")
 
 # --- INITIAL COORDINATE SYSTEM VALIDATION ---
 print("\n" + "="*80)
@@ -404,12 +404,13 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                     print("*** CRITICAL: Mesh appears collapsed to a point! ***")
             
             # === COORDINATE SYSTEM CORRECTION FOR LANDMARKS ===
-            # The FLAME model outputs vertices in a coordinate system where the camera
-            # looks along the +Z axis. PyTorch3D's camera looks along the -Z axis.
-            # To correct this, we manually flip the Y and Z axes of the 3D landmarks.
-            pred_landmarks_3d_corrected = pred_landmarks_3d.clone()
-            pred_landmarks_3d_corrected[:, :, 1] *= -1 # Flip Y-axis
-            pred_landmarks_3d_corrected[:, :, 2] *= -1 # Flip Z-axis
+            # Apply coordinate system correction to 3D landmarks before projection
+            if USE_COORDINATE_CORRECTION:
+                pred_landmarks_3d_corrected = apply_coordinate_system_correction(
+                    pred_landmarks_3d, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                pred_landmarks_3d_corrected = pred_landmarks_3d
             
             # Project corrected landmarks to 2D
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
@@ -422,20 +423,22 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
                 from src.utils import validate_camera_projection, plot_landmarks_ascii
                 
                 print(validate_camera_projection(pred_landmarks_3d_corrected, cameras, image_size_for_projection, 
-                                               "CORRECTED Camera Projection"))
+                                               "Camera Projection"))
                 
                 print(plot_landmarks_ascii(pred_landmarks_2d_model, 224, 224, 
-                                         title="CORRECTED Projected Landmarks"))
+                                             title="Projected Landmarks Visualization"))
 
                 # Validate projected landmarks against GT
                 print(validate_landmark_data(gt_landmarks_2d_scaled, pred_landmarks_2d_model, 
                                            image_size=224, title="GT vs Predicted Landmarks"))
 
             # Apply coordinate correction to vertices for rendering to match camera system
-            # We apply the same Y/Z flip to the mesh vertices for consistent rendering.
-            pred_verts_for_render = pred_verts.clone()
-            pred_verts_for_render[:, :, 1] *= -1 # Flip Y-axis
-            pred_verts_for_render[:, :, 2] *= -1 # Flip Z-axis
+            if USE_COORDINATE_CORRECTION:
+                pred_verts_for_render = apply_coordinate_system_correction(
+                    pred_verts, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                pred_verts_for_render = pred_verts
             
             num_vertices_flame = pred_verts_for_render.shape[1]
             generic_vertex_colors = torch.ones_like(pred_verts_for_render) * 0.7 
@@ -584,9 +587,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             )
 
             # Apply coordinate correction for validation landmarks too
-            val_pred_landmarks_3d_corrected = val_pred_landmarks_3d.clone()
-            val_pred_landmarks_3d_corrected[:, :, 1] *= -1 # Flip Y-axis
-            val_pred_landmarks_3d_corrected[:, :, 2] *= -1 # Flip Z-axis
+            if USE_COORDINATE_CORRECTION:
+                val_pred_landmarks_3d_corrected = apply_coordinate_system_correction(
+                    val_pred_landmarks_3d, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                val_pred_landmarks_3d_corrected = val_pred_landmarks_3d
 
             # Project landmarks directly for visualization
             image_size_for_projection = (raster_settings.image_size, raster_settings.image_size)
@@ -598,9 +604,12 @@ for stage_idx, stage_config in enumerate(TRAINING_STAGES):
             val_textures_batch = TexturesVertex(verts_features=val_generic_vertex_colors.to(DEVICE))
 
             # Apply coordinate correction to vertices for rendering to match camera system
-            val_pred_verts_for_render = val_pred_verts.clone()
-            val_pred_verts_for_render[:, :, 1] *= -1 # Flip Y-axis
-            val_pred_verts_for_render[:, :, 2] *= -1 # Flip Z-axis
+            if USE_COORDINATE_CORRECTION:
+                val_pred_verts_for_render = apply_coordinate_system_correction(
+                    val_pred_verts, COORDINATE_CORRECTION_TYPE
+                )
+            else:
+                val_pred_verts_for_render = val_pred_verts
 
             val_meshes_batch = Meshes(
                 verts=list(val_pred_verts_for_render),
