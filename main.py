@@ -1,15 +1,5 @@
 import torch
 import numpy as np
-# --- Monkey patch for old numpy data in pkl file ---
-# This is a temporary workaround to load a pickle file created with an older
-# version of numpy, which has deprecated several type aliases.
-np.bool = np.bool_
-np.int = np.int_
-np.float = np.float_
-np.complex = np.complex_
-np.object = np.object_
-np.unicode = np.unicode_
-np.str = np.str_
 import matplotlib.pyplot as plt
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer.mesh import TexturesVertex

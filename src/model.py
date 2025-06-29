@@ -153,6 +153,18 @@ class EidolonEncoder(nn.Module):
 class FLAME(nn.Module):
     def __init__(self, flame_model_path, deca_landmark_embedding_path, n_shape, n_exp):
         super().__init__()
+        
+        # --- Monkey patch for old numpy data in pkl file ---
+        # This is a temporary workaround to load a pickle file created with an older
+        # version of numpy, which has deprecated several type aliases.
+        np.bool = np.bool_
+        np.int = np.int_
+        np.float = np.float_
+        np.complex = np.complex_
+        np.object = np.object_
+        np.unicode = np.unicode_
+        np.str = np.str_
+
         with open(flame_model_path, 'rb') as f: flame_model_data = pickle.load(f, encoding='latin1')
         v_template_data = flame_model_data['v_template']
         v_template_np = v_template_data.r if hasattr(v_template_data, 'r') else v_template_data
