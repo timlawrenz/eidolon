@@ -112,17 +112,12 @@ try:
                                             NUM_JAW_POSE_COEFFS + NUM_EYE_POSE_COEFFS + NUM_NECK_POSE_COEFFS + \
                                             NUM_TRANSLATION_COEFFS)
 
-    # --- Load Encoder with Pre-trained Weights ---
+    # --- Initialize a fresh Encoder ---
+    # We use a fresh, untrained encoder to confirm that the model's default
+    # state produces a neutral, correctly-oriented face.
     encoder = EidolonEncoder(num_coeffs=num_total_coeffs).to(device)
-    encoder_path = 'eidolon_encoder_stage_3.pth'
-    encoder.load_state_dict(torch.load(encoder_path, map_location=device))
-    # Correct the loaded encoder's pose bias to ensure a neutral starting pose.
-    # This is a workaround for models that may have learned an undesirable
-    # average pose from a biased dataset.
-    encoder.reset_pose_and_translation_bias_to_neutral()
     encoder.eval()
-    print(f"Loaded trained encoder from '{encoder_path}'")
-    print("NOTE: Encoder pose bias reset to neutral to correct for potential dataset bias.")
+    print("Initialized a fresh, untrained encoder for testing.")
 
     # --- Move FLAME model to device ---
     flame_model.to(device)

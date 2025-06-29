@@ -147,28 +147,6 @@ class EidolonEncoder(nn.Module):
                 # Set bias for the 6D rotation representation of an identity matrix
                 self.backbone.fc.bias[current_idx + 0] = 1.0
                 self.backbone.fc.bias[current_idx + 4] = 1.0
-    def reset_pose_and_translation_bias_to_neutral(self):
-        """
-        Resets the pose and translation components of the final layer's bias
-        to produce a neutral, forward-facing pose with zero translation.
-        This corrects an undesirable learned average pose/translation bias
-        while preserving the learned average shape bias.
-        """
-        with torch.no_grad():
-            n_shape, n_expr, n_global_pose = 100, 0, 6
-            num_coeffs = self.backbone.fc.bias.shape[0]
-            
-            # Get the starting index of pose parameters
-            pose_start_idx = n_shape + n_expr
-            
-            # Reset all pose and translation biases to 0.0
-            if num_coeffs > pose_start_idx:
-                self.backbone.fc.bias[pose_start_idx:].fill_(0.0)
-
-            # Set the bias for the global pose to an identity rotation (6D rep)
-            if num_coeffs >= pose_start_idx + n_global_pose:
-                self.backbone.fc.bias[pose_start_idx + 0] = 1.0
-                self.backbone.fc.bias[pose_start_idx + 4] = 1.0
 
     def forward(self, image): return self.backbone(image)
 
