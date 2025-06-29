@@ -153,6 +153,18 @@ try:
             NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
         )
 
+        # --- DEBUG: Force neutral pose to isolate shape prediction ---
+        # We override the pose and translation parameters from the encoder with neutral values
+        # to isolate and visualize the effect of the predicted shape parameters.
+        print("DEBUG: Overriding predicted pose/translation with neutral values for testing.")
+        # The 6D representation for an identity rotation matrix.
+        identity_pose_6d = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], device=device).view(1, 6)
+        pred_coeffs_dict['pose_params'] = identity_pose_6d
+        pred_coeffs_dict['jaw_pose_params'] = torch.zeros_like(pred_coeffs_dict['jaw_pose_params'])
+        pred_coeffs_dict['eye_pose_params'] = torch.zeros_like(pred_coeffs_dict['eye_pose_params'])
+        pred_coeffs_dict['neck_pose_params'] = torch.zeros_like(pred_coeffs_dict['neck_pose_params'])
+        pred_coeffs_dict['transl'] = torch.zeros_like(pred_coeffs_dict['transl'])
+
         # 3. Generate mesh vertices using the FLAME model
         pred_verts, _ = flame_model(
             shape_params=pred_coeffs_dict['shape_params'],
