@@ -82,9 +82,11 @@ else:
 print(f"Using device: {device}")
 
 # --- Set up the renderer (camera, lights, etc.) ---
-R, T = look_at_view_transform(dist=2.7, elev=0, azim=0)
+# We reduce `dist` to zoom in on the face for better detail.
+R, T = look_at_view_transform(dist=1.0, elev=0, azim=0)
 cameras = FoVPerspectiveCameras(device=device, R=R, T=T)
-raster_settings = RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
+# We increase `image_size` for a higher resolution output.
+raster_settings = RasterizationSettings(image_size=1024, blur_radius=0.0, faces_per_pixel=1)
 lights = PointLights(device=device, location=[[0.0, 0.0, 3.0]])
 shader = SoftPhongShader(device=device, cameras=cameras, lights=lights)
 
