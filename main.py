@@ -1,5 +1,9 @@
 import torch
 import numpy as np
+# --- Monkey patch for old numpy data in pkl file ---
+# This is a temporary workaround to load a pickle file created with an older
+# version of numpy, which has deprecated `np.bool`.
+np.bool = np.bool_
 import matplotlib.pyplot as plt
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer.mesh import TexturesVertex
