@@ -184,8 +184,10 @@ try:
     plt.axis("off")
     
     plt.suptitle("main.py: End-to-End Test Result")
-    plt.show()
-    print("Full inference test passed.")
+    output_image_path = "main_test_result.png"
+    plt.savefig(output_image_path)
+    plt.close() # Free up memory
+    print(f"Full inference test passed. Output image saved to '{output_image_path}'.")
 
 except Exception as e:
     print(f"An error occurred during the full inference test: {e}")
