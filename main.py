@@ -155,10 +155,11 @@ try:
             NUM_TRANSLATION_COEFFS, NUM_DETAIL_COEFFS
         )
 
-        # --- DEBUG: Force neutral pose to isolate shape prediction ---
-        # We override the pose and translation parameters from the encoder with neutral values
-        # to isolate and visualize the effect of the predicted shape parameters.
-        print("DEBUG: Overriding predicted pose/translation with neutral values for testing.")
+        # --- DEBUG: Force neutral pose AND shape to confirm pipeline health ---
+        # We override ALL parameters from the encoder with neutral values to confirm
+        # that the full pipeline (deconstruction, FLAME, rendering) is correct.
+        print("DEBUG: Overriding ALL predicted coeffs with neutral values for testing.")
+        pred_coeffs_dict['shape_params'] = torch.zeros_like(pred_coeffs_dict['shape_params'])
         # The 6D representation for an identity rotation matrix.
         identity_pose_6d = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], device=device).view(1, 6)
         pred_coeffs_dict['pose_params'] = identity_pose_6d
