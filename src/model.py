@@ -194,7 +194,10 @@ class FLAME(nn.Module):
             print("Warning: Full skeleton parent information not found.")
             self.register_buffer('parents_full_skeleton', torch.empty(0, dtype=torch.long))
         num_lbs_joints = self.lbs_weights.shape[1]
-        parents_lbs_np = self.parents_full_skeleton.cpu().numpy()[:num_lbs_joints] if self.parents_full_skeleton.numel() >= num_lbs_joints else np.array([-1,0,0,0,0],dtype=np.int64)
+        # The kinematic parent for each of the 5 LBS joints (global, neck, jaw, left eye, right eye).
+        # Deriving parents by slicing the full skeleton's kintree_table is incorrect and causes
+        # severe distortion. We hard-code a standard, simplified parent hierarchy instead.
+        parents_lbs_np = np.array([-1, 0, 0, 0, 0], dtype=np.int64)
         self.register_buffer('parents_lbs', torch.tensor(parents_lbs_np, dtype=torch.long))
 
         self.using_barycentric_landmarks = False
