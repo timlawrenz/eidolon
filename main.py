@@ -161,7 +161,8 @@ try:
             jaw_pose_params=pred_coeffs_dict['jaw_pose_params'],
             eye_pose_params=pred_coeffs_dict['eye_pose_params'],
             neck_pose_params=pred_coeffs_dict['neck_pose_params'],
-            transl=pred_coeffs_dict['transl']
+            transl=pred_coeffs_dict['transl'],
+            use_posedirs=False # Disable posedirs to isolate rotation issue
         )
     print("Inference pipeline complete (encoder -> coeffs -> FLAME -> vertices).")
 
