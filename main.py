@@ -162,8 +162,8 @@ try:
     pred_mesh = Meshes(
         verts=list(pred_verts_for_render),
         faces=[triangles.to(device)],
-        textures=textures
-    ).to(device)
+        textures=textures.to(device)
+    )
 
     rendered_predicted_face = renderer(pred_mesh)
     print("Rendered predicted mesh from dummy image.")
