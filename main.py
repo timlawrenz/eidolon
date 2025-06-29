@@ -8,7 +8,7 @@ from pytorch3d.renderer import (
     MeshRenderer, MeshRasterizer, SoftPhongShader
 )
 from src.model import EidolonEncoder, FLAME # Import the new encoder and FLAME
-from src.utils import deconstruct_flame_coeffs # Import the coefficient deconstructor
+from src.utils import deconstruct_flame_coeffs, apply_coordinate_system_correction # Import the coefficient deconstructor
 
 # --- 1. Load FLAME Model ---
 flame_model_path = './data/flame_model/flame2023.pkl'
@@ -53,8 +53,11 @@ verts_rgb = vertex_colors.unsqueeze(0)
 textures = TexturesVertex(verts_features=verts_rgb)
 
 # Create the Meshes object
+# Apply coordinate system correction to vertices for rendering to match camera system.
+# Note: `apply_coordinate_system_correction` expects a batch dimension.
+mean_shape_for_render = apply_coordinate_system_correction(mean_shape.unsqueeze(0)).squeeze(0)
 average_face_mesh = Meshes(
-    verts=[mean_shape], # Use the mean_shape directly
+    verts=[mean_shape_for_render],
     faces=[triangles],
     textures=textures
 )
@@ -141,10 +144,13 @@ try:
 
     # --- Render Predicted Mesh ---
     # We can reuse the `textures` and `renderer` from the average face rendering
+    # Apply coordinate system correction to vertices for rendering to match camera system
+    pred_verts_for_render = apply_coordinate_system_correction(pred_verts)
+
     # The Meshes class expects a list of tensors for verts and faces.
     # We convert the predicted verts tensor to a list to match the faces format.
     pred_mesh = Meshes(
-        verts=list(pred_verts),
+        verts=list(pred_verts_for_render),
         faces=[triangles],
         textures=textures
     ).to(device)

@@ -23,18 +23,14 @@ def apply_coordinate_system_correction(landmarks_3d, correction_type='flame_to_p
         torch.Tensor: Corrected 3D landmarks of shape (B, N, 3)
     """
     if correction_type == 'flame_to_pytorch3d':
-        # FLAME typically uses: +X right, +Y up, +Z forward (towards viewer)
-        # PyTorch3D cameras expect: +X right, +Y down, +Z into screen (away from viewer)
-        
-        corrected_landmarks = landmarks_3d.clone()
-        
-        # Flip Y coordinate (up/down)
-        corrected_landmarks[:, :, 1] = -corrected_landmarks[:, :, 1]
-        
-        # Flip Z coordinate (forward/backward) 
-        corrected_landmarks[:, :, 2] = -corrected_landmarks[:, :, 2]
-        
-        return corrected_landmarks
+        # NOTE: The original correction (flipping Y and Z axes) was causing rendering issues
+        # where the model appeared from behind and incorrectly oriented. This was because the
+        # correction was converting vertices to a different coordinate system (like NDC)
+        # before they were passed to the camera's world-to-view transform.
+        # The default PyTorch3D camera setup using look_at_view_transform is already
+        # compatible with FLAME's output coordinate system (+X right, +Y up, +Z out of screen).
+        # Therefore, no correction is needed.
+        return landmarks_3d
         
     elif correction_type == 'flame_to_pytorch3d_alt':
         # Alternative correction if the above doesn't work
