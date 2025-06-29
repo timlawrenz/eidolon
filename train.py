@@ -21,6 +21,19 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np # For image unnormalization
 
+# Monkey-patch numpy for chumpy compatibility with newer numpy versions.
+# The chumpy library, used when loading the FLAME model pickle, requires
+# numpy aliases (e.g., np.bool) that were removed in numpy >= 1.24.
+# This patch restores them for the script's execution.
+if not hasattr(np, 'bool'):
+    np.bool = bool
+    np.int = int
+    np.float = float
+    np.complex = complex
+    np.object = object
+    np.unicode = np.unicode_
+    np.str = np.str_
+
 
 # import face_alignment # No longer needed for on-the-fly detection
 import os # For os.makedirs and os.path.join
