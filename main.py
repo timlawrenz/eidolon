@@ -123,25 +123,27 @@ try:
     flame_model.to(device)
     flame_model.eval()
 
-    # --- Create a dummy input image (not used if bypassing encoder) ---
-    dummy_image = torch.randn(1, 3, 224, 224).to(device)
-    print("Created a dummy random image (for encoder input if not bypassed).")
+    # --- Create a dummy input image ---
+    dummy_image = torch.zeros(1, 3, 224, 224).to(device)
+    print("Created a dummy black image for inference.")
 
     # --- Run Full Inference Test ---
     with torch.no_grad():
         # 1. Predict coefficients from the image
-        # pred_coeffs_vec = encoder(dummy_image)
-
-        # --- Create Neutral Coefficients for LBS/FLAME Debugging ---
-        # To isolate issues in the FLAME model from the encoder, we can feed it a
-        # known, neutral set of coefficients instead of using the encoder's output.
-        print("DEBUG: Bypassing encoder and using hardcoded neutral coefficients.")
-        pred_coeffs_vec = torch.zeros(1, num_total_coeffs, device=device)
-        # The neutral pose is an identity rotation. For 6D rotation representation,
-        # this corresponds to [1, 0, 0, 0, 1, 0] in the flattened 3x2 matrix.
+        pred_coeffs_vec = encoder(dummy_image)
+        print(f"DEBUG: Encoder output coefficients (shape: {pred_coeffs_vec.shape})")
+        # For brevity, let's print a summary of the key coefficient groups
         pose_start_idx = NUM_SHAPE_COEFFS + NUM_EXPRESSION_COEFFS
-        pred_coeffs_vec[0, pose_start_idx + 0] = 1.0 # R[0,0]
-        pred_coeffs_vec[0, pose_start_idx + 4] = 1.0 # R[1,1]
+        jaw_start_idx = pose_start_idx + NUM_GLOBAL_POSE_COEFFS
+        eye_start_idx = jaw_start_idx + NUM_JAW_POSE_COEFFS
+        neck_start_idx = eye_start_idx + NUM_EYE_POSE_COEFFS
+        transl_start_idx = neck_start_idx + NUM_NECK_POSE_COEFFS
+        
+        print(f"  - Shape (first 5): {pred_coeffs_vec[0, :5]}")
+        print(f"  - Global Pose (all 6): {pred_coeffs_vec[0, pose_start_idx:jaw_start_idx]}")
+        print(f"  - Jaw Pose (all 3): {pred_coeffs_vec[0, jaw_start_idx:eye_start_idx]}")
+        print(f"  - Translation (all 3): {pred_coeffs_vec[0, transl_start_idx:transl_start_idx+NUM_TRANSLATION_COEFFS]}")
+
 
         # 2. Deconstruct coefficients into a dictionary
         pred_coeffs_dict = deconstruct_flame_coeffs(
