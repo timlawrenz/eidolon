@@ -161,7 +161,7 @@ try:
     # We convert the predicted verts tensor to a list to match the faces format.
     pred_mesh = Meshes(
         verts=list(pred_verts_for_render),
-        faces=[triangles],
+        faces=[triangles.to(device)],
         textures=textures
     ).to(device)
 
