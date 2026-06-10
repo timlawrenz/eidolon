@@ -161,10 +161,65 @@ outside, a mathematical firewall on the inside.
 
 ### 7.1 Block-diagonal ingestion
 
-The conditioning MLP that ingests `E` **must be block-diagonal** (or three
-independent per-partition MLPs). A *dense* projection would re-entangle the
-partitions on the very first matmul, destroying the orthogonality the encoders
-worked to produce.
+The conditioning MLP that ingests `E` **must be block-diagonal**. A *dense*
+projection (`nn.Linear(150, hidden)`) would re-entangle the partitions on the
+very first matmul, destroying the orthogonality the encoders worked to produce.
+
+#### Implementation rule — three independent modules, NEVER a masked Linear
+
+> **Do NOT** implement the firewall as a single `nn.Linear(150, hidden_dim)`
+> with its off-diagonal weights masked to zero. This is the easiest way to
+> *silently* compromise the firewall during training.
+
+**Why masking leaks (and re-entangles over thousands of steps):**
+
+1. **Optimizer state, not just gradients.** Even when the gradient through a
+   zeroed weight is zero, optimizers like Adam/AdamW carry per-parameter
+   momentum (`exp_avg`) and second-moment (`exp_avg_sq`) buffers. A masked-zero
+   weight with a nonzero buffer gets nudged off zero by the update
+   `m̂ / (√v̂ + ε)`. Unless the mask is re-applied **after every
+   `optimizer.step()`**, the off-diagonal weights drift nonzero — and a single
+   nonzero off-diagonal weight is a live wire between two partitions.
+2. **Weight decay.** AdamW's decoupled decay touches every parameter regardless
+   of gradient and does not restore a drifted weight to *exactly* zero on the
+   mask's schedule. The zeros rot.
+
+A masked Linear is therefore not a structural guarantee — it is a constraint you
+must babysit every step, and one missed re-application permanently re-entangles
+the modalities. The failure is silent, gradual, and only visible thousands of
+steps later as degraded disentanglement.
+
+**The structurally sound approach: three strictly independent modules.** Make the
+block-diagonal structure a property of the computation graph itself — there is no
+off-diagonal weight to leak through, because those parameters *do not exist*.
+
+```python
+class BlockDiagonalIngestion(nn.Module):
+    """Strict modality firewall: independent per-partition MLPs, no shared weights.
+    Enforced by module topology, not by masking — no off-diagonal parameter exists,
+    so nothing can drift through optimizer state or weight decay."""
+    def __init__(self, part_dim: int = 50, hidden_dim: int = 256, n_parts: int = 3):
+        super().__init__()
+        # ONE module per partition (mlp_g / mlp_d / mlp_a). No nn.Linear(150, ...).
+        self.experts = nn.ModuleList(
+            nn.Sequential(
+                nn.Linear(part_dim, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            for _ in range(n_parts)
+        )
+        self.part_dim = part_dim
+
+    def forward(self, E: torch.Tensor) -> list[torch.Tensor]:
+        parts = E.split(self.part_dim, dim=-1)          # (B,150) → 3×(B,50)
+        return [expert(p) for expert, p in zip(self.experts, parts)]
+```
+
+Each `mlp_g / mlp_d / mlp_a` sees only its own 50 whitened scalars; the three
+isolated streams then feed the expanded-token step (§7.3) and the decoupled
+cross-attention heads (§7.2). The firewall holds by construction — no per-step
+mask babysitting, no optimizer-state leakage.
 
 ### 7.2 Decoupled / parallel cross-attention (IP-Adapter style)
 
