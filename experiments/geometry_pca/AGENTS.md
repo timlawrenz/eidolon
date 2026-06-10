@@ -44,17 +44,29 @@ overnight_identity_map.json   (identity labels per image)
 |--------|---------|---------------------|
 | `approved` | Verified single-identity, usable crop | ENCODE for gate |
 | `tainted:contamination` | Different person / male face / merged identity | DROP identity entirely |
-| `tainted:extraction_black` | Black square (DWPose found no face) | DROP crop only |
 | `tainted:extraction_nonface` | Non-face crop (hair, body, background) | DROP crop only |
+| `tainted:unusable` | Full-image fallback / unusable crop (current no-face fallback) | DROP crop only |
 | `tainted:insufficient` | Too few usable images | DROP identity |
+| `tainted:extraction_black` | **(LEGACY)** Black square — old no-face fallback emitted a black image | DROP crop only |
 | `unreviewed` | Not yet looked at | SKIP (don't use in gate) |
+
+> **Fallback-behavior change (commit `91b527f`):** stratum-hq's no-face fallback
+> used to emit a **black image** (→ `tainted:extraction_black`). It now falls back
+> to the **full uncropped image**, which is labeled `tainted:unusable` (or
+> `tainted:extraction_nonface` for a non-face crop). Consequently `extraction_black`
+> has **0 live rows** in the current DB and is retained only for historical decisions.
 
 ### Current state (2026-06-10)
 
-- 120 personas, 2400 images
-- 25 personas reviewed (420 approved, 60 contaminated, 20 insufficient)
-- 95 personas / 1900 images remaining
-- Pre-imported contaminations from Phase 1-R: `muriel`, `natalia-a`
+- 120 personas, 2400 images — **review complete (0 unreviewed)**.
+- Live breakdown: **1,589 approved**, 440 `insufficient`, 269 `extraction_nonface`,
+  69 `contamination`, 33 `unusable`.
+- **Gate-ready: 1,524 approved images across 89 contamination-free identities**
+  (8 personas carry ≥1 `contamination` image → excluded entirely).
+- The corpus is **growing in the background**: more personas (breadth) and more
+  images per persona (depth) are being reviewed continuously. Treat 89/1,524 as a
+  snapshot — the gate must be re-runnable as the DB expands.
+- Historical Phase-1-R contaminations (legacy 10-id gate): `muriel`, `natalia-a`.
 
 ## How to use the review UI
 
@@ -130,7 +142,7 @@ All paths under `experiments/geometry_pca/data/` resolve to NAS via symlink
 - Couple-set filter catches `-and-` but misses partner photos in sets
   named without the pattern (e.g. `muriel` had a male face despite no `-and-`)
 - Collage generation is slow (~1 identity/sec) because it loads full 14000px JPEGs;
-  101 of 120 collages built as of 2026-06-10
+  all 120 collages built and reviewed as of 2026-06-10 (review complete).
 
 ## Gate usage (for the Fisher S_B/S_W test)
 

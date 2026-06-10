@@ -146,6 +146,33 @@ Stack all `N` aligned, flattened faces into `M ∈ ℝ^(N × 136)`. Fit PCA, kee
 top-K components. **Persist the components AND the whitening statistics
 (μ_i, σ_i) as the frozen encoder.**
 
+#### Shipped production encoder (as-built — see ledger Phase 1-R FINAL)
+
+The frozen `z_g` encoder that actually shipped:
+
+- **Fit corpus:** 69,851 FFHQ faces from `stratum-ffhq`. **k = 50**, retained
+  variance **99.987%**, full fit ~107s.
+- **Pipeline (exact order):** `pose.npy` → slice indices 23–90 (68 iBUG pts) →
+  drop confidence channel → **mean-confidence prefilter** (drop a face if its
+  *mean* DWPose confidence < 0.5) → **3D frontalize against the canonical 300W
+  template at z_scale = 1.0** → light 2D GPA (center/scale/roll) → PCA → whiten.
+- **z_scale = 1.0 rationale:** uses the 300W template's anatomical depth at face
+  value; captures ~85% of the achievable within-identity-scatter (S_W) reduction
+  without extrapolating depth beyond anatomy. (Sweep argmax was z=2.0 for a
+  negligible J gain; 1.0 was chosen on anatomical grounds — see ledger.)
+- **Frozen artifact:** `experiments/geometry_pca/output/encoder_production.npz`.
+  Contents: `components` (50,136), `canonical_template` (68,3), `pca_mean` (136,),
+  `whiten_mu` (50,), `whiten_sigma` (50,), `gpa_mean` (68,2), plus
+  `explained_variance_ratio` (50,). The canonical template is persisted *inside*
+  the encoder so inference frontalization is reproducible.
+
+> **Storage rule (project convention):** caching CPU/GPU labor is encouraged
+> (persist decoded `.npy`, depth caches, frozen encoders), but generated
+> artifacts **must not live on local disk** — they go to the NAS project folder.
+> `experiments/geometry_pca/data/` is a symlink to
+> `/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/`; write all caches
+> under `data/`. fscache accelerates reads; eat the slower NAS pass otherwise.
+
 ### 3.4 Validation gate (go / no-go)
 
 1. **Scree / cumulative-variance curve** — confirm ~99% variance retained at K≈50.
@@ -170,7 +197,18 @@ jawline.
 
 **Implementation wrinkle:** depth/normal are dense `H×W` maps, so the data matrix
 will not fit in RAM. Use **incremental / randomized SVD** rather than a full
-in-memory PCA. Same validation gate as §3.4 (scree plot + traversal viz).
+in-memory PCA. Decoded depth/normal caches are written under the NAS `data/`
+symlink (see storage rule in §3.3), e.g. `data/depth_cache/ffhq_depth_*.npy`.
+
+**Validation gate for `z_d` (pre-registered, Phase 2 — see ledger):** beyond the
+§3.4 scree + traversal checks, the partition must earn its place in `E` via an
+**incremental-information** test on the reviewed hegre identity corpus
+(`experiments/geometry_pca/data/review.db`, contamination-free identities only):
+
+> `J([z_g | z_d]) > J(z_g) × 1.15`  (Fisher S_B/S_W)
+
+i.e. concatenating depth onto geometry must lift identity separability by ≥15%.
+`z_a` is gated separately and only after `z_d` passes.
 
 ---
 

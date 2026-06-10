@@ -4,17 +4,28 @@ A living map of ideas, plans, and active workstreams.
 Link directly to the `exp/*` branch where the work lives.
 
 ## Active & Planned
-* **[NEXT] Phase 2: Volumetric Encoders (z_d, z_a)**
-  * z_d from depth.npy, z_a from normal.npy. Target 50 components each.
+* **[ACTIVE] Phase 2: Volumetric Encoder z_d (depth)**
+  * z_d from depth.npy. Target ~50 components, whitened. (z_a from normal.npy
+    deferred until z_d passes — see below.)
+  * **Status:** preprocessing + single-pass NAS depth cache BUILT
+    (`13_fit_zd_encoders.py`, `17_build_depth_cache_singlepass.py`); encoder fit
+    + gate NOT yet run. Full ledger entry: `02_EXPERIMENTS_AND_RESULTS.md` [Phase 2].
   * Memory strategy for dense maps: (1) seg.npy-mask + face-crop + canonical resample,
     (2) aggressive downsample (~64x64) — identity-level volume is low-frequency,
     (3) sklearn IncrementalPCA (.partial_fit streaming batches) as safe default,
-    randomized_svd as the fast spike alternative.
-  * Normal-map caveat: unit normals live on a sphere; raw-component PCA is an
-    approximation — may need tangent-space log-mapping. Spike naive first, gate it.
+    randomized_svd as the fast spike alternative. Depth cache lives on NAS via the
+    `data/` symlink (storage rule: cache CPU/GPU labor, but never on local disk).
+  * Normal-map caveat (for z_a later): unit normals live on a sphere; raw-component
+    PCA is an approximation — may need tangent-space log-mapping. Spike naive first.
   * New nuisance variables to validate against: lighting (normals) + camera distance
     (depth) are the volumetric analog of pose.
-  * *Gate:* reuse the SAME hegre 10-identity Fisher S_B/S_W gate.
+  * **Gate (pre-registered):** `J([z_g | z_d]) > J(z_g) × 1.15` — an
+    incremental-information test. Runs on the reviewed, **growing** hegre corpus in
+    `data/review.db` (snapshot 2026-06-10: 89 contamination-free identities /
+    1,524 approved images), NOT the legacy 10-identity set. Re-runnable as the
+    review corpus expands.
+* **[TBD] Phase 2b: Albedo/Surface Encoder z_a** (gated behind z_d PASS)
+  * z_a from normal.npy. Same recipe; tangent-space log-mapping likely required.
 * **[TBD] Phase 3: DINOv3 Bridge**
   * Linear regression of dinov3_cls embeddings to the whitened PCA components.
 * **[TBD] Phase 4: DiT Fusion Stack**

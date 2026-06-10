@@ -173,12 +173,86 @@ the total S_W reduction without extrapolation — the production sweet spot.
 
 ### Production artifact
 Frozen encoder fit on the FULL **69,851** FFHQ faces (k=50, 99.987% variance,
-107s total). Pipeline: pose → 68-pt slice → 3D frontalize (canonical template,
-z_scale=1.0) → light 2D GPA → PCA → whiten. Canonical template persisted in the
-encoder for reproducible inference. Artifact: `output/encoder_production.npz`.
+107s total). Pipeline: pose → 68-pt slice → **mean-confidence prefilter (drop
+faces with mean DWPose confidence < 0.5)** → 3D frontalize (canonical 300W
+template, z_scale=1.0) → light 2D GPA → PCA → whiten. Canonical template
+persisted in the encoder for reproducible inference. Artifact:
+`output/encoder_production.npz` (verified contents: `components` (50,136),
+`canonical_template` (68,3), `pca_mean`, `whiten_mu`/`whiten_sigma`, `gpa_mean`).
 
 ### Verdict
 **Phase 1-R CONCLUDED — PASS (earned).** Pose-invariant geometry encoder shipped.
 Honest scope: 3D frontalization gives a real aggregate identity-separability gain
 over 2D GPA; the clean-C1 story did not survive scale; geometry alone is a weak
 identity carrier (motivating the rest of E).
+
+> **Evidence-file caveat (2026-06-10):** the machine-readable sweep artifact
+> `docs/assets/exp/geometry-pca/gate_sweep_results.json` is **truncated/corrupt**
+> on disk (dies at byte 187, inside the first `z_scale=0.0` result row; only the
+> top-level `best_z_scale`/`best_J`/`null_J_flat_2dgpa`/`3d_beats_flat` scalars
+> are readable). The **authoritative Phase-1-R sweep values are the table above**
+> (§Clean re-run). We are NOT regenerating it: `07_gate_sweep.py` hard-codes the
+> legacy 10-identity gate (`FIT_LIMIT=5000`, `data/hegre_gate_keypoints.npz`,
+> `DROP={muriel,natalia-a}`), so a re-run reproduces the *historical* 10-id
+> result, not today's expanded set. The next clean machine-readable gate artifact
+> will be produced by the Phase 2 gate (below), which runs on the full reviewed
+> identity set. Note also the script's internal "beats flat" threshold is ×1.05;
+> the Phase 2 incremental-information bar is a deliberately stricter ×1.15.
+
+---
+
+## [Phase 2] Volumetric Encoder z_d (depth) — `[ACTIVE]`
+
+**Date opened:** 2026-06-10
+**Goal:** Build the depth partition `z_d` of `E = [z_g | z_d | z_a]` from
+`depth.npy` (Sapiens), and prove that depth carries **complementary identity
+signal beyond 2D geometry alone**.
+
+### Pre-registered gate (stated BEFORE results — honest-science discipline)
+> **PASS criterion:** `J([z_g | z_d]) > J(z_g) × 1.15`
+> on the hegre identity-separability test (Fisher S_B/S_W).
+
+This is an **incremental-information** test, not an absolute-separability test:
+concatenating the depth partition onto the geometry partition must lift the
+Fisher discriminant ratio by **at least 15%** over geometry alone. If depth is
+redundant with 2D geometry, J will not move and the partition is bloat; the
+×1.15 bar (stricter than the Phase-1 ×1.05 "3D-beats-flat" threshold) forces
+depth to earn its place in `E`.
+
+### Identity test set (canonical, growing)
+The gate runs on the reviewed **hegre** corpus in
+`experiments/geometry_pca/data/review.db` — **not** the legacy 10-identity set.
+Current snapshot (2026-06-10): 120 personas / 2400 images reviewed →
+**1,524 `approved` images across 89 contamination-free identities**. Exclusion
+rule (from the review system): any persona with ANY `tainted:contamination`
+image is dropped entirely from the gate. The corpus is **growing in the
+background** — more personas (breadth) and more images per persona (depth) — so
+the gate must be re-runnable as `review.db` expands; the 89/1,524 figure is a
+snapshot, not a frozen N.
+
+### What is already BUILT (verified on disk)
+- **Depth preprocessing** (`scripts/13_fit_zd_encoders.py`, commit `3a3793a`):
+  seg-mask → face-crop → canonical resample, with **3 normalization modes**
+  (A / A_prime / C) to be gated against each other.
+- **Single-pass NAS depth cache** (`scripts/17_build_depth_cache_singlepass.py`,
+  commit `91b527f`): collapses the old 6-NAS-pass design (3 modes × 2 passes)
+  into 1, writing `data/depth_cache/ffhq_depth_{A,A_prime,C}.npy` + `ids.json`.
+  Storage-rule compliant — `data/` is a symlink to the NAS project folder.
+- **z_d encoder fit** scaffolding (`13_fit_zd_encoders.py`) writing to `output/`.
+
+### What is OPEN (the actual work remaining)
+1. Decide/gate the depth normalization mode (A vs A_prime vs C).
+2. Fit the frozen `z_d` PCA encoder on FFHQ depth (k≈50, whitened).
+3. Build a `z_d` gate extractor over the `review.db` approved set (analog of
+   `06_extract_hegre_gate.py`, but reading depth + driven by the DB, not the
+   legacy `.npz`).
+4. **Run the gate**: compute `J(z_g)` baseline and `J([z_g | z_d])`, check ×1.15,
+   write a fresh (non-corrupt) machine-readable results artifact.
+
+### Normal-map / z_a note
+`z_a` (albedo/surface from `normal.npy`) is **deferred until z_d passes**. Unit
+normals live on a sphere, so raw-component PCA is an approximation that may need
+tangent-space log-mapping — gate that separately once z_d is proven.
+
+### Verdict
+`[PENDING]` — preprocessing + cache built; encoder fit and gate not yet run.
