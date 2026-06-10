@@ -82,18 +82,63 @@ uncertainty, not a geometric truth. Keep only `(x, y)`:
 (133, 3)  →  slice [23:91]  →  (68, 3)  →  drop conf  →  (68, 2)  →  flatten  →  ℝ^136
 ```
 
-### 3.2 Generalized Procrustes Analysis (GPA) — MANDATORY
+### 3.2 Alignment — pose-invariance is MANDATORY (by construction)
 
-Without alignment, PCA's top components capture **extrinsic camera mechanics**,
-not biology:
+> **North-Star constraint (added 2026-06-09, after Phase 1 was reopened):**
+> `z_g` MUST be mathematically orthogonal to head pose. Identity is *invariant*;
+> pose is *transient*. A vector that encodes transient camera state is
+> disqualified from being an identity descriptor. This is not a cleanup
+> preference — it is a definitional requirement of `E`.
 
-- `C_1`: global X/Y translation (subject position in frame)
-- `C_2`: global scale (camera distance)
-- `C_3`: in-plane rotation (head tilt / roll)
+#### Why this is non-negotiable (the redundancy / entanglement trap)
 
-GPA strips these out. Translate all faces to a shared origin (center point
-between the eyes), scale to a uniform reference, and rotate to a zero-degree
-baseline. The remaining variance fed into `M` is **purely biological morphology**.
+1. **Semantic category error.** The North Star (§0) says `E` describes the
+   *invariant person*. Yaw/pitch are exactly the things that change when the
+   identity does not. Encoding them in `E` makes `E` partly a description of a
+   camera event.
+2. **Double-conditioning conflict.** The DiT already ingests the raw `pose.npy`
+   stream as its authoritative spatial-orientation signal. If `z_g` *also*
+   encodes head orientation, the same physical fact is conditioned down two
+   paths that can disagree — a direct optimization conflict (a high-C₁ `z_g`
+   would fight the spatial coordinates on the primary pose path). `z_g` must be
+   the **pose-orthogonal complement** of what `pose.npy` already carries.
+
+#### Why plain 2D GPA is insufficient
+
+2D GPA only neutralizes **2D** transforms — translation, uniform scale, and
+in-plane rotation (roll). It is **mathematically blind to out-of-plane 3D
+rotation (yaw and pitch)**. A head turning left↔right produces huge variance in
+2D coordinate space, so PCA — doing exactly what it is optimized to do — shoves
+that variance straight into the top components. Empirically (Phase 1), this is
+exactly what happened: C₁ = yaw, C₂ = pitch. The math was correct; the objective
+was wrong.
+
+#### Mandated approach: 3D-aware canonical alignment
+
+Recover a canonical, frontal 3D frame **before** PCA so pose is factored out by
+construction rather than hoped-into-discardable-components:
+
+1. Estimate per-sample head rotation from the 68 keypoints (EPnP / PnP against a
+   canonical 3D mean-face template; escalate to a full 3DMM fit only if the
+   lightweight estimate proves insufficient — see ledger Phase 1-R).
+2. Rotate the points back to a rigid `(0,0,0)` frontal orientation in 3D.
+3. Reproject to 2D and run the existing center+scale+roll GPA on the now
+   pose-normalized shapes.
+4. Fit PCA on these. The remaining variance is **pose-invariant biological
+   morphology**.
+
+**Depth bonus:** rotating a profile to frontal does NOT discard the profile-only
+signal (nose projection, brow ridge, chin protrusion). It *preserves* it — the
+reprojected X-spread of e.g. the nose keypoints now encodes the depth of that
+projection. This is strictly superior to a frontal-only data filter, which would
+delete those identity-bearing views outright.
+
+#### New validation gate (supersedes the Phase 1 gate)
+
+Beyond scree + traversal, add a **pose-invariance probe**: take one identity,
+synthesize several yaw/pitch variants of its keypoints, encode each, and assert
+the resulting `z_g` vectors are near-identical (low variance across the
+synthetic-pose set). C₁ must now read as morphology, not orientation.
 
 ### 3.3 PCA fit
 
