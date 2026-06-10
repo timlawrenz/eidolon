@@ -196,7 +196,6 @@ cython_debug/
 
 # Project-specific ignores
 data/
-.hermes/
 output/
 
 # Phase 1: geometry_pca
