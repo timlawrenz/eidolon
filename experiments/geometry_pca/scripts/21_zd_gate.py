@@ -2,12 +2,19 @@
 """
 Phase 2: TRAP-AWARE z_d Fisher gate harness.
 
+⚠️ DEPRECATED AS A PASS/FAIL GATE (2026-06-10). The trace-Fisher ratio
+J = tr(S_B)/tr(S_W) is a WEIGHTED AVERAGE of component Js for concatenated
+vectors, so J_cat <= max(J_zg, J_zd) — it is BLIND to complementarity and tests
+*replacement*, not *addition*. The canonical partition gate is now verification
+AUC: see geometry_pca/verification.py and scripts/23_zd_verification_auc.py.
+This script is retained ONLY as a legacy diagnostic (per-component J_Ci, ablation).
+
 Loads the gate vectors (z_g, z_d) per normalization mode, re-standardizes z_d on the
 hegre gate distribution itself (domain-shift fix), reports per-component Fisher J_Ci
 to separate identity from nuisance, runs top-component ablation, and applies the
-pre-registered gate: J([z_g | z_d]) > J(z_g) × 1.15.
+(now-deprecated) trace-J gate: J([z_g | z_d]) > J(z_g) × 1.15.
 
-Output: data/zd_gate_results.json (the clean machine-readable verdict artifact).
+Output: data/zd_gate_results.json (legacy trace-J verdict artifact).
 """
 import os, sys, json
 import numpy as np

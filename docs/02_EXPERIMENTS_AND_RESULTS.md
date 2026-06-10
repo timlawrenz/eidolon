@@ -255,4 +255,98 @@ normals live on a sphere, so raw-component PCA is an approximation that may need
 tangent-space log-mapping — gate that separately once z_d is proven.
 
 ### Verdict
-`[PENDING]` — preprocessing + cache built; encoder fit and gate not yet run.
+**[CONCLUDED — z_d FAILS to add complementary identity signal] (2026-06-10).**
+
+The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
+FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.
+This is a high-value negative result, established after isolating and correcting a
+metric bug — the two are independent and both are recorded below.
+
+#### Gate run (102 clean identities, 1,665 images from review.db)
+| | trace-J | vs z_g |
+|---|---------|--------|
+| z_g baseline | 0.092 | — |
+| best z_d mode (A_prime, re-std) | 0.094 | **×1.02** |
+| mode C (re-std) | 0.090 | ×0.98 |
+
+Raw `J([z_g\|z_d])` ×1.02 — far short of the pre-registered ×1.15 bar. **FAIL.**
+
+#### ⚠️ Metric bug found during review: trace-J cannot measure complementarity
+The gate used the **trace** Fisher ratio `J = tr(S_B)/tr(S_W)`. For a *concatenated*
+vector the scatter traces decompose additively, so:
+
+```
+J_cat = ( tr(S_B,g) + tr(S_B,d) ) / ( tr(S_W,g) + tr(S_W,d) )
+```
+
+This is **exactly a weighted average** of `J_zg` and `J_zd` (weights = S_W shares).
+Therefore `J_cat` can **never exceed `max(J_zg, J_zd)`** and is structurally **blind
+to orthogonality/complementarity** — it tests *replacement* ("is depth a better
+standalone carrier"), not *addition* ("does depth add a new identity axis"). The
+×1.15 gate on trace-J was the wrong instrument. **trace-J is being stripped from the
+gate path (see [Metric fix] below).** This bug is logged regardless of the z_d
+outcome because it would have mis-scored *any* partition.
+
+#### Why we do NOT claim "false FAIL" (the cross-examination that settled it)
+We specifically hunted for the possibility that the metric bug was masking real
+signal. It was not. Four metrics on the real gate vectors, cross-checked against each
+metric's known bias:
+
+| Metric | sees complementarity? | +z_d (best) | reading |
+|--------|----------------------|-------------|---------|
+| trace-J | ❌ (the bug) | ×1.02 | flat — the weighted-avg trap |
+| multivariate-J `tr(S_W⁻¹S_B)` | ✅ but inflates w/ K=100 | ×1.7 | **suspect** (dimensionality) |
+| kNN identity accuracy | ✅ operational | −0.2% (4.3%→4.1%) | **no help** |
+| **verification AUC** | ✅ decisive, bias-immune | **−0.004** | **no help** |
+
+The two *operational* tests (can we actually identify the person?) both say depth
+adds nothing — in every mode. The tempting ×1.7 multivariate-J rise was a
+dimensionality mirage, refuted by the operational metrics disagreeing with it.
+
+#### Secondary finding (quantifies Phase 1-R)
+**z_g's own verification AUC = 0.541** (chance = 0.5; stable 0.538–0.543 across
+seeds). Frontalized 50-d facial geometry is a *very weak* identity discriminator on
+hegre editorial photos — an operational quantification of Phase 1-R's "geometry
+alone is a weak carrier (J≈0.08)". Depth at 64×64/k=50 not only fails to help, it
+slightly *dilutes* this already-weak signal (AUC −0.004).
+
+#### What is NOT ruled out
+"Depth as currently encoded is a dead end" — NOT "depth is useless". Untested rescue
+levers, now measurable with the sensitive verification-AUC instrument: higher
+resolution (>64px), more components (k>50), a hegre-fit basis (not FFHQ). But raw
+*monocular relative depth* is fundamentally entangled with camera distance/focal
+length (affine-scale ambiguity), so these fight uphill.
+
+#### Strategic pivot → z_a (normals / albedo)
+Highest-value next trajectory: **surface normals** describe the *angle* of the
+surface, not absolute distance, so they natively resist the affine-scale ambiguity
+that plagues raw depth — structurally positioned to carry a cleaner, scale-invariant
+identity signal. Gated with the verification-AUC instrument (not trace-J).
+
+### Artifacts
+- Encoders: `output/encoder_zd_{A,A_prime,C}.npz`
+- Gate (trace-J, deprecated): `data/zd_gate_results.json`
+- Complementarity re-test: `data/zd_complementarity_diagnostic.json`
+- **Verification AUC (decisive): `data/zd_verification_auc.json`**
+- Scripts: `18` (fit), `19` (cache), `20` (extract), `21` (gate, trace-J),
+  `22` (complementarity diag), `23` (verification AUC)
+
+---
+
+## [Metric fix] Gate instrument: trace-J → verification AUC
+
+**Date:** 2026-06-10
+**Trigger:** trace-J complementarity bug (above).
+
+**Decision:** The canonical partition-gate metric is now **verification AUC**
+(same/different-identity discrimination via cosine distance on z-scored vectors).
+Rationale: scale-invariant, threshold-independent, and immune to the dimensionality
+inflation that makes multivariate-J `tr(S_W⁻¹S_B)` untrustworthy at K≈100. trace-J
+is retained ONLY as a legacy diagnostic; it must never again be the pass/fail
+criterion for a *concatenated* partition. The re-stated gate for any partition `z_x`:
+
+> A partition earns its place iff `AUC([z_g | … | z_x]) > AUC(baseline) + ε`
+> on the hegre verification test (ε to be set from the AUC noise floor).
+
+Status: `[ACTIVE]` — instrument implemented in `scripts/23_zd_verification_auc.py`;
+to be lifted into a reusable `geometry_pca` helper for the z_a gate.
