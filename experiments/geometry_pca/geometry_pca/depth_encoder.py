@@ -23,9 +23,12 @@ EYE_R_OUTER = 36
 EYE_L_OUTER = 45
 
 
-def _pose_to_px(xy_norm):
-    """Map pose [-1,1] coords to depth-grid pixels."""
-    return (xy_norm + 1.0) / 2.0 * DEPTH_GRID
+def _pose_to_px(xy_norm, grid_h, grid_w):
+    """Map pose [-1,1] coords to depth-grid pixels (resolution-aware).
+    Returns (x_px, y_px) using actual grid dimensions, not a hardcoded size."""
+    x = (xy_norm[:, 0] + 1.0) / 2.0 * grid_w
+    y = (xy_norm[:, 1] + 1.0) / 2.0 * grid_h
+    return np.stack([x, y], axis=1)
 
 
 def load_depth_sample(sample_id):
@@ -37,16 +40,16 @@ def load_depth_sample(sample_id):
     return depth, seg, face
 
 
-def face_bbox_px(face, pad=0.35):
+def face_bbox_px(face, grid_h, grid_w, pad=0.35):
     """Bounding box (in depth pixels) around the 68 face keypoints, padded."""
-    px = _pose_to_px(face[:, :2])
+    px = _pose_to_px(face[:, :2], grid_h, grid_w)
     mn = px.min(axis=0); mx = px.max(axis=0)
     span = (mx - mn).max() * (1 + pad)
     cx, cy = (mn + mx) / 2
-    x0 = int(np.clip(cx - span / 2, 0, DEPTH_GRID - 1))
-    y0 = int(np.clip(cy - span / 2, 0, DEPTH_GRID - 1))
-    x1 = int(np.clip(cx + span / 2, 1, DEPTH_GRID))
-    y1 = int(np.clip(cy + span / 2, 1, DEPTH_GRID))
+    x0 = int(np.clip(cx - span / 2, 0, grid_w - 1))
+    y0 = int(np.clip(cy - span / 2, 0, grid_h - 1))
+    x1 = int(np.clip(cx + span / 2, 1, grid_w))
+    y1 = int(np.clip(cy + span / 2, 1, grid_h))
     return x0, y0, x1, y1
 
 
@@ -70,14 +73,15 @@ def normalize_depth(depth, fgmask, face, mode, dataset_sigma=None):
         # Anatomical anchor. Depth is in [0,1] image-normalized units; D_eyes must
         # be in the SAME units (fraction of image), NOT raw pixels, or the ratio
         # collapses. Convert inter-ocular distance to image-fraction [0,1].
-        px = _pose_to_px(face[:, :2])
+        h, w = z.shape
+        px = _pose_to_px(face[:, :2], h, w)
         def depth_at(i):
-            x, y = int(np.clip(px[i, 0], 0, DEPTH_GRID - 1)), int(np.clip(px[i, 1], 0, DEPTH_GRID - 1))
+            x, y = int(np.clip(px[i, 0], 0, w - 1)), int(np.clip(px[i, 1], 0, h - 1))
             return z[y, x]
         z_nose = depth_at(NOSE_TIP)
         re = px[EYE_R_OUTER]; le = px[EYE_L_OUTER]
         d_eyes_px = np.hypot(*(le - re))
-        d_eyes_frac = d_eyes_px / DEPTH_GRID   # -> [0,1], commensurate with depth
+        d_eyes_frac = d_eyes_px / max(h, w)   # -> [0,1], commensurate with depth
         if d_eyes_frac < 1e-4:
             return None
         out = (z - z_nose) / d_eyes_frac
@@ -91,18 +95,24 @@ def normalize_depth(depth, fgmask, face, mode, dataset_sigma=None):
 def resample_masked(arr, x0, y0, x1, y1, out_res=OUT_RES):
     """Mask-aware downsample: crop, then average-pool ignoring NaN (background).
     Vectorized via reduceat — ~100x faster than the nested-loop version."""
+    h_out, w_out = out_res, out_res
+    if x1 <= x0 or y1 <= y0:
+        # degenerate bbox — return zeros
+        return np.zeros((h_out, w_out), dtype=np.float32)
     crop = arr[y0:y1, x0:x1]
     h, w = crop.shape
-    if h < out_res or w < out_res:
+    if h < 1 or w < 1:
+        return np.zeros((h_out, w_out), dtype=np.float32)
+    if h < h_out or w < w_out:
         # too small to pool meaningfully; nearest-resize via index
-        yi = np.linspace(0, h - 1, out_res).astype(int)
-        xi = np.linspace(0, w - 1, out_res).astype(int)
+        yi = np.linspace(0, h - 1, h_out).astype(int)
+        xi = np.linspace(0, w - 1, w_out).astype(int)
         small = crop[np.ix_(yi, xi)]
         return np.nan_to_num(small, nan=0.0).astype(np.float32)
     valid = ~np.isnan(crop)
     vals = np.where(valid, crop, 0.0)
-    ys = np.linspace(0, h, out_res + 1).astype(int)[:-1]
-    xs = np.linspace(0, w, out_res + 1).astype(int)[:-1]
+    ys = np.linspace(0, h, h_out + 1).astype(int)[:-1]
+    xs = np.linspace(0, w, w_out + 1).astype(int)[:-1]
     # sum over row-blocks then col-blocks
     sum_r = np.add.reduceat(vals, ys, axis=0)
     cnt_r = np.add.reduceat(valid.astype(np.float32), ys, axis=0)
@@ -122,6 +132,6 @@ def encode_depth_sample(sample_id, mode, dataset_sigma=None):
     norm = normalize_depth(depth, fgmask, face, mode, dataset_sigma)
     if norm is None:
         return None
-    x0, y0, x1, y1 = face_bbox_px(face)
+    x0, y0, x1, y1 = face_bbox_px(face, depth.shape[0], depth.shape[1])
     grid = resample_masked(norm, x0, y0, x1, y1)
     return grid.reshape(-1)

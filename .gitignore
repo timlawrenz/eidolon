@@ -201,5 +201,7 @@ data/
 experiments/geometry_pca/.venv/
 experiments/geometry_pca/output/
 experiments/geometry_pca/data/
+experiments/geometry_pca/data
+experiments/geometry_pca/data.db
 __pycache__/
 *.pyc
