@@ -196,3 +196,10 @@ cython_debug/
 
 # Project-specific ignores
 data/
+
+# Phase 1: geometry_pca
+experiments/geometry_pca/.venv/
+experiments/geometry_pca/output/
+experiments/geometry_pca/data/
+__pycache__/
+*.pyc
