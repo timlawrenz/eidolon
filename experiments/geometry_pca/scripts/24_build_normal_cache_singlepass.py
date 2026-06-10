@@ -12,7 +12,7 @@ All 4 representation variants (raw/xy/rot/rot_xy) can be derived in-memory from
 these two files at fit time — rotation commutes with pooling, so we never need
 to touch the NAS again.
 
-Idempotent: skips if both .npy files already exist.
+Idempotent: skips only if ALL THREE artifacts exist (raw, rotations, ids.json).
 Runs as ONE NAS pass; expects ~2-3h wall time at ~100ms/sample.
 """
 import os, sys, time, json

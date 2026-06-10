@@ -66,7 +66,7 @@ def main():
         print("FATAL: per-variant gate files come from DIFFERENT extraction runs:")
         for v, s in stamps.items():
             print(f"  {v}: {s}")
-        print("Re-run scripts/26_extract_za_gate.py (full, no --variant) first.")
+        print("Re-run scripts/26_extract_za_gate.py (one full run writes all 4 variants).")
         sys.exit(1)
 
     Xg = data[VARIANTS[0]]["X_g"]

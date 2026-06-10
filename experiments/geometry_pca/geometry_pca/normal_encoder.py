@@ -136,4 +136,6 @@ def derive_variant(grid_64, R, variant):
 
 def variant_dim(variant):
     """Dimensionality of a variant's flattened vector. ('xy' suffix = 2ch)"""
+    if variant not in ("raw", "xy", "rot", "rot_xy"):
+        raise ValueError(f"unknown variant: {variant}")
     return 8192 if variant.endswith("xy") else 12288
