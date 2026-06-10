@@ -81,6 +81,7 @@ def main():
     rotlist = []
     ids_out = []
     n_seen, n_ok = 0, 0
+    print(f"Starting NAS pass over {LIMIT} samples... ({time.strftime('%H:%M:%S')})")
 
     for sid in iter_sample_ids(LIMIT):
         n_seen += 1
@@ -90,7 +91,7 @@ def main():
             rotlist.append(R)
             ids_out.append(sid)
             n_ok += 1
-        if n_seen % 5000 == 0:
+        if n_seen % 1000 == 0:
             rate = (time.time() - t0) / n_seen * 1000
             print(f"  {n_seen} seen, {n_ok} ok ({rate:.0f}ms/sample, {time.time()-t0:.0f}s elapsed)")
 
