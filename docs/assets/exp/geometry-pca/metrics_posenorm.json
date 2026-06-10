@@ -1,0 +1,8 @@
+{
+  "retained_variance": 0.9993758201599121,
+  "pose_invariance_probe": {
+    "posenorm_zg_std_across_yaw": 0.29474982619285583,
+    "raw_zg_std_across_yaw": 1.4506628513336182,
+    "improvement_ratio": 4.921675001716352
+  }
+}

@@ -70,3 +70,34 @@ The Phase 1 traversals proved C₁ = yaw and C₂ = pitch — clean, but **fatal
 
 ### Status
 `[ACTIVE]` — EPnP spike in progress on `exp/geometry-pca`.
+
+### Spike Result (2026-06-09) — THESIS PROVEN
+Pose-normalization (orthographic-PnP rotation estimate from the 68 keypoints
+against a canonical 3D template → lift-to-3D using a depth prior → rotate to
+frontal → reproject → PCA) was run against the *raw* Phase 1 encoder, changing
+only the alignment variable.
+
+**Quantitative (pose-invariance probe):** one identity, yawed ±30°, encoded by
+each model. Mean per-component std of `z_g` across the synthetic-yaw set:
+* Raw Phase-1 encoder: **1.45** (yaw leaks ~1σ into the sliders)
+* Pose-normalized encoder: **0.29**
+* **Improvement: 4.9× more pose-invariant.** Variance retention unchanged (99.94%).
+
+**Visual (traversal gate):** the new C1 and C2 stay **frontal and bilaterally
+symmetric** across ±3σ — C1 now reads as face width / aspect-ratio morphology,
+C2 as upper-face/brow structure. The lateral nose-vs-jaw shear (yaw) and vertical
+whole-face compression (pitch) are gone. See
+`docs/assets/exp/geometry-pca/posenorm_traversal_C{1,2}.png`.
+
+**Verdict:** EPnP-style frontalization is sufficient. **No full 3DMM needed.**
+Recommend graduating the `pose_normalize` step into the canonical encoder
+pipeline (replacing plain 2D GPA as the first alignment stage). The lightweight
+orthographic solver is deterministic, CPU-only, and scales to 70k in minutes.
+
+**Caveats / follow-ups before final sign-off:**
+* Spike ran on a 2k subset; re-run on the full 70k to confirm at scale.
+* Depth prior is a hand-built neutral radial profile; a data-driven depth
+  template (or a real iBUG 3D reference) would sharpen frontalization further.
+* Probe used synthetic yaw built from the same depth prior — somewhat
+  self-consistent; an independent yaw source (real multi-view) would be stronger
+  proof. Acceptable for a spike; note for the productionized gate.

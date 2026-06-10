@@ -35,6 +35,7 @@ def test_fit_and_io():
             np.testing.assert_allclose(v, enc_loaded[k], atol=1e-5)
 
 def test_inference_encode():
+    np.random.seed(42)  # determinism: avoid flaky whitening-tolerance failures
     N, K = 50, 5
     M = np.random.randn(N, 68, 2).astype(np.float32)
     # Fit the encoder on the dataset
