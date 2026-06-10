@@ -26,6 +26,7 @@ from geometry_pca.gpa import gpa_align, center_and_scale, align_single
 from geometry_pca.fit import fit_encoder
 from geometry_pca.pose_normalize import frontalize, frontalize_dataset
 from geometry_pca.canonical_face import canonical_template
+from geometry_pca.fisher import fisher_ratios
 
 FIT_LIMIT = 5000
 K = 50
@@ -42,36 +43,6 @@ def load_ffhq(limit):
         except FileNotFoundError:
             continue
     return np.stack(shapes)
-
-
-def fisher_ratios(Z, y):
-    """Z: (N,K) encoded vectors, y: (N,) identity labels.
-    Returns (J_global, S_B, S_W, J_c1) with C1 = component 0."""
-    classes = np.unique(y)
-    mu = Z.mean(axis=0)
-    S_W = 0.0
-    S_B = 0.0
-    n_total = len(Z)
-    for c in classes:
-        Zc = Z[y == c]
-        muc = Zc.mean(axis=0)
-        S_W += np.sum((Zc - muc) ** 2)              # within scatter (summed)
-        S_B += len(Zc) * np.sum((muc - mu) ** 2)    # between scatter (weighted)
-    S_W /= n_total
-    S_B /= n_total
-    J = S_B / S_W if S_W > 1e-12 else 0.0
-
-    # C1-only (component 0)
-    z1 = Z[:, 0]
-    mu1 = z1.mean()
-    sw1 = sb1 = 0.0
-    for c in classes:
-        zc = z1[y == c]
-        sw1 += np.sum((zc - zc.mean()) ** 2)
-        sb1 += len(zc) * (zc.mean() - mu1) ** 2
-    sw1 /= n_total; sb1 /= n_total
-    J1 = sb1 / sw1 if sw1 > 1e-12 else 0.0
-    return J, S_B, S_W, J1
 
 
 def main():
@@ -114,7 +85,8 @@ def main():
             return ((a - pmean) @ comps.T - wmu) / wsig
 
         Z = np.stack([encode(s) for s in X])
-        J, S_B, S_W, J1 = fisher_ratios(Z, y)
+        J, S_B, S_W, J_Ci, _, _ = fisher_ratios(Z, y)
+        J1 = float(J_Ci[0])
         results.append({
             "z_scale": zs, "J_global": round(J, 4),
             "S_B": round(float(S_B), 4), "S_W": round(float(S_W), 4),
