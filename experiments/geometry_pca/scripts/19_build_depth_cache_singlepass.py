@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Phase 2: SINGLE-PASS depth cache builder (replaces 14_build_depth_cache.py's
-per-mode double-read approach).
+Phase 2: SINGLE-PASS depth cache builder (supersedes the old per-mode
+double-read approach, removed in the Jun-2026 cleanup).
 
 Reads each FFHQ sample's depth/seg/pose from NAS EXACTLY ONCE, computes ALL THREE
-normalizations (A / A_prime / C) from that single read, and writes three local
-.npy arrays. Turns 6 NAS passes (3 modes x 2 passes in the old design) into 1.
+normalizations (A / A_prime / C) from that single read, and writes three
+.npy arrays to the NAS project cache (data/ symlink). Turns 6 NAS passes
+(3 modes x 2 passes in the old design) into 1.
 
 Why the old design was slow: it was NOT NAS contention — it was redundant reads.
 At ~38ms/sample, one pass over 70k is ~44 min; the old code paid that 6x.
 
 Output: data/depth_cache/ffhq_depth_{A,A_prime,C}.npy  (+ ids.json)
+  (data/ is a symlink to the NAS project folder — caches never live on local disk)
 """
 import os, sys, time, json
 import numpy as np

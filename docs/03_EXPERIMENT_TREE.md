@@ -8,7 +8,7 @@ Link directly to the `exp/*` branch where the work lives.
   * z_d from depth.npy. Target ~50 components, whitened. (z_a from normal.npy
     deferred until z_d passes — see below.)
   * **Status:** preprocessing + single-pass NAS depth cache BUILT
-    (`13_fit_zd_encoders.py`, `17_build_depth_cache_singlepass.py`); encoder fit
+    (`18_fit_zd_encoders.py`, `19_build_depth_cache_singlepass.py`); encoder fit
     + gate NOT yet run. Full ledger entry: `02_EXPERIMENTS_AND_RESULTS.md` [Phase 2].
   * Memory strategy for dense maps: (1) seg.npy-mask + face-crop + canonical resample,
     (2) aggressive downsample (~64x64) — identity-level volume is low-frequency,

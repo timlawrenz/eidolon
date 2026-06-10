@@ -17,13 +17,13 @@ encoders (Phase 2: z_d, z_a) can be validated on a statistically robust basis.
 overnight_identity_map.json   (identity labels per image)
         │
         ▼
- 14_seed_review_db.py          (populates SQLite: personas, sets, images)
+ 13_seed_review_db.py          (populates SQLite: personas, sets, images)
         │
         ▼
- 15_import_review_json.py      (imports pre-existing review decisions)
+ 14_import_review_json.py      (imports pre-existing review decisions)
         │
         ▼
- 16_review_ui.py               (Flask web UI on port 5100)
+ 15_review_ui.py               (Flask web UI on port 5100)
         │
         ▼
    data/review.db              (SQLite — single source of truth)
@@ -74,7 +74,7 @@ overnight_identity_map.json   (identity labels per image)
 
 ```bash
 cd /home/tim/source/activity/eidolon/experiments/geometry_pca
-.venv/bin/python scripts/16_review_ui.py --port 5100
+.venv/bin/python scripts/15_review_ui.py --port 5100
 ```
 
 Open **http://127.0.0.1:5100** in a browser.
@@ -111,15 +111,22 @@ All paths under `experiments/geometry_pca/data/` resolve to NAS via symlink
 
 ## Key scripts
 
+Numbering reflects phase lineage after the Jun-2026 cleanup
+(review block 09–17, Phase 2 z_d block 18–19):
+
 | Script | Purpose |
 |--------|---------|
 | `09_plan_overnight_enrich.py` | Built the image list (120 identities × 20 images) |
 | `10_verify_gate.py` | Auto-flag suspicious sets (keywords, low confidence) |
 | `11_build_120_collages.py` | Generates face-crop collages for all 120 identities |
 | `12_build_html_gallery.py` | Builds scrollable HTML gallery from collages |
-| `14_seed_review_db.py` | Creates/rebuilds SQLite database from identity map |
-| `15_import_review_json.py` | Imports review decisions from `gate_review.json` into DB |
-| `16_review_ui.py` | Flask web UI for interactive review |
+| `13_seed_review_db.py` | Creates/rebuilds SQLite database from identity map |
+| `14_import_review_json.py` | Imports review decisions from `gate_review.json` into DB |
+| `15_review_ui.py` | Flask web UI for interactive review |
+| `16_batch_resumable_enrich.py` | Resumable hegre enrichment runner (stratum-hq passes) |
+| `17_merge_batch.py` | Merge per-batch identity maps into the review DB |
+| `18_fit_zd_encoders.py` | **Phase 2:** fit z_d depth PCA encoders (3 normalization modes) |
+| `19_build_depth_cache_singlepass.py` | **Phase 2:** single-pass NAS depth cache builder |
 
 ## Identity extraction rules
 

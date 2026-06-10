@@ -231,14 +231,14 @@ the gate must be re-runnable as `review.db` expands; the 89/1,524 figure is a
 snapshot, not a frozen N.
 
 ### What is already BUILT (verified on disk)
-- **Depth preprocessing** (`scripts/13_fit_zd_encoders.py`, commit `3a3793a`):
+- **Depth preprocessing** (`scripts/18_fit_zd_encoders.py`, commit `3a3793a`):
   seg-mask → face-crop → canonical resample, with **3 normalization modes**
   (A / A_prime / C) to be gated against each other.
-- **Single-pass NAS depth cache** (`scripts/17_build_depth_cache_singlepass.py`,
+- **Single-pass NAS depth cache** (`scripts/19_build_depth_cache_singlepass.py`,
   commit `91b527f`): collapses the old 6-NAS-pass design (3 modes × 2 passes)
   into 1, writing `data/depth_cache/ffhq_depth_{A,A_prime,C}.npy` + `ids.json`.
   Storage-rule compliant — `data/` is a symlink to the NAS project folder.
-- **z_d encoder fit** scaffolding (`13_fit_zd_encoders.py`) writing to `output/`.
+- **z_d encoder fit** scaffolding (`18_fit_zd_encoders.py`) writing to `output/`.
 
 ### What is OPEN (the actual work remaining)
 1. Decide/gate the depth normalization mode (A vs A_prime vs C).

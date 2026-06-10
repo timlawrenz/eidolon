@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Review UI: random persona, random image order, brush-to-taint, DONE button.
 Modes: first pass (unreviewed) and review pass (re-check approved).
-Run: .venv/bin/python scripts/16_review_ui.py --port 5100"""
+Run: .venv/bin/python scripts/15_review_ui.py --port 5100"""
 import os, sys, random, sqlite3, io, time
 import numpy as np
 from PIL import Image
