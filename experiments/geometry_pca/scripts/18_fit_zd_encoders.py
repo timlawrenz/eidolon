@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Phase 2 (Depth): Fit 3 separate depth encoders (z_d) on FFHQ.
-Uses IncrementalPCA — prefers the NAS depth cache (data/ symlink) when available.
+Uses IncrementalPCA — prefers the NAS depth cache (data/ symlink) when available
+for speed.
 
 Normalization modes swept:
   - 'A': Masked per-image z-score
