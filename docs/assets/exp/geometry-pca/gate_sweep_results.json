@@ -1,0 +1,9 @@
+{
+  "best_z_scale": 2.0,
+  "best_J": 0.0877000018954277,
+  "null_J_flat_2dgpa": 0.07999999821186066,
+  "3d_beats_flat": true,
+  "results": [
+    {
+      "z_scale": 0.0,
+      "J_global": 

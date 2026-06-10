@@ -99,3 +99,15 @@ def frontalize(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndarray:
     frontal3d = lifted @ R  # R rows are rotated basis; right-multiply rotates back
 
     return frontal3d[:, :2].astype(np.float32)
+
+
+def frontalize_dataset(shapes: np.ndarray, template3d: np.ndarray) -> np.ndarray:
+    """Pose-normalize a batch of (N,68,2) shapes against a 3D template.
+
+    The template (canonical_face.canonical_template, +Y up) is flipped to the
+    image/pose convention (+Y down) so its depth prior aligns with observed data.
+    """
+    t = template3d.copy()
+    t[:, 1] *= -1.0  # +Y up (template) -> +Y down (image/pose convention)
+    return np.stack([frontalize(t, s) for s in shapes]).astype(np.float32)
+

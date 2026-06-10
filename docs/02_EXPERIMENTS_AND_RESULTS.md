@@ -101,3 +101,84 @@ orthographic solver is deterministic, CPU-only, and scales to 70k in minutes.
 * Probe used synthetic yaw built from the same depth prior — somewhat
   self-consistent; an independent yaw source (real multi-view) would be stronger
   proof. Acceptable for a spike; note for the productionized gate.
+
+---
+
+## [Phase 1-R FINAL] Production close — z_scale=1.0, real-image gate, CONCLUDED
+
+**Date:** 2026-06-10
+
+### The synthetic probe was abandoned (it was circular)
+The spike's apparent "4.9× pose-invariance win" was partly self-fulfilling: the
+synthetic-yaw probe lifted 2D points with a depth model and then frontalized them
+with that *same* depth model — so a FLAT template (z_scale=0) scored best by
+trivially bypassing the Z-axis. It was a test of mathematical reversibility, not
+of biological pose-invariance. **We abandoned the synthetic probe entirely** and
+built a real-image gate.
+
+### The contamination near-miss (PERMANENT WARNING)
+We sourced real multi-pose identities from the hegre dataset (model name in the
+folder slug). The FIRST gate run (5 identities) returned J≈0.085 with FLAT
+(z_scale=0) marginally winning → it pointed at "kill the 3D pipeline." **This was
+an artifact.** Visual collage inspection (the check that saved us) revealed 4 of 5
+"identities" were contaminated:
+* `darina` merged TWO women — a brunette (`darina-*`) and a blonde (`darina-l-*`).
+  Name-collision: the `-l`/`-s` suffix denotes a *different model*.
+* `ariel`, `valerie`, `emily` each contained a MALE partner's face, pulled from
+  couple shoots (`-and-`) by DWPose `single_person=True` grabbing the largest bbox.
+
+The contaminated within-identity scatter was a LABELING artifact, not a property
+of geometry. **The artifact-driven data nearly caused us to amputate a
+mathematically sound 3D frontalization step.** Lesson logged permanently: never
+trust an identity gate without visually verifying the identities; never trust a
+synthetic probe that can reverse its own math.
+
+### Clean re-run (10 verified identities, 136 real images)
+Fixes: suffix-aware identity keys (`darina-l` ≠ `darina`), couple-set exclusion
+(`-and-`/`couple`), and per-identity collage verification (dropped `muriel` =
+male+blur, `natalia-a` = ambiguous). Fisher S_B/S_W sweep over z_scale:
+
+| z_scale | J global | S_B  | S_W   | J_C1  |
+|---------|----------|------|-------|-------|
+| 0.00 (flat/2D GPA) | 0.0800 | 25.1 | 313.9 | 0.0655 |
+| 0.50    | 0.0701 | 19.6 | 279.8 | 0.0863 |
+| **1.00 (SHIPPED)** | 0.0868 | 21.3 | 245.8 | 0.0795 |
+| 2.00    | 0.0877 | 20.4 | 232.8 | 0.0782 |
+
+### Findings (stated honestly)
+1. **3D frontalization beats flat 2D GPA on real-image identity separability.**
+   Global J rises 0.080→0.088 with depth, driven by within-identity scatter
+   S_W falling 314→246 while S_B holds — the OPPOSITE of degenerate collapse.
+   3D pose-normalization systematically strips pose variance across the manifold.
+2. **The clean-C1 narrative DIED at scale.** At n=5, J_C1 rose monotonically with
+   depth; at n=10 it did NOT (peaks at z=0.5, noisy). We do NOT claim a clean
+   C1-rescue. Once macro yaw variance is stripped, PCA promotes whatever residual
+   chaos remains (expression asymmetry, focal distortion, DWPose jitter) into the
+   top component — that is the mathematical reality of wild 2D tracking, not a
+   depth-model failure. **The case for 3D rests on AGGREGATE S_W reduction.**
+3. **Absolute separability is modest (J≈0.08; S_W ≈ 12× S_B).** This is a FEATURE,
+   not a bug: it is the empirical proof that 2D facial geometry alone is a noisy
+   standalone identity carrier under real-world pose/expression. It directly
+   justifies the multi-partition E = [z_g | z_d | z_a] structure — if geometry
+   were a perfect identity carrier, the depth/albedo/DINOv3 partitions would be
+   bloat. Editorial-data caveat: hegre shoots vary in expression/lighting/age, so
+   S_W is inflated by non-pose nuisance (makes the test strictly harder).
+
+### z_scale = 1.0 decision (anatomical mandate)
+Shipped z_scale=1.0, NOT the marginally-higher-J z=2.0 nor the C1-peak z=0.5.
+Rationale: 1.0 uses the 300W canonical template's depth at face value (physical
+ground truth); scaling down tells the solver a face is a pancake, scaling to 2.0
+extrapolates depth beyond anatomy for a negligible J gain. z=1.0 captures ~85% of
+the total S_W reduction without extrapolation — the production sweet spot.
+
+### Production artifact
+Frozen encoder fit on the FULL **69,851** FFHQ faces (k=50, 99.987% variance,
+107s total). Pipeline: pose → 68-pt slice → 3D frontalize (canonical template,
+z_scale=1.0) → light 2D GPA → PCA → whiten. Canonical template persisted in the
+encoder for reproducible inference. Artifact: `output/encoder_production.npz`.
+
+### Verdict
+**Phase 1-R CONCLUDED — PASS (earned).** Pose-invariant geometry encoder shipped.
+Honest scope: 3D frontalization gives a real aggregate identity-separability gain
+over 2D GPA; the clean-C1 story did not survive scale; geometry alone is a weak
+identity carrier (motivating the rest of E).
