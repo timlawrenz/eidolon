@@ -23,7 +23,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from geometry_pca.loader import iter_sample_ids
 from geometry_pca.constants import FACE_SLICE
 from geometry_pca.depth_encoder import face_bbox_px
-from geometry_pca.normal_encoder import resample_masked_3ch, head_rotation
+from geometry_pca.normal_encoder import (
+    resample_masked_3ch, head_rotation, load_normal_sample
+)
 from geometry_pca.canonical_face import canonical_template
 
 OUT_DIR = "data/normal_cache"
@@ -36,8 +38,8 @@ CANONICAL_TPL = canonical_template()
 def process_one(sample_id):
     """Load normal+seg+pose ONCE, return (grid_64, R) or (None, None) on failure."""
     try:
-        normal, seg, face_r3 = load_normal_sample_local(sample_id)
-    except (FileNotFoundError, OSError):
+        normal, seg, face_r3 = load_normal_sample(sample_id)
+    except (FileNotFoundError, OSError, ValueError):
         return None, None
 
     # foreground: any seg class > 0, plus normal magnitude > 0.1 (robust bg rejection)
@@ -63,23 +65,15 @@ def process_one(sample_id):
     return grid, R
 
 
-def load_normal_sample_local(sample_id):
-    """Load a single sample (same as normal_encoder.load_normal_sample but inlined)."""
-    from geometry_pca.constants import STRATUM_ROOT
-    base = os.path.join(STRATUM_ROOT, sample_id)
-    normal = np.load(os.path.join(base, "normal.npy")).astype(np.float32)
-    seg = np.load(os.path.join(base, "seg.npy"))
-    pose = np.load(os.path.join(base, "pose.npy")).astype(np.float32)
-    face = pose[FACE_SLICE]
-    return normal, seg, face
-
-
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     raw_path = os.path.join(OUT_DIR, "ffhq_normal_raw.npy")
     rot_path = os.path.join(OUT_DIR, "rotations.npy")
-    if os.path.exists(raw_path) and os.path.exists(rot_path):
-        print("Both cache files already exist; nothing to do.")
+    ids_path = os.path.join(OUT_DIR, "ids.json")
+    # idempotency: require ALL THREE artifacts (a crash between np.save and
+    # json.dump must not leave a rerun thinking the cache is complete)
+    if all(os.path.exists(p) for p in (raw_path, rot_path, ids_path)):
+        print("All cache files already exist; nothing to do.")
         return
 
     t0 = time.time()
@@ -102,8 +96,11 @@ def main():
 
     elapsed = time.time() - t0
     print(f"Single NAS pass done: {n_ok}/{n_seen} valid in {elapsed:.0f}s ({elapsed/60:.1f}min)")
+    if n_ok == 0:
+        print("FATAL: zero valid samples — nothing to save. Check STRATUM_ROOT / NAS mount.")
+        sys.exit(1)
 
-    # Stack and save
+    # Stack and save (ids.json written LAST — see idempotency check above)
     grid_arr = np.stack(grids).reshape(n_ok, OUT_RES, OUT_RES, 3).astype(np.float32)
     rot_arr = np.stack(rotlist).astype(np.float32)
     np.save(raw_path, grid_arr)

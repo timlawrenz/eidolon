@@ -14,7 +14,7 @@ from sklearn.decomposition import IncrementalPCA
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from geometry_pca.normal_encoder import derive_variant
+from geometry_pca.normal_encoder import derive_variant, variant_dim
 
 OUT = "output"
 VARIANTS = ["raw", "xy", "rot", "rot_xy"]
@@ -36,7 +36,7 @@ def load_cache():
 
 def derive_matrix(raw, rots, variant):
     """Derive (N,D) matrix for one variant from cached raw grids + rotations."""
-    D = 12288 if "raw" in variant or "rot" in variant else 8192
+    D = variant_dim(variant)  # 8192 for *_xy, 12288 for 3-channel
     X = np.empty((len(raw), D), dtype=np.float32)
     for i in range(len(raw)):
         X[i] = derive_variant(raw[i], rots[i], variant)
