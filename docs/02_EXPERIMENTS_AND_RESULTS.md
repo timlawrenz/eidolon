@@ -250,12 +250,77 @@ snapshot, not a frozen N.
    write a fresh (non-corrupt) machine-readable results artifact.
 
 ### Normal-map / z_a note
-`z_a` (albedo/surface from `normal.npy`) is **deferred until z_d passes**. Unit
-normals live on a sphere, so raw-component PCA is an approximation that may need
-tangent-space log-mapping — gate that separately once z_d is proven.
+**The z_a pivot is now [ACTIVE] (2026-06-10).** Normals structurally avoid the
+affine-scale ambiguity that killed z_d — see the new **[Phase 2b]** entry below.
 
 ### Verdict
-**[CONCLUDED — z_d FAILS to add complementary identity signal] (2026-06-10).**
+**[z_d CONCLUDED — FAIL (above). The z_a pivot is [ACTIVE] below.]**
+
+---
+
+## [Phase 2b] Albedo/Surface Partition z_a (normals) — `[ACTIVE]` (THE PIVOT)
+
+**Date opened:** 2026-06-10
+**Goal:** Build the surface partition `z_a` from Sapiens normal maps and prove
+normals carry **complementary identity signal beyond 2D geometry**, where depth
+(z_d) failed. Normals describe surface *angle*, not absolute distance, so they
+natively resist the affine-scale / camera-distance ambiguity that killed z_d —
+this is the pivot thesis.
+
+### Why normals should beat depth (the structural advantage)
+- **No scale ambiguity.** Sapiens normals are unit vectors on the foreground
+  (probed: ‖n‖=1.0000 on both FFHQ and hegre), so there is no camera-distance or
+  focal-length variable to corrupt the signal. z_d's A/A_prime/C normalization
+  sweep has **no analog here** — every variant is unit-norm by construction.
+- **Pose = the real nuisance.** Head rotation coherently rotates the entire
+  normal field. But we already own the antidote: Phase 1-R's
+  `estimate_rotation()` gives per-sample head rotation R from the 68 keypoints.
+  De-rotating normals by Rᵀ puts them in a canonical head frame — the
+  normal-space equivalent of 3D frontalization.
+- **Redundant channels.** Visible surfaces face the camera (nz>0), so
+  nz = √(1−nx²−ny²) is redundant — an (nx,ny)-only variant halves the
+  dimensionality for free.
+
+### Representation sweep (replaces z_d's normalization sweep)
+| Variant | Channels | Rationale |
+|---|---|---|
+| `raw`    | (nx,ny,nz) 64×64×3 = 12,288-d | naive baseline |
+| `xy`     | (nx,ny)    64×64×2 = 8,192-d  | nz redundant for camera-facing surfaces |
+| `rot`    | Rᵀ·n, 3ch  12,288-d             | head-pose de-rotation → canonical head frame |
+| `rot_xy` | Rᵀ·n, xy   8,192-d              | both corrections |
+
+Tangent-space log-map deferred — only if all 4 Cartesian variants fail marginally.
+
+### Identity test set (same as z_d)
+The gate runs on the reviewed **hegre** corpus in `data/review.db` (READ-ONLY
+— sole writer is Tim's validation window). Current snapshot: 102 clean identities
+/ 1,665 approved images. **Same set as z_d** for comparability.
+
+### Pre-registered gate (stated BEFORE results — honest-science discipline)
+> **PASS criterion:** mean over seeds {0,1,2}:
+> `AUC([z_g | z_a]) > AUC(z_g) + 0.01`
+> on the hegre verification test (same/different-identity discrimination,
+> cosine distance, z-scored, balanced pairs, n=40k/seed).
+
+- **Metric:** verification AUC (canonical instrument; trace-J banned for
+  concatenated partitions — see [Metric fix] above).
+- **ε = 0.01** ≈ 4× the measured seed noise (±0.0025 from z_g baseline).
+- **Secondary report (not pass/fail):** z_a-ALONE AUC — if normals alone ≫ 0.54,
+  they are a stronger standalone identity carrier than geometry.
+- **Variant selection:** by highest mean AUC delta among variants that pass
+  — **not** by retained variance (the z_d lesson).
+- **Nuisance audit (before accepting a PASS):** correlate top-5 z_a components
+  vs estimated yaw/pitch per image — the z_d C1-audit, run BEFORE trusting
+  the gate, not after.
+
+### Architecture decisions
+- **k = 50** — partition-size consistency with E = [z_g|z_d|z_a] ∈ ℝ^150.
+- **One NAS pass, one cache** (raw grid + per-sample R → 4 variants in RAM).
+- **Pooled vectors not renormalized** — the sub-unit magnitude after pooling
+  IS local curvature disagreement (signal).
+
+### Verdict
+`[PENDING]` — gate pre-registered; full plan: `.hermes/plans/2026-06-10_phase2b-za-normals.md`.
 
 The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
 FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.
