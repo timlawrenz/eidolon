@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 import sqlite3
 import os
 import json
@@ -96,9 +98,6 @@ def get_approved_images():
         cursor = conn.cursor()
         cursor.execute("SELECT image_path FROM images WHERE status = 'approved'")
         return [row[0] for row in cursor.fetchall()]
-
-from concurrent.futures import ThreadPoolExecutor
-from tqdm import tqdm
 
 if __name__ == "__main__":
     images = get_approved_images()
