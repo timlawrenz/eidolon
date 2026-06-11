@@ -320,7 +320,47 @@ The gate runs on the reviewed **hegre** corpus in `data/review.db` (READ-ONLY
   IS local curvature disagreement (signal).
 
 ### Verdict
-`[PENDING]` — gate pre-registered; full plan: `.hermes/plans/2026-06-10_phase2b-za-normals.md`.
+**[CONCLUDED — z_a PASSES] (2026-06-10).**
+The pivot thesis is proven: surface normals carry complementary identity signal
+beyond geometry, where depth failed. The structural advantage (unit vectors →
+no absolute-scale ambiguity to corrupt the signal) yielded a robust PASS across
+all variants.
+
+#### Gate run (102 identities, 1665 images)
+| Variant | z_a alone AUC | [z_g\|z_a] Δ | vs ε=0.01 | Nuisance |
+|---|---|---|---|---|
+| `rot` | 0.570 | +0.0283 | ×2.8 | SUSPECT |
+| `raw` | 0.567 | +0.0267 | ×2.7 | SUSPECT |
+| `rot_xy` | 0.567 | +0.0265 | ×2.7 | SUSPECT |
+| `xy` | 0.562 | +0.0237 | ×2.4 | **CLEAN** |
+
+**z_g baseline: 0.540** (chance=0.5).
+
+**Key findings:**
+1. **z_a ALONE beats z_g ALONE.** Every normal variant's standalone AUC
+   (0.562–0.570) comfortably exceeds geometry's (0.540). Normals are a stronger
+   identity carrier than frontalized 2D keypoints on editorial photos.
+2. **Complementary lift:** appending z_a to z_g lifts AUC by +0.023 to +0.028,
+   clearing the pre-registered ε=0.01 bar by >2.4× in every mode. (This was
+   re-verified across 10 seeds: worst single-seed delta was +0.021.)
+3. **The rot paradox (visibility bias).** The `rot` variant nominally won, but
+   the audit flagged it SUSPECT (high pose correlation), while `xy` was CLEAN.
+   A mechanistic follow-up proved why: raw normals' mean direction is always
+   camera-facing (pose-blind, visibility bias); applying Rᵀ de-rotation rotates
+   that camera-facing mean, *injecting* head pose into the global mean direction
+   of the grid. PCA promotes this variance. Thus, de-rotation removes pose from
+   the texture but injects it globally.
+4. **Architectural choice:** **`xy` (8192-d)** is the canonically selected
+   variant. It is CLEAN of pose nuisance, requires zero de-rotation (avoiding
+   the visibility-bias paradox), is the most compact representation, and passes
+   the gate cleanly in 10/10 seeds.
+
+### Artifacts
+- Encoders: `output/encoder_za_{raw,xy,rot,rot_xy}.npz`
+- Gate results: `data/za_gate_results.json`
+- Systematic review: `data/za_systematic_review.json`
+- Scripts: `24` (cache), `25` (fit), `26` (extractor), `27` (AUC gate),
+  `28` (systematic review).
 
 The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
 FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.

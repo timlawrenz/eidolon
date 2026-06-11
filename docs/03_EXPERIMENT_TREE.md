@@ -4,26 +4,20 @@ A living map of ideas, plans, and active workstreams.
 Link directly to the `exp/*` branch where the work lives.
 
 ## Active & Planned
-* **[ACTIVE] Phase 2b: Albedo/Surface Encoder z_a (normals)** — THE PIVOT
-  * z_a from normal.npy. Same fit-PCA-whiten recipe; tangent-space log-mapping
-    likely required (unit normals live on a sphere — gate naive first).
-  * **Why now (not depth):** z_d (depth) CONCLUDED as a dead end for identity
-    (see `02_EXPERIMENTS_AND_RESULTS.md`). Surface normals describe the *angle*
-    of the surface, not absolute distance, so they natively resist the
-    affine-scale / camera-distance ambiguity that fundamentally limited raw
-    monocular depth. Structurally positioned to carry a cleaner, scale-invariant
-    identity signal.
-  * **Gate (verification AUC, NOT trace-J):** `AUC([z_g | z_a]) > AUC(z_g) + ε`
-    on the hegre verification test. trace-J is banned for concatenated partitions
-    (it's a weighted average — blind to complementarity; see ledger metric bug).
-  * Reuse: depth cache pattern (`19`), DB-driven extractor (`20`), verification
-    AUC instrument (`23`, to be lifted into a `geometry_pca` helper).
-* **[TBD] Phase 3: DINOv3 Bridge**
+* **[NEXT] Phase 3: DINOv3 Bridge**
   * Linear regression of dinov3_cls embeddings to the whitened PCA components.
 * **[TBD] Phase 4: DiT Fusion Stack**
   * Decoupled cross-attention + block-diagonal ingestion (architecture.md §7.1).
 
 ## Concluded
+* **[CONCLUDED — PASS] Phase 2b: Albedo/Surface Encoder z_a (normals)** (`exp/geometry-pca`)
+  * Surface normals successfully add complementary identity signal over z_g.
+  * Structural advantage proven: normals natively resist the affine-scale ambiguity
+    that killed raw depth. z_a ALONE (AUC 0.56) is a stronger identity carrier than
+    geometry alone (0.54) on hegre editorial data.
+  * **Selected variant: `xy` (8,192-d)**. Passed gate cleanly (+0.024 ΔAUC vs ε=0.01 bar),
+    most compact, and cleanly avoided the 'rot paradox' (where Rᵀ de-rotation injects
+    pose into the global mean via visibility bias).
 * **[CONCLUDED — FAIL] Phase 2: Depth Encoder z_d** (`exp/geometry-pca`)
   * Depth (64×64, k=50, FFHQ-fit) adds NO complementary identity signal over z_g.
   * Operational proof: verification AUC z_g=0.541 → +z_d = −0.004 (every mode);

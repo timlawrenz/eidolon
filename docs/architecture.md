@@ -13,9 +13,9 @@ into the encoder survives all the way into the model's attention mechanism.
 ```
 E = [ z_g | z_d | z_a ]   ∈ ℝ^(50 + 50 + 50)
       │     │     │
-      │     │     └── albedo / surface  (from normal maps)
-      │     └──────── depth / volume    (from depth maps)
-      └────────────── geometry / shape  (from facial keypoints)
+      │     │     └── albedo / surface  (z_a from normal maps, active)
+      │     └──────── depth / volume    (z_d from depth maps, dead end)
+      └────────────── geometry / shape  (z_g from facial keypoints)
 ```
 
 The component counts (≈50 each) are targets, finalized per-modality by the
@@ -184,31 +184,33 @@ The frozen `z_g` encoder that actually shipped:
 
 ---
 
-## 4. The Volumetric Encoders (`z_d`, `z_a`)
+### 4. The Volumetric Encoders (`z_d`, `z_a`)
 
-Apply the **identical** fit-PCA-store-whitening recipe to the Sapiens maps:
+Apply the **identical** fit-PCA-store-whitening recipe to the Sapiens maps, but
+note the difference in outcomes (Phase 2 vs 2b):
 
-- `z_d` (depth / volume): from `depth.npy`, background removed via `seg.npy` mask.
-- `z_a` (albedo / surface): from `normal.npy`, background removed via `seg.npy` mask.
+- `z_a` (albedo / surface): from `normal.npy`, masked by `seg.npy`. **(ACTIVE)**
+  Normals describe surface *angle*, avoiding the absolute-scale ambiguity of depth.
+  The canonical variant is `xy` (nz is dropped as redundant). PCA extracts 50
+  components natively.
+- `z_d` (depth / volume): from `depth.npy`. **(DEPRECATED)**
+  Concluded as a dead end for identity (failed the AUC gate). Relative depth is
+  inextricably entangled with camera focal length/distance.
 
-These give independent, mathematically decoupled sliders for facial volume and
-surface/lighting — letting us deepen a cheekbone shadow without shifting the
-jawline.
+**Implementation wrinkle:** normals are dense `H×W` maps, so the data matrix
+will not fit in RAM. Decoded normal caches are written under the NAS `data/`
+symlink (see storage rule in §3.3), e.g. `data/normal_cache/ffhq_normal_raw.npy`,
+from which the `xy` variant is derived in RAM during fitting.
 
-**Implementation wrinkle:** depth/normal are dense `H×W` maps, so the data matrix
-will not fit in RAM. Use **incremental / randomized SVD** rather than a full
-in-memory PCA. Decoded depth/normal caches are written under the NAS `data/`
-symlink (see storage rule in §3.3), e.g. `data/depth_cache/ffhq_depth_*.npy`.
+**Validation gate for partitions (pre-registered):** beyond the §3.4 scree checks,
+any partition must earn its place in `E` via an **incremental-information** test
+on the reviewed hegre identity corpus (`data/review.db`, clean identities only):
 
-**Validation gate for `z_d` (pre-registered, Phase 2 — see ledger):** beyond the
-§3.4 scree + traversal checks, the partition must earn its place in `E` via an
-**incremental-information** test on the reviewed hegre identity corpus
-(`experiments/geometry_pca/data/review.db`, contamination-free identities only):
+> `AUC([z_g | z_x]) > AUC(z_g) + ε`  (Verification AUC)
 
-> `J([z_g | z_d]) > J(z_g) × 1.15`  (Fisher S_B/S_W)
-
-i.e. concatenating depth onto geometry must lift identity separability by ≥15%.
-`z_a` is gated separately and only after `z_d` passes.
+i.e. concatenating the partition onto geometry must lift same/different identity
+discrimination above the measured seed-noise floor (ε=0.01). Note: the old
+trace-Fisher J test was deprecated (it is a weighted average blind to complementarity).
 
 ---
 
