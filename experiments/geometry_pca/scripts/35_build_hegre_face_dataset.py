@@ -85,10 +85,15 @@ def process_image(img_path):
         
         sq_box = get_square_box(box, img.width, img.height)
         face_crop = img.crop(tuple(sq_box))
-        face_resized = face_crop.resize((1024, 1024), Image.Resampling.LANCZOS)
+        
+        # Only downscale if larger than 1024x1024 to preserve true high-resolution quality
+        if face_crop.width > 1024 or face_crop.height > 1024:
+            face_final = face_crop.resize((1024, 1024), Image.Resampling.LANCZOS)
+        else:
+            face_final = face_crop
         
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        face_resized.save(out_path, quality=95)
+        face_final.save(out_path, quality=95)
         return True, out_path
     except Exception as e:
         return False, str(e)
