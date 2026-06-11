@@ -1,0 +1,9 @@
+{
+  "n_images": 1666,
+  "n_identities": 102,
+  "Y_g_auc_3seed_mean": 0.60616131,
+  "Y_a_auc_3seed_mean": 0.6058995558333333,
+  "cat_delta_3seed_mean": 0.010200523333333322,
+  "verdict": "PASS",
+  "fraction_identity_retained": 1.7080573521505376
+}

@@ -60,13 +60,21 @@ def fit_bridge(X, Y, weights, name):
     print(f"\n  Variance-weighted held-out R^2 : {weighted_r2:.4f}")
     print(f"  C1-C10 minimum R^2           : {c1_c10_min:.4f}")
     
-    # Permutation null (sanity check)
+    # PROPER permutation null: shuffle TRAIN labels BEFORE fitting, evaluate on
+    # clean held-out fold. Expect R^2 ~ 0 (slightly negative). The old version
+    # shuffled Y after prediction, which analytically yields -R^2 — vacuous.
     rng = np.random.default_rng(123)
-    Y_shuffled = Y.copy()
-    rng.shuffle(Y_shuffled)
-    null_mse = np.mean((Y_shuffled - Y_pred)**2, axis=0)
-    null_r2 = np.sum((1.0 - (null_mse / var_per_comp)) * weights)
-    print(f"  Permutation null R^2           : {null_r2:.4f}")
+    null_split = int(0.8 * len(X))
+    perm = rng.permutation(len(X))
+    ntr, nte = perm[:null_split], perm[null_split:]
+    Y_tr_shuffled = Y[ntr].copy()
+    rng.shuffle(Y_tr_shuffled)
+    null_model = RidgeCV(alphas=ALPHAS).fit(X[ntr], Y_tr_shuffled)
+    null_pred = null_model.predict(X[nte])
+    null_mse = np.mean((Y[nte] - null_pred)**2, axis=0)
+    null_var = np.var(Y[nte], axis=0)
+    null_r2 = np.sum((1.0 - (null_mse / null_var)) * weights)
+    print(f"  Permutation null R^2 (label-shuffle pre-fit): {null_r2:+.4f}  (expect ~0)")
 
     # Full fit on all data to save weights
     print(f"\n  Refitting on full dataset to save weights...")

@@ -401,33 +401,61 @@ predicted sliders `Ŷ_a`. Run the canonical verification-AUC identity test.
 **Goal:** Linear-regress DINOv3 semantic embeddings (`dinov3_cls`, 1024-d) to the
 whitened physical sliders (`z_g`, `z_a`).
 
-### Stratified Verdict
+### Stratified Verdict (CORRECTED after systematic review — script 32)
 
 **Phase 3 (The Premise Gate — FFHQ): `[FAIL]`**
-*   `z_g` (Geometry): Variance-weighted R² = **0.690**. FAIL: C6 (R²=0.023) &
-    C11 (R²=0.017) are near zero. DINOv3 cannot linearly recover all structural
-    geometric components.
-*   `z_a_xy` (Surface): Variance-weighted R² = **0.385**. FAIL: Below the 0.5
-    threshold. The 16x16-patch DINO token discards fine curvature.
+*   `z_g` (Geometry): Variance-weighted R² = **0.690**. FAIL on the C1–C10 ≥ 0.6
+    criterion: C6 (R²=0.023) & C11 (R²=0.017) are near zero.
+    **Caveat (C4 probe):** real-z_g C6 has Fisher J = 0.098 on hegre — at the
+    median of all components — so C6 is plausibly *detector noise that is
+    intrinsically unpredictable*, not identity-critical structure DINO "missed."
+    The C1-C10 criterion presumed all top-10 components are semantically
+    meaningful; that presumption was partly wrong.
+*   `z_a_xy` (Surface): Variance-weighted R² = **0.385** (MLP probe: 0.48). FAIL.
+    Genuine reconstruction failure — the DINO cls token does not retain fine
+    surface curvature.
+*   Verified: independent 80/20 refit reproduces both R² (0.692 / 0.385); proper
+    pre-fit label-shuffle null ≈ −0.015 (no leakage). NOTE: the original
+    script-30 "permutation null" shuffled Y *after* prediction (analytically
+    = −R², vacuous); fixed in the same review.
 
-**Phase 3b (The Transfer Gate — hegre): `[PASS]`**
-*   Predicted sliders `Ŷ_a` achieve verification AUC **0.606** (vs. real `z_a` =
-    0.562, and chance = 0.500).
-*   Retains **170%** of real `z_a`'s identity lift.
+**Phase 3b (The Transfer Gate — hegre): gate technically passed — but the PASS
+is UNINFORMATIVE (missing control, caught in review).**
+*   Measured: Ŷ_a AUC 0.606, Ŷ_g AUC 0.606 (suspiciously identical; pair-score
+    corr 0.60 — two shadows of the same DINO signal; concatenation adds only
+    +0.010).
+*   **The control that kills the story:** AUC(raw dinov3_cls, 1024-d) = **0.685**;
+    AUC(random Gaussian 50-d projections of DINO) = **0.627 ± 0.006** (5 seeds).
+    The bridge (0.606) is *worse than a random projection* of its own input.
+    Any 50-d DINO shadow clears the 0.51 bar → the pre-registered gate was
+    structurally too weak (it lacked the random-projection null).
+*   The earlier "170% identity lift retained" framing was arithmetic on a wrong
+    story: the bridge did not transfer z_a's identity; it *degraded* DINO's
+    intrinsic identity content. Ridge-fitting toward a weak identity carrier
+    (z_a) discards DINO's stronger identity directions.
 
-**Structural Interpretation:**
-The bridge is a faithful *slider* reconstruction FAIL, but a *semantic identity*
-transfer PASS. The linear weights `W` map DINOv3's 1024-d emergent identity signals
-(hair, skin, expression) into the `z_a` feature space, resulting in `Ŷ_a`
-*greatly outperforming* explicit surface normals on identity discrimination. It is
-NOT reconstructing normals; it's projecting a DINOv3 identity representation.
-**This confirms the architecture spec**: DINOv3 semantics live linearly in our
-subspace, and passing $E$ is strictly supplemental—not redundant—to DINOv3 tokens.
+### The real findings of Phase 3
+1.  **Faithful slider reconstruction from DINO is dead** (both directions of the
+    "fast path"). E cannot be derived from DINO embeddings.
+2.  **Raw `dinov3_cls` is the strongest identity carrier measured on hegre:
+    AUC 0.685** — far above real z_a (0.562) and z_g (0.540). For the DiT,
+    DINO tokens are the natural primary *identity* conditioning; **E's unique,
+    irreplaceable value is interpretable decoupled control** (DINO cannot
+    faithfully reconstruct E's components — R² gate above — so E remains
+    non-redundant).
+3.  **Lesson (gate design):** every transfer/identity gate must include a
+    random-projection null of its input representation, exactly as every
+    partition gate includes a permutation null. A gate without the right null
+    can "pass" on structure the test never isolates.
 
 ### Artifacts
-- Bridge weights: `output/bridge_dinov3.npz`
+- Bridge weights: `output/bridge_dinov3.npz` (kept for reference; NOT a product)
 - Phase 3 R² results: `data/phase3_bridge_results.json`
 - Phase 3b AUC results: `data/phase3b_transfer_results.json`
+- Systematic review: `data/phase3_systematic_review.json` (script
+  `32_phase3_systematic_review.py`: R² cross-check, proper null, two-tree
+  alignment 1721/1721, dup/finite checks, raw-DINO + random-projection
+  controls, C6-noise probe, shoot-leakage probe)
 
 The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
 FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.

@@ -9,11 +9,15 @@ Link directly to the `exp/*` branch where the work lives.
 
 ## Concluded
 * **[CONCLUDED] Phase 3: DINOv3 Bridge (Premise Validation)** (`exp/geometry-pca`)
-  * Phase 3 (R² Premise): `[FAIL]`. Linear regression cannot faithfully reconstruct
-    fine geometric sliders (C6 of `z_g` is 0.02).
-  * Phase 3b (Identity Transfer): `[PASS]`. Bridged sliders (`Ŷ_a`) achieve
-    verification AUC **0.606** (vs. 0.562 for real normals), capturing emergent
-    identity signals from DINOv3 semantics.
+  * Phase 3 (R² Premise): `[FAIL]`. DINO cannot faithfully reconstruct the sliders
+    (z_a R²=0.385; z_g C6/C11 ≈ 0 — though C6 is plausibly detector noise, J=0.098).
+  * Phase 3b (Identity Transfer): technically cleared 0.51 but **UNINFORMATIVE** —
+    review control showed raw dinov3_cls = 0.685 and random 50-d DINO projections
+    = 0.627 ± 0.006 ≫ bridge Ŷ_a (0.606). Any DINO shadow passes; the bridge
+    *degrades* its input. Gate lacked a random-projection null (lesson recorded).
+  * **Real finding:** raw dinov3_cls is the strongest identity carrier measured on
+    hegre (AUC 0.685 vs z_a 0.562, z_g 0.540) → DINO = identity conditioning;
+    E = interpretable decoupled control. Both fast paths are dead; E non-redundant.
 * **[CONCLUDED — PASS] Phase 2b: Albedo/Surface Encoder z_a (normals)** (`exp/geometry-pca`)
   * Surface normals successfully add complementary identity signal over z_g.
   * Structural advantage proven: normals natively resist the affine-scale ambiguity
