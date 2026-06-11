@@ -1,0 +1,31 @@
+{
+  "baseline_auc": 0.5409621425,
+  "eps": 0.01,
+  "modes": {
+    "A": {
+      "zd_alone_auc": 0.521318,
+      "auc_baseline": 0.5409621425,
+      "auc_concatenated": 0.53899837,
+      "delta": -0.001963772500000016,
+      "eps": 0.01,
+      "verdict": "FAIL"
+    },
+    "A_prime": {
+      "zd_alone_auc": 0.520933745,
+      "auc_baseline": 0.5409621425,
+      "auc_concatenated": 0.539271195,
+      "delta": -0.001690947499999984,
+      "eps": 0.01,
+      "verdict": "FAIL"
+    },
+    "C": {
+      "zd_alone_auc": 0.532492675,
+      "auc_baseline": 0.5409621425,
+      "auc_concatenated": 0.5398054375,
+      "delta": -0.0011567049999999801,
+      "eps": 0.01,
+      "verdict": "FAIL"
+    }
+  },
+  "overall_verdict": "FAIL"
+}

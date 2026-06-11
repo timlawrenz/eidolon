@@ -1,0 +1,22 @@
+{
+  "raw": {
+    "n_samples": 69978,
+    "retained_variance": 0.6637229919433594,
+    "dim": 12288
+  },
+  "xy": {
+    "n_samples": 69978,
+    "retained_variance": 0.6839812397956848,
+    "dim": 8192
+  },
+  "rot": {
+    "n_samples": 69978,
+    "retained_variance": 0.7093958854675293,
+    "dim": 12288
+  },
+  "rot_xy": {
+    "n_samples": 69978,
+    "retained_variance": 0.745840847492218,
+    "dim": 8192
+  }
+}

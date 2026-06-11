@@ -212,6 +212,26 @@ i.e. concatenating the partition onto geometry must lift same/different identity
 discrimination above the measured seed-noise floor (ε=0.01). Note: the old
 trace-Fisher J test was deprecated (it is a weighted average blind to complementarity).
 
+> ⚠️ **PERMANENT WARNING — the 2.5D rotation trap (visibility bias).**
+> Never apply a full 3D de-rotation (Rᵀ) to *partially observed* 2.5D surface
+> data (normals, depth gradients, any camera-hemisphere field). The camera only
+> sees the forward-facing hemisphere, so the field's **global mean is
+> camera-locked** (pose-blind). De-rotating pointwise rotates that camera-locked
+> mean by Rᵀ — the mean then **traces the head trajectory exactly**, injecting
+> pose into the centroid (measured: corr(mean nₓ, yaw) −0.008 raw → **−0.935**
+> de-rotated). PCA promotes that swinging centroid into C1 and recreates the
+> double-conditioning conflict with the DiT's `pose.npy` sequence that
+> Phase 1-R eliminated. Pose-normalize 2.5D fields some other way (e.g. drop
+> deterministic channels, canonical *crops*), never by global vector rotation.
+
+**Macro architectural finding (Phase 2b):** `z_a` ALONE (verification AUC 0.562)
+**beats `z_g` ALONE (0.540)** on real editorial photos. Micro-curvature and
+surface topology are stronger standalone identity descriptors than the 2D
+spatial arrangement of facial features. Geometry provides the structural
+scaffolding; **the surface partition carries the biological identity**. This
+empirically justifies E's multi-partition design — and weights z_a as the
+identity-dominant partition for DiT conditioning.
+
 ---
 
 ## 5. The DINOv3 Bridge (premise validation)
