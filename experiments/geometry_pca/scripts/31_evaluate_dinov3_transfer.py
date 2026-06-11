@@ -62,8 +62,15 @@ def extract_hegre_dino(limit=0):
     for pid, rows in identities:
         for ed, name in rows:
             try:
-                # Require DINO token to exist (Phase 3 stratum pass)
-                dino = np.load(os.path.join(ed, "dinov3_cls.npy")).astype(np.float32)
+                # enriched_dir is relative (data/hegre_enriched/...), but the
+                # dinov3 stratum pass writes to the ABSOLUTE NAS path.
+                # Normalize to the correct absolute location.
+                dinov3_path = os.path.join(
+                    "/mnt/nas-ai-models/training-data/eidolon/hegre_enriched",
+                    ed.split("hegre_enriched/", 1)[1],
+                    "dinov3_cls.npy"
+                )
+                dino = np.load(dinov3_path).astype(np.float32)
                 # Still check pose confidence to match the z_a gate set
                 pose = np.load(os.path.join(ed, "pose.npy")).astype(np.float32)
                 if pose[23:91, 2].mean() < CONF_THRESH:

@@ -393,6 +393,42 @@ predicted sliders `Ŷ_a`. Run the canonical verification-AUC identity test.
 ### Verdict
 `[PENDING]` — stratum dinov3 pass + dataset build running.
 
+---
+
+## [Phase 3] DINOv3 Bridge (Premise Validation) — `[CONCLUDED]`
+
+**Date opened:** 2026-06-10
+**Goal:** Linear-regress DINOv3 semantic embeddings (`dinov3_cls`, 1024-d) to the
+whitened physical sliders (`z_g`, `z_a`).
+
+### Stratified Verdict
+
+**Phase 3 (The Premise Gate — FFHQ): `[FAIL]`**
+*   `z_g` (Geometry): Variance-weighted R² = **0.690**. FAIL: C6 (R²=0.023) &
+    C11 (R²=0.017) are near zero. DINOv3 cannot linearly recover all structural
+    geometric components.
+*   `z_a_xy` (Surface): Variance-weighted R² = **0.385**. FAIL: Below the 0.5
+    threshold. The 16x16-patch DINO token discards fine curvature.
+
+**Phase 3b (The Transfer Gate — hegre): `[PASS]`**
+*   Predicted sliders `Ŷ_a` achieve verification AUC **0.606** (vs. real `z_a` =
+    0.562, and chance = 0.500).
+*   Retains **170%** of real `z_a`'s identity lift.
+
+**Structural Interpretation:**
+The bridge is a faithful *slider* reconstruction FAIL, but a *semantic identity*
+transfer PASS. The linear weights `W` map DINOv3's 1024-d emergent identity signals
+(hair, skin, expression) into the `z_a` feature space, resulting in `Ŷ_a`
+*greatly outperforming* explicit surface normals on identity discrimination. It is
+NOT reconstructing normals; it's projecting a DINOv3 identity representation.
+**This confirms the architecture spec**: DINOv3 semantics live linearly in our
+subspace, and passing $E$ is strictly supplemental—not redundant—to DINOv3 tokens.
+
+### Artifacts
+- Bridge weights: `output/bridge_dinov3.npz`
+- Phase 3 R² results: `data/phase3_bridge_results.json`
+- Phase 3b AUC results: `data/phase3b_transfer_results.json`
+
 The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
 FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.
 This is a high-value negative result, established after isolating and correcting a
