@@ -362,6 +362,37 @@ all variants.
 - Scripts: `24` (cache), `25` (fit), `26` (extractor), `27` (AUC gate),
   `28` (systematic review).
 
+---
+
+## [Phase 3] DINOv3 Bridge (Premise Validation) — `[ACTIVE]`
+
+**Date opened:** 2026-06-10
+**Goal:** Linear-regress DINOv3 semantic embeddings (`dinov3_cls`, 1024-d) to the
+whitened physical sliders (`z_g`, `z_a`). High R² validates the architecture's
+premise that foundation-model semantics genuinely encode interpretable physical
+geometry/surface. Also yields a fast-path mapping.
+
+### Pre-registered gates (stated BEFORE results)
+
+**Phase 3 (The Premise Test — FFHQ)**
+Fit via 5-fold CV Ridge Regression.
+* **PASS:** Variance-weighted held-out R² **≥ 0.5**, AND per-component R² **≥ 0.6
+  for C1–C10** (coarse structure).
+* **Falsifiable prediction:** `z_a` (micro-surface) will have a strictly lower R²
+  spectrum than `z_g` (coarse geometry), as the 16x16-patch DINO token discards
+  fine curvature.
+* **Diagnostic band:** If 0.25 ≤ R² < 0.5, run a 2-layer MLP probe to test if the
+  mapping is merely nonlinear.
+
+**Phase 3b (The Transfer Test — hegre)**
+If Phase 3 passes, apply the FFHQ-fit bridge `W` to hegre editorial photos to get
+predicted sliders `Ŷ_a`. Run the canonical verification-AUC identity test.
+* **PASS:** `AUC(Ŷ_a) > 0.5 + 4σ_seed (≈0.51)`.
+* Proof that the bridge preserves *identity*, not just variance, under domain shift.
+
+### Verdict
+`[PENDING]` — stratum dinov3 pass + dataset build running.
+
 The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
 FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.
 This is a high-value negative result, established after isolating and correcting a

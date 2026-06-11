@@ -4,8 +4,10 @@ A living map of ideas, plans, and active workstreams.
 Link directly to the `exp/*` branch where the work lives.
 
 ## Active & Planned
-* **[NEXT] Phase 3: DINOv3 Bridge**
-  * Linear regression of dinov3_cls embeddings to the whitened PCA components.
+* **[ACTIVE] Phase 3: DINOv3 Bridge (Premise Validation)**
+  * Linear regression of dinov3_cls (1024-d) to the whitened PCA components.
+  * **Gate 3 (FFHQ):** Variance-weighted held-out R² ≥ 0.5 (C1-C10 ≥ 0.6).
+  * **Gate 3b (hegre):** Identity transfer verification AUC > 0.51 on Ŷ_a.
 * **[TBD] Phase 4: DiT Fusion Stack**
   * Decoupled cross-attention + block-diagonal ingestion (architecture.md §7.1).
 
