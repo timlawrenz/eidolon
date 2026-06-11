@@ -97,11 +97,19 @@ def get_approved_images():
         cursor.execute("SELECT image_path FROM images WHERE status = 'approved'")
         return [row[0] for row in cursor.fetchall()]
 
-# test one image
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
+
 if __name__ == "__main__":
     images = get_approved_images()
-    if images:
-        success, msg = process_image(images[0])
-        print(f"Test crop: {success}, {msg}")
-    else:
-        print("No approved images found.")
+    print(f"Processing {len(images)} images...")
+    
+    # MTCNN is thread-safe on CPU but can bottleneck on GPU. 
+    # Use max_workers=4 as a safe default for a mix of IO and inference.
+    results = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for res in tqdm(executor.map(process_image, images), total=len(images)):
+            results.append(res)
+            
+    successes = sum(1 for r in results if r[0])
+    print(f"Completed: {successes}/{len(images)} successful.")
