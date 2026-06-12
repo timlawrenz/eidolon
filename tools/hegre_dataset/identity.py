@@ -39,8 +39,13 @@ def discover_identities(root: Path, min_sets: int = 3) -> dict[str, list[str]]:
     """
     by_id: dict[str, list[str]] = defaultdict(list)
     
+    if not root.is_dir():
+        raise FileNotFoundError(f"Source directory not found: {root}")
+        
     for d in sorted(os.listdir(root)):
         if not re.match(r'^\d+_', d):
+            continue
+        if not (root / d).is_dir():
             continue
         slug = d.split("_", 1)[1]
         by_id[idkey(slug)].append(d)

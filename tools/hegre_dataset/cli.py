@@ -11,7 +11,12 @@ def cmd_discover(args):
     from .identity import discover_identities, build_manifest, save_manifest
     
     root = Path(args.source)
-    identities = discover_identities(root, min_sets=args.min_sets)
+    try:
+        identities = discover_identities(root, min_sets=args.min_sets)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
+        
     print(f"Found {len(identities)} identities with ≥{args.min_sets} sets.")
     
     manifest = build_manifest(root, identities, max_identities=args.max_identities)

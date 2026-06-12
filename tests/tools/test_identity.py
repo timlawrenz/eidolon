@@ -33,6 +33,9 @@ def mock_ground_truth(tmp_path):
     (source_dir / "01_darina-l" / "_ignored.jpg").touch()
     (source_dir / "01_darina-l" / "doc.txt").touch()
 
+    # Create a file that matches the directory regex (should be skipped)
+    (source_dir / "09_fake-dir").touch()
+
     return source_dir
 
 def test_discover_identities(mock_ground_truth):
@@ -44,6 +47,10 @@ def test_discover_identities(mock_ground_truth):
     
     assert len(identities["darina-l"]) == 3
     assert len(identities["muriel"]) == 3
+
+def test_discover_identities_missing_dir(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        discover_identities(tmp_path / "doesnotexist")
 
 def test_build_manifest(mock_ground_truth):
     identities = {"darina-l": ["01_darina-l"]}
@@ -87,3 +94,13 @@ def test_cli_discover(mock_ground_truth, tmp_path):
     assert "darina-l" in manifest
     assert "muriel" in manifest
     assert "keity" not in manifest
+
+def test_cli_discover_missing_dir(tmp_path):
+    out_dir = tmp_path / "dataset"
+    args = [
+        "discover",
+        "--source", str(tmp_path / "doesnotexist"),
+        "--dataset", str(out_dir),
+    ]
+    ret = main(args)
+    assert ret == 1
