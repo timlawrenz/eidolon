@@ -159,8 +159,6 @@ function toggleTaint(el,id){
 }
 async function donePersona(){
   const t=Object.keys(tainted).length;
-  const msg=mode==='review'?('Re-taint '+t+' images? (rest stay approved)'):('Approve all unreviewed images? ('+t+' tainted, rest approved)');
-  if(!confirm(msg))return;
   const resp=await fetch('/api/done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({persona_id:personaId,tainted:tainted,mode:mode})});
   const data=await resp.json();
   document.getElementById('status').innerText='Saved. '+data.remaining+' items remaining. Loading next...';
