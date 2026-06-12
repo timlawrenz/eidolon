@@ -15,7 +15,7 @@ except ImportError:
 # Reusing singleton pattern to avoid multiple model loads
 _mtcnn = None
 
-def get_mtcnn(device="cpu"):
+def get_mtcnn(device="cuda:0"):
     global _mtcnn
     if _mtcnn is None:
         if not MTCNN:
@@ -102,7 +102,7 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
             
     return saved
 
-def extract_all(manifest: dict, output_dir: Path, device="cpu", max_workers=4):
+def extract_all(manifest: dict, output_dir: Path, device="cuda:0", max_workers=4):
     mtcnn = get_mtcnn(device)
     tasks = []
     for identity, entries in manifest.items():

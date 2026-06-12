@@ -16,8 +16,8 @@ def cmd_discover(args):
     save_manifest(manifest, output)
     print(f"Discovered {len(identities)} identities and saved manifest.")
     return 0
-
 def cmd_extract_faces(args):
+    import json
     from .face_extraction import extract_all
     dataset = Path(args.dataset)
     manifest_path = dataset / "manifest.json"
@@ -26,7 +26,7 @@ def cmd_extract_faces(args):
         return 1
     with open(manifest_path, "r") as f:
         manifest = json.load(f)
-    extract_all(manifest, dataset)
+    extract_all(manifest, dataset, device=args.device, max_workers=args.workers)
     return 0
 
 def cmd_review_seed(args):
@@ -77,6 +77,8 @@ def main():
 
     p_ext = sub.add_parser("extract-faces")
     p_ext.add_argument("--dataset", required=True)
+    p_ext.add_argument("--device", default="cuda:0", help="Device for MTCNN (default: cuda:0)")
+    p_ext.add_argument("--workers", type=int, default=4, help="Thread pool workers")
     p_ext.set_defaults(func=cmd_extract_faces)
 
     p_rev = sub.add_parser("review")
