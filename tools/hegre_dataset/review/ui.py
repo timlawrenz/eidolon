@@ -55,12 +55,16 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             return jsonify({"persona_id": None, "persona_name": msg, "image_ids": [], "mode": mode})
             
         pid, pname = row["id"], row["name"]
-        all_imgs = db.execute("SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? ORDER BY RANDOM()", (pid,)).fetchall()
+        
+        total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
+        
+        all_imgs = db.execute("SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? ORDER BY RANDOM() LIMIT 20", (pid, status_filter)).fetchall()
         db.close()
         
         return jsonify({
             "persona_id": pid,
             "persona_name": pname,
+            "total_for_persona": total_for_persona,
             "image_ids": [r["id"] for r in all_imgs],
             "unreviewed_ids": [r["id"] for r in all_imgs if r["status"] == status_filter],
             "statuses": {r["id"]: r["status"] for r in all_imgs},
@@ -74,14 +78,18 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         pid = data["persona_id"]
         tainted = data.get("tainted", {})
         mode = data.get("mode", "unreviewed")
+        shown_ids = data.get("shown_ids", [])
         db = get_db(db_path)
         
         for img_id_str, reason in tainted.items():
             db.execute("UPDATE images SET status = ?, reviewed_at = datetime('now') WHERE id = ?", (reason, int(img_id_str)))
             
         if mode != "review":
-            db.execute("UPDATE images SET status = 'approved', reviewed_at = datetime('now') WHERE persona_id = ? AND status = 'unreviewed'", (pid,))
-            
+            approved_ids = [int(i) for i in shown_ids if str(i) not in tainted]
+            if approved_ids:
+                placeholders = ",".join("?" * len(approved_ids))
+                db.execute(f"UPDATE images SET status = 'approved', reviewed_at = datetime('now') WHERE id IN ({placeholders})", approved_ids)
+                
         db.commit()
         status_filter = "approved" if mode == "review" else "unreviewed"
         remaining = db.execute("SELECT COUNT(*) FROM images WHERE status = ?", (status_filter,)).fetchone()[0]
@@ -127,14 +135,16 @@ h2 { color:#4CAF50; }
 </div>
 <div class="grid" id="grid"></div>
 <script>
-let personaId=null,brush='tainted:extraction_nonface',tainted={},mode='unreviewed';
+let personaId=null,brush='tainted:extraction_nonface',tainted={},mode='unreviewed',shownIds=[];
 function switchMode(m){mode=m;document.getElementById('btn_review_mode').style.display=m==='review'?'none':'inline-block';document.getElementById('btn_unreviewed_mode').style.display=m==='review'?'inline-block':'none';loadPersona();}
 function setBrush(b){brush=b;document.querySelectorAll('.brush').forEach(e=>e.classList.remove('active'));if(b==='tainted:extraction_nonface')document.getElementById('btn_nonface').classList.add('active');if(b==='tainted:contamination')document.getElementById('btn_contam').classList.add('active');if(b==='tainted:unusable')document.getElementById('btn_unusable').classList.add('active');}
 async function loadPersona(){
   const resp=await fetch('/api/random_persona?mode='+mode);
   const data=await resp.json();
   if(!data.persona_id){document.getElementById('grid').innerHTML='<p style="font-size:24px;color:#4CAF50">'+data.persona_name+'!</p>';return;}
-  personaId=data.persona_id;document.getElementById('persona_name').innerText=data.persona_name;
+  personaId=data.persona_id;
+  shownIds=data.image_ids;
+  document.getElementById('persona_name').innerText=data.persona_name + ' (showing ' + shownIds.length + ' of ' + data.total_for_persona + ' remaining)';
   const n=data.unreviewed_ids.length;document.getElementById('status').innerText=n+' '+(mode==='review'?'approved':'unreviewed');
   tainted={};
   renderGrid(data.image_ids,data.statuses,data.labels);
@@ -160,9 +170,9 @@ function toggleTaint(el,id){
 }
 async function donePersona(){
   const t=Object.keys(tainted).length;
-  const resp=await fetch('/api/done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({persona_id:personaId,tainted:tainted,mode:mode})});
+  const resp=await fetch('/api/done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({persona_id:personaId,tainted:tainted,mode:mode,shown_ids:shownIds})});
   const data=await resp.json();
-  document.getElementById('status').innerText='Saved. '+data.remaining+' items remaining. Loading next...';
+  document.getElementById('status').innerText='Saved. '+data.remaining+' total items remaining. Loading next...';
   setTimeout(loadPersona,400);
 }
 loadPersona();
