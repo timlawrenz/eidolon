@@ -4,10 +4,21 @@ A living map of ideas, plans, and active workstreams.
 Link directly to the `exp/*` branch where the work lives.
 
 ## Active & Planned
-* **[TBD] Phase 4: DiT Fusion Stack**
+* **[TBD] Phase 5: DiT Fusion Stack**
   * Decoupled cross-attention + block-diagonal ingestion (architecture.md §7.1).
+  * Conditioning stack (settled by Phases 2/2b/3/4): flesh-masked DINOv3 patch
+    tokens (identity) + z_g (interpretable geometry control). Volumetrics dead.
 
 ## Concluded
+* **[CONCLUDED — PASS] Phase 4: Masked Patch Tokens (Semantic Face Isolation)** (`exp/geometry-pca`)
+  * Seg-masked (flesh-only) mean-pooled DINOv3 patches beat the cls baseline:
+    AUC 0.797 vs 0.769; bootstrap Δ +0.027, 95% CI [+0.014, +0.045].
+  * Effect decomposes: patch-pooling +0.014, flesh-scoping +0.015.
+  * Cross-shoot-only AUC (leakage removed by construction) reproduces the
+    ordering within 0.001 → the lift is pure cross-shoot identity signal.
+  * flesh+hair statistically tied (+0.002); flesh-only selected (hair = shoot-
+    styled confound). Alignment audited: row-major from idx 5, 0/1,577 mismatches,
+    visual patch-PCA proof. Script: `37_dino_patch_face_pooling.py`.
 * **[CONCLUDED] Phase 3: DINOv3 Bridge (Premise Validation)** (`exp/geometry-pca`)
   * Phase 3 (R² Premise): `[FAIL]`. DINO cannot faithfully reconstruct the sliders
     (z_a R²=0.385; z_g C6/C11 ≈ 0 — though C6 is plausibly detector noise, J=0.098).

@@ -590,6 +590,83 @@ from monocular networks) is a definitive dead end.
 *   Identity: Raw DINOv3 Face Tokens
 *   Interpretable Control: Geometry (`z_g`) ONLY.
 
+---
+
+## [Phase 4] Masked Patch Tokens (Semantic Face Isolation) — `[ACTIVE]`
+
+**Date opened:** 2026-06-11
+**Goal:** The `dinov3_cls` token acts as a scene-level diplomat, forced to
+summarize lighting, background, and clothing alongside the face. DINOv3's patch
+tokens (`dinov3_patches`, 16x16 grid) are localized experts. By pooling ONLY the
+patches that fall inside the Sapiens face mask (Masked Average Pooling), we force
+the 1024-d identity embedding to care strictly about flesh, computationally isolating
+the semantic identity from the shoot context.
+
+### Pre-registered gates (stated BEFORE results)
+The test is run on the clean face-crop set (1,460 imgs, 101 ids).
+
+1. **The Representation Gate (AUC):**
+   * **PASS:** Masked Patch Mean AUC > **0.766** (the raw `cls` face-crop baseline).
+   * **Control:** Unmasked Patch Mean AUC. (To isolate the effect of *masking* vs
+     the effect of *mean-pooling patches*.)
+2. **The Shoot-Leakage Probe (C5 Gap):**
+   * **PASS:** The Same-Shoot vs Cross-Shoot similarity gap must SHRINK compared
+     to the `cls` baseline. (If AUC rises but the gap stays flat, we found more
+     signal but not less lighting/background leakage.)
+
+### Artifacts (Expected)
+- Script: `37_dino_patch_face_pooling.py`
+- Results: `data/phase4_patch_pooling.json`
+
+### Verdict — `[CONCLUDED — PASS]` (2026-06-11)
+
+Run on the seg-clean face-crop set (1,351 imgs / 100 ids; fg≥30%, conf≥0.5):
+
+| Arm | AUC | Cross-shoot-only AUC |
+|---|---|---|
+| `cls` (baseline) | 0.7691 | 0.7679 |
+| patch mean, unmasked (control) | 0.7828 | 0.7817 |
+| **patch mean, flesh-masked** | **0.7975** | **0.7965** |
+| patch mean, flesh+hair | 0.7993 | 0.7983 |
+
+**Gate 1 (AUC > 0.766): PASS.** Both masked arms clear the bar. Effect decomposes
+cleanly: mean-pooling patches beats CLS (+0.014) and flesh-scoping adds (+0.015).
+**Statistically robust:** identity-level bootstrap (200 resamples) Δ(flesh−cls)
+= +0.027, 95% CI [+0.014, +0.045], P(Δ≤0) < 0.005. Per-seed spread ±0.002.
+
+**Gate 2 (C5 shoot-gap shrinks): directionally PASS, but underpowered AND moot.**
+Gap 0.568 → 0.464 (flesh), but the dataset has only 41 same-id same-shoot pairs
+(99/100 ids span multiple shoots) — too few to power the estimate. The decisive
+replacement instrument: **cross-shoot-only AUC** (same-id pairs REQUIRED to come
+from different shoots — leakage removed by construction) reproduces the full
+ordering within 0.001. The +0.028 lift is pure cross-shoot identity signal, and
+the standard verification AUC was never meaningfully shoot-inflated (same-shoot
+pairs too rare to matter).
+
+**Flesh vs flesh+hair:** +0.002 apart — within seed noise. **Flesh-only selected**
+on principle: hair is the shoot-styled confound; the bump is not distinguishable
+from noise and the leakage risk is structural. (flesh = Goliath classes
+{2 face_neck, 23–26 lips/teeth/tongue}, 16×16 block-pooled mask, >0.5 threshold,
+masked average pool → 1×1024.)
+
+**Engineering verification (audited before accepting the result):**
+- Stratum patch layout verified at source: `[CLS, reg×4, patches…]`, spatial from
+  idx 5, row-major, RoPE-resized to bucket dims, no center crop. Grid-vs-count:
+  0 mismatches across 1,577 leaves.
+- Visual alignment proof: patch-PCA RGB grids render face/hair exactly where the
+  seg mask places them (no transpose/mirror/offset).
+- No noisy-mean trap: flesh patches per image min=100 / median=1,261.
+
+**Product note:** the pooled 1×1024 vector is the *gate instrument*. For DiT
+conditioning, prefer the unpooled masked patch tokens (~100–1,900 face tokens,
+median ~1,261) via cross-attention; the pooled mean is the compact fallback.
+
+**Identity conditioning for the DiT is settled: flesh-masked DINOv3 patch
+representation (AUC 0.797, fully cross-shoot). Stack: DINO patches (identity) +
+z_g (interpretable geometry control).**
+
+---
+
 ### Artifacts
 - Encoders: `output/encoder_zd_{A,A_prime,C}.npz`
 - Gate (trace-J, deprecated): `data/zd_gate_results.json`
