@@ -29,6 +29,17 @@ def cmd_discover(args):
     return 0
 
 
+def cmd_extract_faces(args):
+    from .face_extraction import extract_faces
+    dataset = Path(args.dataset)
+    try:
+        extract_faces(dataset)
+    except Exception as e:
+        print(f"Error extracting faces: {e}")
+        return 1
+    return 0
+
+
 def main(args=None):
     parser = argparse.ArgumentParser(
         prog="hegre-dataset",
@@ -43,7 +54,10 @@ def main(args=None):
     p_discover.add_argument("--max-identities", type=int, help="Maximum number of identities to process")
     p_discover.set_defaults(func=cmd_discover)
 
-    sub.add_parser("extract-faces", help="Run MTCNN face detection")
+    p_extract = sub.add_parser("extract-faces", help="Run MTCNN face detection")
+    p_extract.add_argument("--dataset", required=True, help="Path to dataset directory")
+    p_extract.set_defaults(func=cmd_extract_faces)
+
     sub.add_parser("review", help="Start the review UI")
     sub.add_parser("enrich", help="Run stratum-hq enrichment")
     sub.add_parser("export", help="Export gate-ready dataset")
