@@ -421,28 +421,31 @@ whitened physical sliders (`z_g`, `z_a`).
 
 **Phase 3b (The Transfer Gate — hegre): gate technically passed — but the PASS
 is UNINFORMATIVE (missing control, caught in review).**
-*   Measured: Ŷ_a AUC 0.606, Ŷ_g AUC 0.606 (suspiciously identical; pair-score
-    corr 0.60 — two shadows of the same DINO signal; concatenation adds only
-    +0.010).
-*   **The control that kills the story:** AUC(raw dinov3_cls, 1024-d) = **0.685**;
-    AUC(random Gaussian 50-d projections of DINO) = **0.627 ± 0.006** (5 seeds).
-    The bridge (0.606) is *worse than a random projection* of its own input.
+*   *Note: Re-run on cropped `hegre_faces_stratum` to remove scene-level noise.*
+*   Measured: Ŷ_a AUC 0.674, Ŷ_g AUC 0.704 (FFHQ-fit bridge).
+*   **The control that kills the story:** AUC(raw dinov3_cls face crop, 1024-d) = **0.766**;
+    AUC(random Gaussian 50-d projections of DINO) = **0.712 ± 0.007** (5 seeds).
+    The bridge (0.704) is *worse than a random projection* of its own input.
     Any 50-d DINO shadow clears the 0.51 bar → the pre-registered gate was
     structurally too weak (it lacked the random-projection null).
-*   The earlier "170% identity lift retained" framing was arithmetic on a wrong
-    story: the bridge did not transfer z_a's identity; it *degraded* DINO's
-    intrinsic identity content. Ridge-fitting toward a weak identity carrier
-    (z_a) discards DINO's stronger identity directions.
+*   **Domain-shift vs Projection loss:** A 5-fold CV hegre-fit bridge control
+    yielded Ŷ_g AUC 0.673. The failure is *not* FFHQ→hegre domain shift; Ridge
+    regression mathematically destroys identity when forced to map to physical
+    geometry, even on the target domain.
 
 ### The real findings of Phase 3
 1.  **Faithful slider reconstruction from DINO is dead** (both directions of the
-    "fast path"). E cannot be derived from DINO embeddings.
-2.  **Raw `dinov3_cls` is the strongest identity carrier measured on hegre:
-    AUC 0.685** — far above real z_a (0.562) and z_g (0.540). For the DiT,
-    DINO tokens are the natural primary *identity* conditioning; **E's unique,
-    irreplaceable value is interpretable decoupled control** (DINO cannot
-    faithfully reconstruct E's components — R² gate above — so E remains
-    non-redundant).
+    "fast path"). E cannot be derived from DINO embeddings without fatal
+    identity loss.
+2.  **Raw `dinov3_cls` face crops are the strongest identity carrier measured:
+    AUC 0.766** — far above real z_a (0.562) and z_g (0.540).
+    *Caveat (C5 Shoot-Leakage):* DINO's "identity" includes same-shoot lighting/
+    background recognition (same-shoot sim 0.63 vs cross-shoot 0.19).
+    However, for the DiT, DINO tokens are the natural primary *identity*
+    conditioning.
+3.  **E's unique, irreplaceable value is interpretable decoupled control.**
+    Since DINO cannot faithfully reconstruct E's components, E remains structurally
+    non-redundant.
 3.  **Lesson (gate design):** every transfer/identity gate must include a
     random-projection null of its input representation, exactly as every
     partition gate includes a permutation null. A gate without the right null

@@ -51,13 +51,14 @@ def extract_hegre_dino_face():
     n_skip = 0
 
     for ed_rel, name, pid in rows:
-        ed_abs = os.path.join(
-            "/mnt/nas-ai-models/training-data/eidolon/hegre_enriched",
+        # Map review.db path to face-tree path (all data now lives in hegre_faces_stratum)
+        ed = os.path.join(
+            "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_faces_stratum",
             ed_rel.split("hegre_enriched/", 1)[1]
         )
         try:
-            dino = np.load(os.path.join(ed_abs, "dinov3_cls_face.npy")).astype(np.float32)
-            pose = np.load(os.path.join(ed_abs, "pose.npy")).astype(np.float32)
+            dino = np.load(os.path.join(ed, "dinov3_cls.npy")).astype(np.float32)
+            pose = np.load(os.path.join(ed, "pose.npy")).astype(np.float32)
             if pose[23:91, 2].mean() < CONF_THRESH:
                 n_skip += 1
                 continue

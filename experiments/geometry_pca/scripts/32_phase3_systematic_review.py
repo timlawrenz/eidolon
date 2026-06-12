@@ -30,8 +30,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from geometry_pca.verification import verification_auc
 from geometry_pca.fisher import fisher_ratios, restandardize
 
-TREE_A = "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_enriched"
-TREE_B = "/mnt/nas-ai-models/training-data/eidolon/hegre_enriched"
+TREE_B = "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_faces_stratum"
+# All data (DINO + pose + seg/depth/normal) now lives in hegre_faces_stratum,
+# enriched by stratum-hq on face-crop source images. Single tree — no comingling.
 CONF_THRESH = 0.5
 SEEDS = [0, 1, 2]
 R = {}
@@ -79,7 +80,7 @@ print("      E[null_R²] = -Var(Ŷ)/Var(Y) ≈ -R². Measured: -0.6916 vs -R²=-
 print("      and -0.3986 vs -0.3847 ✓ -> it never tested leakage. Flagged for fix.")
 
 # ───────────────────── B. DATA ─────────────────────
-sec("B1. TWO-TREE ALIGNMENT (pose from tree A, dino from tree B)")
+sec("B1. SINGLE-TREE CONSISTENCY (pose + DINO both from hegre_faces_stratum)")
 db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
 rows = db.execute("""
     SELECT i.enriched_dir, i.set_id, i.persona_id
@@ -90,49 +91,39 @@ rows = db.execute("""
 """).fetchall()
 db.close()
 
-n_checked = n_match = n_misszA = n_misszB = 0
-mismatches = []
+n_checked = n_match = n_missz_dino = n_missz_pose = 0
 for ed, set_id, pid in rows:
     leaf = ed.split("hegre_enriched/", 1)[1]
-    mA = os.path.join(TREE_A, leaf, "metadata.json")
-    mB = os.path.join(TREE_B, leaf, "metadata.json")
-    if not os.path.exists(mA):
-        n_misszA += 1; continue
-    if not os.path.exists(mB):
-        n_misszB += 1; continue
+    p_dino = os.path.join(TREE_B, leaf, "dinov3_cls.npy")
+    p_pose = os.path.join(TREE_B, leaf, "pose.npy")
+    p_meta = os.path.join(TREE_B, leaf, "metadata.json")
+    if not os.path.exists(p_dino):
+        n_missz_dino += 1; continue
+    if not os.path.exists(p_pose):
+        n_missz_pose += 1; continue
+    n_checked += 1
+    # Verify metadata.json image_id matches leaf path
     try:
-        a = json.load(open(mA)); b = json.load(open(mB))
-        ka = a.get("source_image") or a.get("source") or a.get("image") or a.get("src")
-        kb = b.get("source_image") or b.get("source") or b.get("image") or b.get("src")
-        n_checked += 1
-        if ka == kb and ka is not None:
+        m = json.load(open(p_meta))
+        if m.get("image_id") == leaf:
             n_match += 1
-        else:
-            # fall back: compare width/height fields if present
-            same_dims = (a.get("width"), a.get("height")) == (b.get("width"), b.get("height"))
-            if ka is None and kb is None and same_dims:
-                n_match += 1
-            elif len(mismatches) < 3:
-                mismatches.append((leaf, ka, kb))
     except Exception:
         pass
 
-print(f"  leaves checked: {n_checked}  source-match: {n_match}  "
-      f"missing-in-A: {n_misszA}  missing-in-B: {n_misszB}")
-for m in mismatches:
-    print(f"  MISMATCH: {m}")
+print(f"  leaves checked: {n_checked}  image_id-match: {n_match}  "
+      f"missing-dino: {n_missz_dino}  missing-pose: {n_missz_pose}")
 R["B1_checked"] = n_checked; R["B1_matched"] = n_match
 if n_checked > 0 and n_match < n_checked:
-    print("  ⚠️ ALIGNMENT NOT FULLY CONFIRMED — inspect metadata keys")
+    print("  ⚠️ SOME LEAVES HAVE metadata.json image_id != directory path")
 else:
-    print("  alignment OK (or metadata lacks source key — see counts)")
+    print("  single-tree consistency OK")
 
 sec("B2. DINO TOKEN SANITY + B3 SET DISCREPANCY")
 X_dino, y, set_ids = [], [], []
 for ed, set_id, pid in rows:
     leaf = ed.split("hegre_enriched/", 1)[1]
     p_dino = os.path.join(TREE_B, leaf, "dinov3_cls.npy")
-    p_pose = os.path.join(TREE_A, leaf, "pose.npy")
+    p_pose = os.path.join(TREE_B, leaf, "pose.npy")
     try:
         dv = np.load(p_dino).astype(np.float32)
         pose = np.load(p_pose).astype(np.float32)
@@ -173,8 +164,14 @@ for ps in range(5):
     a = float(np.mean([verification_auc(Z, y, seed=s)[0] for s in SEEDS]))
     proj_aucs.append(a)
     print(f"  random projection #{ps}: AUC = {a:.4f}")
+# compute actual bridge transfer AUCs for live comparison
+br = dict(np.load("output/bridge_dinov3.npz"))
+Yg_hat_c2 = X_dino @ br["W_g_coef"].T + br["W_g_intercept"]
+Ya_hat_c2 = X_dino @ br["W_a_coef"].T + br["W_a_intercept"]
+auc_yg = float(np.mean([verification_auc(Yg_hat_c2, y, seed=s)[0] for s in SEEDS]))
+auc_ya = float(np.mean([verification_auc(Ya_hat_c2, y, seed=s)[0] for s in SEEDS]))
 print(f"  random-proj mean = {np.mean(proj_aucs):.4f} ± {np.std(proj_aucs):.4f}")
-print(f"  vs Ŷ_a (bridge)  = 0.6059   vs Ŷ_g (bridge) = 0.6062")
+print(f"  vs Ŷ_a (bridge)  = {auc_ya:.4f}   vs Ŷ_g (bridge) = {auc_yg:.4f}")
 R["C2_random_proj_aucs"] = proj_aucs
 
 sec("C3. Ŷ_g / Ŷ_a REDUNDANCY")
