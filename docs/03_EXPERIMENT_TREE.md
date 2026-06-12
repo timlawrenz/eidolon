@@ -3,14 +3,25 @@
 A living map of ideas, plans, and active workstreams. 
 Link directly to the `exp/*` branch where the work lives.
 
+## Settled Conditioning Stack
+
+**Identity:** flesh-masked DINOv3 patch tokens (Phase 4, AUC 0.797, cross-shoot verified)
+**Control:** `z_g` — 50-d pose-invariant geometry encoder (Phase 1-R)
+**Dead:** z_d (depth), z_a (normals), DINO→slider bridge (Phases 2–3)
+**Next:** Phase 5 — DiT fusion stack, 2-stream decoupled cross-attention
+
+---
+
 ## Active & Planned
-* **[TBD] Phase 5: DiT Fusion Stack**
-  * Decoupled cross-attention + block-diagonal ingestion (architecture.md §7.1).
+* **[TBD] Phase 5: DiT Fusion Stack** (`exp/geometry-pca`)
+  * 2-stream decoupled cross-attention + block-diagonal ingestion (architecture.md §7).
   * Conditioning stack (settled by Phases 2/2b/3/4): flesh-masked DINOv3 patch
-    tokens (identity) + z_g (interpretable geometry control). Volumetrics dead.
+    tokens (identity) + z_g expanded tokens (interpretable geometry control).
+  * Volumetrics dead. DINO bridge dead. Architecture validated down to 2 streams.
 
 ## Concluded
 * **[CONCLUDED — PASS] Phase 4: Masked Patch Tokens (Semantic Face Isolation)** (`exp/geometry-pca`)
+  * **Opened:** 2026-06-11. **Concluded:** 2026-06-11.
   * Seg-masked (flesh-only) mean-pooled DINOv3 patches beat the cls baseline:
     AUC 0.797 vs 0.769; bootstrap Δ +0.027, 95% CI [+0.014, +0.045].
   * Effect decomposes: patch-pooling +0.014, flesh-scoping +0.015.
@@ -19,18 +30,19 @@ Link directly to the `exp/*` branch where the work lives.
   * flesh+hair statistically tied (+0.002); flesh-only selected (hair = shoot-
     styled confound). Alignment audited: row-major from idx 5, 0/1,577 mismatches,
     visual patch-PCA proof. Script: `37_dino_patch_face_pooling.py`.
+  * Identity conditioning settled. See ledger Phase 4 and architecture.md §6.
 * **[CONCLUDED] Phase 3: DINOv3 Bridge (Premise Validation)** (`exp/geometry-pca`)
   * Phase 3 (R² Premise): `[FAIL]`. DINO cannot faithfully reconstruct the sliders
     (z_a R²=0.385; z_g C6/C11 ≈ 0 — though C6 is plausibly detector noise, J=0.098).
   * Phase 3b (Identity Transfer): technically cleared 0.51 but **UNINFORMATIVE** —
-    review control showed raw dinov3_cls = 0.685 and random 50-d DINO projections
-    = 0.627 ± 0.006 ≫ bridge Ŷ_a (0.606). Any DINO shadow passes; the bridge
+    review control showed raw dinov3_cls (face crop) = 0.766 and random 50-d DINO projections
+    = 0.712 ± 0.007 ≫ bridge Ŷ_g (0.704). Any DINO shadow passes; the bridge
     *degrades* its input. Gate lacked a random-projection null (lesson recorded).
   * **Real finding:** raw dinov3_cls (face crops) is the strongest identity carrier
     measured on hegre (AUC 0.766 vs face-crop z_g 0.67–0.69, z_d 0.56) → DINO =
     identity conditioning; E = interpretable decoupled control. Both fast paths are
     dead; E non-redundant. (Caveat: DINO AUC includes same-shoot context — see C5.)
-* **[CONCLUDED — FAIL] Phase 2b: Albedo/Surface Encoder z_a (normals)** (`exp/geometry-pca`)
+* **[CONCLUDED — FAIL] Phase 2b: Surface Normals Encoder z_a** (`exp/geometry-pca`)
   * **[2026-06-11] Face-Crop Re-run OVERTURNS previous PASS.** Re-tested on the
     `hegre_faces_stratum` dataset using a seg-clean subset (fg≥30%) to prevent
     the seg-collapse trap.

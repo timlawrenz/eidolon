@@ -1,25 +1,35 @@
 # Eidolon — Architecture
 
+> **⚠️ This document has been updated to reflect the post-Phase-4 empirical record
+> (2026-06-11).** The v1 design envisioned a 3-partition E vector with decoupled
+> geometry/depth/normals. Phases 2–4 falsified two of three partitions. The
+> architecture described below is the *empirically validated* design — what
+> survived the gate, not what was originally planned. See
+> `02_EXPERIMENTS_AND_RESULTS.md` for the full experimental record.
+
 ## 0. North Star
 
-**Eidolon describes a person — face, albedo, and body — in a single vector.**
+**Eidolon describes a face — its shape and identity — in a conditioning stack.**
 
-The deliverable is one concatenated embedding `E` that can be stored on disk,
-passed across an API as a flat array, and used to condition a generative model.
-Internally, however, `E` is rigorously partitioned and the partitions are
-*mathematically firewalled* from one another so that the disentanglement we build
-into the encoder survives all the way into the model's attention mechanism.
+The deliverable is an interpretable geometry vector `z_g` plus an identity
+conditioning stream from DINOv3. Internally, the geometry partition is
+*mathematically firewalled* so the disentanglement built into the encoder
+survives all the way into the DiT's attention mechanism.
 
 ```
-E = [ z_g | z_d | z_a ]   ∈ ℝ^(50 + 50 + 50)
-      │     │     │
-      │     │     └── albedo / surface  (z_a from normal maps, active)
-      │     └──────── depth / volume    (z_d from depth maps, dead end)
-      └────────────── geometry / shape  (z_g from facial keypoints)
+E_structured = [ z_g ]   ∈ ℝ^50  (interpretable geometry control)
+                  │
+                  └────────── geometry / shape  (z_g from facial keypoints, pose-invariant)
+
+Identity stream: flesh-masked DINOv3 patch tokens  (external to E_structured, AUC 0.797)
 ```
 
-The component counts (≈50 each) are targets, finalized per-modality by the
-variance-retention validation gate (see §3.4 and §6).
+**Former partitions — both conclusively dead (see ledger Phases 2 & 2b):**
+- `z_d` (depth): ΔAUC −0.023 to −0.034 — monocular relative depth dilutes identity signal.
+- `z_a` (normals/surface): ΔAUC −0.039 — initial PASS overturned; normals hallucinate generic geometry.
+- **Theory:** monocular volumetric models produce plausible-but-generic human geometry; they do not encode identity-specific micro-curvature.
+
+The conditioning stack is now **2-stream**: DINO patches (identity) + z_g (control).
 
 ---
 
@@ -184,18 +194,27 @@ The frozen `z_g` encoder that actually shipped:
 
 ---
 
-### 4. The Volumetric Encoders (`z_d`, `z_a`)
+## 4. The Volumetric Encoders (`z_d`, `z_a`) — **BOTH DEAD**
 
-Apply the **identical** fit-PCA-store-whitening recipe to the Sapiens maps, but
-note the difference in outcomes (Phase 2 vs 2b):
+Both volumetric partitions were built and conclusively killed by the verification-AUC
+gate (see ledger Phases 2 & 2b). The identical fit-PCA-store-whitening recipe was
+applied to Sapiens maps, but neither depth nor surface normals carry complementary
+identity signal beyond 2D facial geometry:
 
-- `z_a` (albedo / surface): from `normal.npy`, masked by `seg.npy`. **(ACTIVE)**
-  Normals describe surface *angle*, avoiding the absolute-scale ambiguity of depth.
-  The canonical variant is `xy` (nz is dropped as redundant). PCA extracts 50
-  components natively.
-- `z_d` (depth / volume): from `depth.npy`. **(DEPRECATED)**
-  Concluded as a dead end for identity (failed the AUC gate). Relative depth is
-  inextricably entangled with camera focal length/distance.
+- `z_d` (depth): from `depth.npy`. **(DEAD — ΔAUC −0.023 to −0.034).**
+  Confirmed at 24× facial resolution with domain shift eliminated. Monocular relative
+  depth is fundamentally entangled with camera distance; it dilutes identity signal.
+- `z_a` (surface normals): from `normal.npy`, masked by `seg.npy`. **(DEAD — ΔAUC −0.039).**
+  Initial PASS (2026-06-10) was overturned on face-crop re-run; the PASS was an artifact
+  of the low editorial-keypoint z_g baseline (0.540 → 0.688). At proper resolution,
+  normals *subtract* identity signal. The canonical variant was `xy` (nz dropped as
+  redundant). PCA extracts 50 components natively.
+
+**Scientific conclusion:** Monocular volumetric models (Sapiens) hallucinate
+plausible, topologically accurate, but *generic* human geometry. They do not encode
+the identity-specific biological micro-curvature required for face recognition.
+The "fast path" — deriving decoupled structural sliders from monocular networks —
+is a definitive dead end.
 
 **Implementation wrinkle:** normals are dense `H×W` maps, so the data matrix
 will not fit in RAM. Decoded normal caches are written under the NAS `data/`
@@ -224,57 +243,83 @@ trace-Fisher J test was deprecated (it is a weighted average blind to complement
 > Phase 1-R eliminated. Pose-normalize 2.5D fields some other way (e.g. drop
 > deterministic channels, canonical *crops*), never by global vector rotation.
 
-**Macro architectural finding (Phase 2b):** `z_a` ALONE (verification AUC 0.562)
-**beats `z_g` ALONE (0.540)** on real editorial photos. Micro-curvature and
-surface topology are stronger standalone identity descriptors than the 2D
-spatial arrangement of facial features. Geometry provides the structural
-scaffolding; **the surface partition carries the biological identity**. This
-empirically justifies E's multi-partition design — and weights z_a as the
-identity-dominant partition for DiT conditioning.
+> **[OVERTURNED 2026-06-11] Macro architectural finding (Phase 2b, original):**
+> The claim that `z_a` beats `z_g` (0.562 vs 0.540) and that "the surface partition
+> carries the biological identity" was invalidated when the z_g baseline was corrected
+> from the editorial-keypoint-resolution artifact (0.540) to the proper face-crop
+> measurement (0.688). Normals alone (0.587) do not beat corrected z_g (0.688).
+> The "identity-dominant partition" framing is rescinded. See ledger Phase 2b
+> face-crop overturn.
 
 ---
 
-## 5. The DINOv3 Bridge (premise validation)
+## 5. The DINOv3 Bridge (premise validation) — **DEAD**
 
 Linear-regress `dinov3_cls` (1024-d) → the whitened geometric components.
+This was attempted as both a premise validation and a "fast path" to map DINO
+embeddings to interpretable physical sliders for DiT conditioning.
 
-> **The R² of this regression is the single most important number in the project.**
-> It measures how much of our interpretable physical geometry actually lives
-> *linearly* in the DINO latent space. High R² → the semantic embeddings genuinely
-> encode our sliders. Low R² → geometry and semantics are more decoupled than hoped.
+**Result (Phase 3): both directions are dead.**
+- **R² premise:** z_g R² = 0.690 (FAIL on C1–C10 ≥ 0.6 criterion), z_a R² = 0.385 (FAIL).
+  DINO cannot faithfully reconstruct fine surface curvature.
+- **Identity transfer:** the bridge Ŷ_g AUC (0.704) is *no better than random 50-d
+  projections of its own input* (0.712 ± 0.007). Linear regression destroys identity
+  when forced to map to physical geometry.
 
-This also yields a fast path to map abstract AI embeddings → interpretable
-physical sliders for DiT conditioning context.
+**What survived:** raw `dinov3_cls` on face crops is the strongest identity carrier
+measured (AUC 0.766), and Phase 4 improved this further with masked patch pooling
+(AUC 0.797). DINO carries identity — it just cannot reconstruct our sliders.
+
+**Lesson:** every transfer gate must include a random-projection null of its input
+representation. A gate without the right null can "pass" on structure it never isolates.
+
+> **[RESCINDED]** The R² was originally designated as "the single most important number
+> in the project" — the project go/no-go signal. The bridge failed; the project did not
+> stop, because (a) raw DINO proved itself a stronger identity carrier than any of our
+> structured encoders, and (b) E's decoupled control remains non-redundant (DINO cannot
+> reconstruct it). The go/no-go framing was too narrow.
 
 ---
 
 ## 6. Scoring (inference)
 
-To score any image: project its preprocessed, GPA-aligned, flattened vector onto
-the frozen PCA components, then whiten. Output is a vector of absolute scalar
-Z-scores — the exact slider positions for every attribute, computed in
-milliseconds, zero training compute.
+**Geometry control:** To score any image for z_g: project its preprocessed,
+GPA-aligned, flattened vector onto the frozen PCA components, then whiten.
+Output is a vector of absolute scalar Z-scores — the exact slider positions for
+every attribute, computed in milliseconds, zero training compute.
+
+**Identity:** For identity conditioning, extract flesh-masked DINOv3 patch tokens
+from the face crop (see Phase 4, `37_dino_patch_face_pooling.py`). The pooled
+1×1024 vector is the compact fallback; for DiT conditioning, prefer the unpooled
+masked patch tokens (~100–1,900 face tokens) via cross-attention.
 
 ---
 
 ## 7. DiT Fusion Architecture (DEFINITIVE)
 
-The encoders above produce a single concatenated vector `E`. The danger is
-naively *re-coupling* the modalities right before attention. The solution is a
+The geometry encoder produces a 50-d vector `z_g`. Identity comes from DINO
+patch tokens via a parallel cross-attention stream. The danger is naively
+*re-coupling* the modalities right before attention. The solution is a
 **Strategy-C-structure / Strategy-B-mechanics hybrid**: one vector on the
 outside, a mathematical firewall on the inside.
 
 ### 7.1 Block-diagonal ingestion
 
-The conditioning MLP that ingests `E` **must be block-diagonal**. A *dense*
-projection (`nn.Linear(150, hidden)`) would re-entangle the partitions on the
-very first matmul, destroying the orthogonality the encoders worked to produce.
+The conditioning MLP that ingests `z_g` **must be block-diagonal** relative to
+any future structured partitions. A *dense* projection would re-entangle
+partitions on the very first matmul, destroying the orthogonality the encoders
+worked to produce.
 
-#### Implementation rule — three independent modules, NEVER a masked Linear
+**Current state:** `n_parts=1` (z_g only). Identity comes from DINO patches via
+a parallel cross-attention stream. The block-diagonal architecture is designed to
+accommodate future structured partitions without re-entanglement — if a new
+partition survives the verification-AUC gate, it slots into a new expert module
+without modifying the existing ones.
 
-> **Do NOT** implement the firewall as a single `nn.Linear(150, hidden_dim)`
-> with its off-diagonal weights masked to zero. This is the easiest way to
-> *silently* compromise the firewall during training.
+#### Implementation rule — independent modules, NEVER a masked Linear
+
+> **Do NOT** implement the firewall as a single masked `nn.Linear`. This is the
+> easiest way to *silently* compromise the firewall during training.
 
 **Why masking leaks (and re-entangles over thousands of steps):**
 
@@ -294,7 +339,7 @@ must babysit every step, and one missed re-application permanently re-entangles
 the modalities. The failure is silent, gradual, and only visible thousands of
 steps later as degraded disentanglement.
 
-**The structurally sound approach: three strictly independent modules.** Make the
+**The structurally sound approach: strictly independent modules.** Make the
 block-diagonal structure a property of the computation graph itself — there is no
 off-diagonal weight to leak through, because those parameters *do not exist*.
 
@@ -303,9 +348,10 @@ class BlockDiagonalIngestion(nn.Module):
     """Strict modality firewall: independent per-partition MLPs, no shared weights.
     Enforced by module topology, not by masking — no off-diagonal parameter exists,
     so nothing can drift through optimizer state or weight decay."""
-    def __init__(self, part_dim: int = 50, hidden_dim: int = 256, n_parts: int = 3):
+    def __init__(self, part_dim: int = 50, hidden_dim: int = 256, n_parts: int = 1):
         super().__init__()
-        # ONE module per partition (mlp_g / mlp_d / mlp_a). No nn.Linear(150, ...).
+        # ONE module per partition. Currently n_parts=1 (z_g only).
+        # New surviving partitions add experts without modifying existing ones.
         self.experts = nn.ModuleList(
             nn.Sequential(
                 nn.Linear(part_dim, hidden_dim),
@@ -316,36 +362,37 @@ class BlockDiagonalIngestion(nn.Module):
         )
         self.part_dim = part_dim
 
-    def forward(self, E: torch.Tensor) -> list[torch.Tensor]:
-        parts = E.split(self.part_dim, dim=-1)          # (B,150) → 3×(B,50)
+    def forward(self, z_g: torch.Tensor) -> list[torch.Tensor]:
+        parts = z_g.split(self.part_dim, dim=-1)     # (B,50) → 1×(B,50)
         return [expert(p) for expert, p in zip(self.experts, parts)]
 ```
 
-Each `mlp_g / mlp_d / mlp_a` sees only its own 50 whitened scalars; the three
-isolated streams then feed the expanded-token step (§7.3) and the decoupled
-cross-attention heads (§7.2). The firewall holds by construction — no per-step
-mask babysitting, no optimizer-state leakage.
+The geometry expert `mlp_g` sees only its own 50 whitened scalars; the isolated
+stream then feeds the expanded-token step (§7.3) and the decoupled cross-attention
+head (§7.2). Identity comes from DINO patch tokens via a parallel attention stream.
+The firewall holds by construction — no per-step mask babysitting, no
+optimizer-state leakage.
 
 ### 7.2 Decoupled / parallel cross-attention (IP-Adapter style)
 
-Each modality gets its **own** K/V projection matrices and its **own**
-cross-attention sub-layer. Contributions are **summed**, never forced to share a
-softmax budget:
+**Two-stream design:** geometry gets its own K/V projections and cross-attention
+sub-layer; DINO identity patches get their own. Contributions are **summed**,
+never forced to share a softmax budget:
 
 ```
-h' = h + λ_g · Attn_g(h, z_g) + λ_d · Attn_d(h, z_d) + λ_a · Attn_a(h, z_a)
+h' = h + λ_g · Attn_g(h, z_g_tokens) + λ_dino · Attn_dino(h, dino_patches)
 ```
 
 - **Why:** softmax attention is a competition — weights over a merged sequence
-  must sum to 1, so a high-variance geometry token can suppress a subtle albedo
+  must sum to 1, so a high-variance geometry token can suppress a subtle identity
   token. Independent K/V + summation lets a patch attend *fully* to geometry AND
-  *fully* to albedo simultaneously.
-- The `λ` scalars double as **per-modality inference-time strength sliders**
-  (turn geometry up, lighting down).
+  *fully* to identity simultaneously.
+- The `λ` scalars double as **inference-time strength sliders**
+  (turn geometry control up/down, identity up/down).
 
 ### 7.3 Positional encoding — EXPANDED TOKENS (not a fat token)
 
-Do **not** map a 50-d partition into a single "fat" K/V token — that forces the
+Do **not** map the 50-d partition into a single "fat" K/V token — that forces the
 DiT into an all-or-nothing decision per patch ("attend to geometry, or don't").
 
 Instead, expand each scalar component `s_i` into its **own token** via a learned
@@ -357,8 +404,8 @@ Seq_g = [ s_1·v_1, s_2·v_2, … , s_50·v_50 ]
 
 This turns the scalar array into an **unordered set of 50 tokens**, so
 cross-attention can compute 50 separate attention weights per pixel patch
-(query eye-distance heavily, ignore jaw-width — for a given patch). ~150 extra
-tokens total is trivial for modern DiT context windows.
+(query eye-distance heavily, ignore jaw-width — for a given patch). ~50 extra
+tokens is trivial for modern DiT context windows.
 
 ### 7.4 Whitening — MANDATORY
 
@@ -369,43 +416,44 @@ network:
 s'_i = (s_i − μ_i) / σ_i
 ```
 
-PCA variance decays exponentially (`C_1` raw variance ≈ 1000, `C_50` ≈ 0.01).
-Unwhitened: `C_1` gradients dominate the optimizer and `C_50` (micro-features)
-vanish — the network ignores them. Whitened: every slider sits on equal footing,
-and the network learns its **own** internal scaling weights based purely on loss,
-free of the numerical bias of the original 2D pixel coordinates.
+PCA variance decays exponentially — unwhitened, top components' gradients
+dominate the optimizer and micro-features vanish. Whitened: every slider sits on
+equal footing, and the network learns its **own** internal scaling weights based
+purely on loss, free of the numerical bias of the original 2D pixel coordinates.
 
 ### 7.5 Final flow
 
 ```
-Disk / API:   single dense vector  E ∈ ℝ^150
+Structured control:  single dense vector  z_g ∈ ℝ^50
      │
-Ingestion:    slice → 3 whitened partitions  [50] [50] [50]
+Ingestion:           block-diagonal MLP (1 expert, n_parts=1)
      │
-Expansion:    each scalar × its learned embedding  →  3 sequences of 50 tokens
+Expansion:           each scalar × its learned embedding  →  50 geometry tokens
      │
-Attention:    decoupled cross-attention — geometry / depth / albedo queried
-              independently and SUMMED (block-diagonal projections, λ sliders)
+Attention:           decoupled cross-attention — geometry queried independently,
+                     DINO identity patches queried in parallel, SUMMED (λ sliders)
 ```
 
 ---
 
 ## 8. Build Order (dependency chain)
 
-The encoder (§3–§6) is **deterministic linear algebra** — buildable and fully
-validatable *without training anything*. If the encoder is wrong, no clever
-cross-attention saves us, so we de-risk it first.
+The encoder (§3) is **deterministic linear algebra** — built and fully validated
+without training anything. Phases 1–4 are complete; Phase 5 is the next build
+target.
 
-| Phase | Scope | Validation gate |
-|-------|-------|-----------------|
-| **1** | Geometry encoder `z_g` (§3) | scree curve, recon error, ±3σ traversal viz |
-| **2** | Volumetric encoders `z_d`, `z_a` (§4) | same recipe; randomized SVD for dense maps |
-| **3** | DINOv3 bridge (§5) | regression **R²** = project go/no-go signal |
-| **4** | DiT conditioning stack (§7) | training convergence |
+| Phase | Scope | Validation gate | Status |
+|-------|-------|-----------------|--------|
+| **1/1-R** | Geometry encoder `z_g` (§3) | scree, recon error, ±3σ traversal, pose-invariance probe | ✅ CONCLUDED — PASS |
+| **2** | Depth encoder `z_d` (§4) | verification AUC gate | ❌ CONCLUDED — FAIL |
+| **2b** | Surface normals encoder `z_a` (§4) | verification AUC gate | ❌ CONCLUDED — FAIL |
+| **3** | DINOv3 bridge (§5) | R² premise + identity transfer | ❌ CONCLUDED — FAIL |
+| **4** | Masked DINO patch tokens | AUC gate + cross-shoot verification | ✅ CONCLUDED — PASS |
+| **5** | DiT conditioning stack (§7) | training convergence | 🔜 TBD |
 
-**Phase 1 is the first build target.** It produces a working, inspectable `z_g`
-artifact and proves the geometric-slider concept end-to-end before any
-volumetric or DiT work is committed.
+**Phase 5 is the next build target.** Architecture is settled: 2-stream decoupled
+cross-attention (DINO patches for identity + z_g expanded tokens for interpretable
+geometry control), block-diagonal ingestion, whitened inputs.
 
 ---
 

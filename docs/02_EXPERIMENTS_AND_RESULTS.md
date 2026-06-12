@@ -2,6 +2,23 @@
 
 This ledger documents the empirical findings and definitive conclusions of all experiments in the Eidolon repository. Negative results are recorded here permanently to prevent repeated failures.
 
+## Current State (as of 2026-06-11)
+
+**E's structured partition:** `z_g` (50-d pose-invariant geometry) — sole survivor.
+**Identity conditioning:** flesh-masked DINOv3 patch tokens (Phase 4, AUC 0.797, cross-shoot verified).
+**DiT stack:** 2-stream — DINO patches (identity) + z_g (interpretable geometry control).
+
+| Partition | Status | Key number | Detail |
+|-----------|--------|------------|--------|
+| z_g (geometry) | ✅ Survived | AUC 0.67–0.69 | Phase 1-R, shipped frozen encoder |
+| z_d (depth) | ❌ Dead | ΔAUC −0.023 to −0.034 | Phase 2, confirmed at 24× resolution |
+| z_a (normals) | ❌ Dead | ΔAUC −0.039 | Phase 2b, initial PASS overturned |
+| DINO bridge | ❌ Dead | R² 0.385, transfer ≤ random | Phase 3, both directions dead |
+| DINO masked patches | ✅ Survived | AUC 0.797 | Phase 4, settled identity carrier |
+
+**Next target:** Phase 5 — DiT fusion stack.
+**Key methodological lessons:** verification AUC > trace-J; every transfer gate needs a random-projection null; measurement-resolution baseline trap (confidence ≠ precision); seg-collapse detection (empty vectors poison gates).
+
 ---
 
 ## [Phase 1] Geometry PCA Encoder (`exp/geometry-pca`)
@@ -69,7 +86,7 @@ The Phase 1 traversals proved C₁ = yaw and C₂ = pitch — clean, but **fatal
   escalate to a full 3DMM (morphometrics repo) only if the spike falls short.
 
 ### Status
-`[ACTIVE]` — EPnP spike in progress on `exp/geometry-pca`.
+`[CONCLUDED]` — EPnP spike graduated to production encoder; 3D-frontalized z_g shipped.
 
 ### Spike Result (2026-06-09) — THESIS PROVEN
 Pose-normalization (orthographic-PnP rotation estimate from the 68 keypoints
@@ -160,7 +177,7 @@ male+blur, `natalia-a` = ambiguous). Fisher S_B/S_W sweep over z_scale:
    not a bug: it is the empirical proof that 2D facial geometry alone is a noisy
    standalone identity carrier under real-world pose/expression. It directly
    justifies the multi-partition E = [z_g | z_d | z_a] structure — if geometry
-   were a perfect identity carrier, the depth/albedo/DINOv3 partitions would be
+   were a perfect identity carrier, the depth/normals/DINOv3 partitions would be
    bloat. Editorial-data caveat: hegre shoots vary in expression/lighting/age, so
    S_W is inflated by non-pose nuisance (makes the test strictly harder).
 
@@ -201,7 +218,7 @@ identity carrier (motivating the rest of E).
 
 ---
 
-## [Phase 2] Volumetric Encoder z_d (depth) — `[ACTIVE]`
+## [Phase 2] Volumetric Encoder z_d (depth) — `[CONCLUDED — FAIL]`
 
 **Date opened:** 2026-06-10
 **Goal:** Build the depth partition `z_d` of `E = [z_g | z_d | z_a]` from
@@ -250,15 +267,17 @@ snapshot, not a frozen N.
    write a fresh (non-corrupt) machine-readable results artifact.
 
 ### Normal-map / z_a note
-**The z_a pivot is now [ACTIVE] (2026-06-10).** Normals structurally avoid the
-affine-scale ambiguity that killed z_d — see the new **[Phase 2b]** entry below.
+**The z_a pivot was attempted (2026-06-10) but later overturned (2026-06-11).**
+Normals structurally avoided the affine-scale ambiguity that killed z_d, but the
+initial PASS was an artifact of the low-resolution z_g baseline. See
+**[Phase 2b]** entry below for the full story.
 
 ### Verdict
-**[z_d CONCLUDED — FAIL (above). The z_a pivot is [ACTIVE] below.]**
+**[z_d CONCLUDED — FAIL (above). z_a CONCLUDED — FAIL (below, initial PASS overturned).]**
 
 ---
 
-## [Phase 2b] Albedo/Surface Partition z_a (normals) — `[ACTIVE]` (THE PIVOT)
+## [Phase 2b] Surface Normals Partition z_a — `[CONCLUDED — FAIL]`
 
 **Date opened:** 2026-06-10
 **Goal:** Build the surface partition `z_a` from Sapiens normal maps and prove
@@ -320,11 +339,17 @@ The gate runs on the reviewed **hegre** corpus in `data/review.db` (READ-ONLY
   IS local curvature disagreement (signal).
 
 ### Verdict
-**[CONCLUDED — z_a PASSES] (2026-06-10).**
-The pivot thesis is proven: surface normals carry complementary identity signal
-beyond geometry, where depth failed. The structural advantage (unit vectors →
-no absolute-scale ambiguity to corrupt the signal) yielded a robust PASS across
-all variants.
+**[CONCLUDED — FAIL (initial PASS overturned 2026-06-11)].**
+> ⚠️ The verdict below was overturned by the face-crop re-run. See
+> **[2026-06-11 UPDATE] Phase 2b (Normals) Face-Crop OVERTURN** at the end of
+> the Phase 2 section.
+
+The initial PASS (2026-06-10) appeared to show surface normals carrying
+complementary identity signal beyond geometry, where depth failed. This was
+later found to be an artifact of the artificially low editorial-keypoint z_g
+baseline (0.540). When re-tested at proper face-crop resolution with the
+corrected z_g baseline (0.688), normals *subtract* identity signal
+(ΔAUC −0.039). **See overturn at line 571.**
 
 #### Gate run (102 identities, 1665 images)
 | Variant | z_a alone AUC | [z_g\|z_a] Δ | vs ε=0.01 | Nuisance |
@@ -364,15 +389,14 @@ all variants.
 
 ---
 
-## [Phase 3] DINOv3 Bridge (Premise Validation) — `[ACTIVE]`
+
+## [Phase 3] DINOv3 Bridge (Premise Validation) — `[CONCLUDED]`
 
 **Date opened:** 2026-06-10
 **Goal:** Linear-regress DINOv3 semantic embeddings (`dinov3_cls`, 1024-d) to the
-whitened physical sliders (`z_g`, `z_a`). High R² validates the architecture's
-premise that foundation-model semantics genuinely encode interpretable physical
-geometry/surface. Also yields a fast-path mapping.
+whitened physical sliders (`z_g`, `z_a`).
 
-### Pre-registered gates (stated BEFORE results)
+### Pre-registered gates (stated BEFORE results — 2026-06-10)
 
 **Phase 3 (The Premise Test — FFHQ)**
 Fit via 5-fold CV Ridge Regression.
@@ -389,17 +413,6 @@ If Phase 3 passes, apply the FFHQ-fit bridge `W` to hegre editorial photos to ge
 predicted sliders `Ŷ_a`. Run the canonical verification-AUC identity test.
 * **PASS:** `AUC(Ŷ_a) > 0.5 + 4σ_seed (≈0.51)`.
 * Proof that the bridge preserves *identity*, not just variance, under domain shift.
-
-### Verdict
-`[PENDING]` — stratum dinov3 pass + dataset build running.
-
----
-
-## [Phase 3] DINOv3 Bridge (Premise Validation) — `[CONCLUDED]`
-
-**Date opened:** 2026-06-10
-**Goal:** Linear-regress DINOv3 semantic embeddings (`dinov3_cls`, 1024-d) to the
-whitened physical sliders (`z_g`, `z_a`).
 
 ### Stratified Verdict (CORRECTED after systematic review — script 32)
 
@@ -448,7 +461,7 @@ is UNINFORMATIVE (missing control, caught in review).**
 3.  **E's unique, irreplaceable value is interpretable decoupled control.**
     Since DINO cannot faithfully reconstruct E's components, E remains structurally
     non-redundant.
-3.  **Lesson (gate design):** every transfer/identity gate must include a
+4.  **Lesson (gate design):** every transfer/identity gate must include a
     random-projection null of its input representation, exactly as every
     partition gate includes a permutation null. A gate without the right null
     can "pass" on structure the test never isolates.
@@ -592,7 +605,7 @@ from monocular networks) is a definitive dead end.
 
 ---
 
-## [Phase 4] Masked Patch Tokens (Semantic Face Isolation) — `[ACTIVE]`
+## [Phase 4] Masked Patch Tokens (Semantic Face Isolation) — `[CONCLUDED — PASS]`
 
 **Date opened:** 2026-06-11
 **Goal:** The `dinov3_cls` token acts as a scene-level diplomat, forced to
@@ -692,5 +705,5 @@ criterion for a *concatenated* partition. The re-stated gate for any partition `
 > A partition earns its place iff `AUC([z_g | … | z_x]) > AUC(baseline) + ε`
 > on the hegre verification test (ε to be set from the AUC noise floor).
 
-Status: `[ACTIVE]` — instrument implemented in `scripts/23_zd_verification_auc.py`;
-to be lifted into a reusable `geometry_pca` helper for the z_a gate.
+Status: `[CONCLUDED]` — instrument implemented in `scripts/23_zd_verification_auc.py`;
+lifted into reusable `geometry_pca/verification.py` for subsequent gates.

@@ -25,7 +25,7 @@ These speak directly to Eidolon's core principle — PCA-enforced orthogonality 
 
 These validate Eidolon's architectural choice: independent per-modality ingestion + decoupled cross-attention.
 
-- **[[00 - articles/IP-Adapter Text Compatible Image Prompt Adapter for Text-to-Image Diffusion Models|IP-Adapter: Text Compatible Image Prompt Adapter]]** *Ye et al.* (2023) — **The canonical reference.** Introduces decoupled cross-attention (separate K/V per condition, summed outputs). This is the exact pattern Eidolon uses for its three-modality firewall.
+- **[[00 - articles/IP-Adapter Text Compatible Image Prompt Adapter for Text-to-Image Diffusion Models|IP-Adapter: Text Compatible Image Prompt Adapter]]** *Ye et al.* (2023) — **The canonical reference.** Introduces decoupled cross-attention (separate K/V per condition, summed outputs). This is the exact decoupled attention pattern Eidolon uses in its conditioning stack.
 - **[[00 - articles/Multivariate Diffusion Transformer with Decoupled Attention for High-Fidelity Mask-Text Collaborative Facial Generation|MDiTFace: Multivariate DiT with Decoupled Attention for Mask-Text Facial Generation]]** *Cao et al.* (2025) — Custom DiT with **decoupled attention** across mask and text modalities. Unified tokenization → separate attention heads → summed fusion. Close architectural cousin.
 - **[[00 - articles/DCMorph Face Morphing via Dual-Stream Cross-Attention Diffusion|DCMorph: Face Morphing via Dual-Stream Cross-Attention Diffusion]]** *Chettaoui et al.* (2026) — Dual-stream identity-conditioned latent diffusion. Operates at both identity conditioning and latent levels simultaneously — validates multi-stream conditioning efficacy.
 - **[[00 - articles/IP-Adapter Is All You Need Towards Fine-Tuning-Free Diffusion-Based Talking Face Generation|IP-Adapter Is All You Need: Tuning-Free Diffusion-Based Talking Face Generation]]** *Wu et al.* (2026) — Shows IP-Adapter alone (no fine-tuning) suffices for high-quality talking face generation. Reinforces the power of decoupled conditioning.
@@ -62,7 +62,7 @@ The geometric half of Eidolon — from classical PCA-based 3D Morphable Models t
 The search confirms that **Eidolon sits at a novel intersection** no single paper covers:
 
 1. **PCA orthogonality** + **block-diagonal ingestion** + **decoupled cross-attention** + **DiT generator** — each component has literature support, but the combination is unique
-2. **ShapeFusion** is the closest paper (PCA for 3D shape + diffusion), but it operates on mesh vertices, not a unified geometry/depth/albedo latent
+2. **ShapeFusion** is the closest paper (PCA for 3D shape + diffusion), but it operates on mesh vertices, not a unified geometry/depth/surface latent
 3. **MMFace-DiT** is the closest DiT competitor but uses standard fusion, not the block-diagonal firewall
 4. **IP-Adapter** provides the decoupled attention pattern, but was designed for image prompting, not multi-modal biometric latents
 5. The **NeurIPS 2024/2025 disentanglement theory papers** provide theoretical backing that the architecture *itself* (cross-attention + diffusion bottlenecks) promotes disentanglement — validating the design
@@ -108,7 +108,7 @@ Here are the most relevant references from ShapeFusion's bibliography, organized
 
 #### Tier 2 — Foundational 3D Face/Body Models
 
-- [[00 - articles/FLAME|Li et al. 2017 — FLAME: Learning a Model of Facial Shape and Expression from 4D Scans]] (SIGGRAPH Asia 2017): **The canonical 3D face model.** Low-dimensional PCA-based shape + expression space from 4D scans. This is the direct lineage of Eidolon's geometry branch. FLAME uses PCA for disentangled identity/expression — the same principle Eidolon extends to geometry/depth/albedo.
+- [[00 - articles/FLAME|Li et al. 2017 — FLAME: Learning a Model of Facial Shape and Expression from 4D Scans]] (SIGGRAPH Asia 2017): **The canonical 3D face model.** Low-dimensional PCA-based shape + expression space from 4D scans. This is the direct lineage of Eidolon's geometry branch. FLAME uses PCA for disentangled identity/expression — the same principle Eidolon extends to geometry/depth/normals.
 - [[00 - articles/SMPL2015.pdf|Loper et al. 2015 — SMPL: A Skinned Multi-Person Linear Model]] (SIGGRAPH Asia 2015): The body-model equivalent of FLAME. PCA-based shape space + pose blendshapes. Foundational reference for the PCA approach to human shape.
 - [[00 - articles/CVPR 2016 Open Access Repository|Booth et al. 2016 — A 3D Morphable Model Learnt from 10,000 Faces (LSFM)]] (CVPR 2016): The large-scale PCA face model from the Zafeiriou group. The "big PCA works" evidence.
 - [[00 - articles/Towards a complete 3D morphable model of the human head|Ploumpis et al. 2020 — Towards a Complete 3D Morphable Model of the Human Head]] (TPAMI 2020): Extends 3DMM to the full head (face + cranium). From the same group.
@@ -147,7 +147,7 @@ Here are the most relevant references from ShapeFusion's bibliography, organized
 **→ Implication for Eidolon:** PCA-guaranteed orthogonality has theoretical justification and a 30-year track record.
 
 ### 3. Competitor Landscape: The Gap Remains Open
-- **MMFace-DiT (CVPR 2026):** Dual-stream DiT. Eidolon differs: 3 modalities (not 2), PCA-guaranteed orthogonality, block-diagonal.
+- **MMFace-DiT (CVPR 2026):** Dual-stream DiT. Eidolon differs: PCA-guaranteed orthogonality, block-diagonal ingestion, decoupled cross-attention.
 - **MDiTFace (Cao et al., 2025):** Decoupled attention across mask + text. Eidolon differs: decoupling at ingestion stage.
 - **Face-MoGLE (Zou et al., 2025):** DiT with mask-conditioned routing. Eidolon differs: explicit architectural firewalls.
 - **ShapeFusion (Potamias et al., 2024):** PCA is the problem; solves via masked diffusion on meshes. Eidolon differs: PCA is the solution; solves via block-diagonal firewalls in DiT.
@@ -159,21 +159,50 @@ Here are the most relevant references from ShapeFusion's bibliography, organized
 
 ### 5. Conditioning Efficiency Matters
 - **OminiControl2 / Face-Adapter:** Efficient conditioning for DiT / fine-grained ID control.
-**→ Implication:** Eidolon's `z = [z_g | z_d | z_a]` concatenation creates a longer conditioning vector; OminiControl2's approach is directly relevant.
+**→ Implication:** Eidolon's 2-stream design (DINO patches + z_g geometry tokens) benefits
+from efficient conditioning approaches. Originally envisioned as 3-modality, but the
+empirical record narrowed this to 2.
 
 ### 6. Data Pipeline Validation
 - **Sapiens (Meta, 2024) / Pixel3DMM (2025):** 2D pose, segmentation, depth on 300M+ images.
-**→ Implication:** The stratum-hq → Sapiens pipeline for z_d is validated.
+**→ Implication:** The stratum-hq → Sapiens pipeline produces high-quality, topologically
+accurate depth and normal maps — but Eidolon's experiments show these maps carry *generic*
+rather than identity-specific geometry. The pipeline is validated as a data source; the
+features themselves failed the identity gate (see `02_EXPERIMENTS_AND_RESULTS.md`).
 
 ### 7. Critical Assessment
 **What the literature does NOT support:**
-- That learned latent spaces are better than PCA for orthogonality (Rolinek shows convergence to PCA).
+- That learned latent spaces are better than PCA for orthogonality (Rolinek shows
+  *tendency toward* PCA directions under specific VAE conditions — not universal proof
+  that PCA ≥ learned latents for downstream control).
 - That multi-modal fusion requires joint training (IP-Adapter proves decoupled matches fine-tuning).
 - That disentanglement requires complex regularization (NeurIPS 2024 shows architecture alone suffices).
 
-**What remains unproven (needs empirical verification):**
-- Whether PCA on 2D image features preserves meaningful geometric disentanglement.
-- Whether the block-diagonal firewall prevents information leakage in practice.
-- Whether 3-modality ingestion (z_g, z_d, z_a) is sufficient.
+**What was unproven at project start — now empirically resolved:**
+- PCA on 2D facial keypoints (3D-frontalized) produces meaningful geometric disentanglement ✅
+  (Phase 1-R, C1–C5 confirmed clean morphological traversals after pose-invariance mandate).
+- The block-diagonal firewall has not yet been tested in a trained DiT; the design exists,
+  but the empirical question of whether it prevents leakage in practice remains open.
+- 3-modality ingestion was TWO modalities too many: only z_g (geometry) survived the
+  verification-AUC gate. DINO patch tokens carry identity externally to E_structured.
 
-**Bottom line:** The literature survey confirms Eidolon's architectural choices are well-grounded. The combination of PCA orthogonality + block-diagonal ingestion + decoupled cross-attention + DiT generator remains unique.
+### 8. Monocular Hallucination — The Central Empirical Finding
+
+The project's most important negative result is not captured in the original literature
+survey: **monocular volumetric models (Sapiens) hallucinate plausible, generic human
+geometry rather than encoding identity-specific micro-curvature.**
+
+- Depth maps (z_d) and surface normal maps (z_a) both failed the verification-AUC
+  gate — despite visually stunning, topologically accurate output at high resolution.
+- This finding connects to a known limitation in the monocular depth estimation
+  literature: single-image depth/normals are fundamentally underdetermined and rely
+  on learned priors that produce *likely* rather than *identity-specific* geometry.
+- For face recognition and identity conditioning, the "fast path" of deriving
+  structural sliders from monocular networks is a dead end. Raw semantic embeddings
+  (DINOv3) carry identity; monocular geometry carries generic plausibility.
+
+**Bottom line:** The literature survey confirmed Eidolon's architectural choices were
+well-grounded. The experiments then empirically narrowed the design: 3 structured
+partitions → 1 (z_g only), with DINO patch tokens carrying identity externally.
+The combination of PCA orthogonality + block-diagonal ingestion + decoupled
+cross-attention + DiT generator — now with 2 streams — remains unique.
