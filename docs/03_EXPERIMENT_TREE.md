@@ -19,14 +19,16 @@ Link directly to the `exp/*` branch where the work lives.
     measured on hegre (AUC 0.766 vs face-crop z_g 0.67–0.69, z_d 0.56) → DINO =
     identity conditioning; E = interpretable decoupled control. Both fast paths are
     dead; E non-redundant. (Caveat: DINO AUC includes same-shoot context — see C5.)
-* **[CONCLUDED — PASS] Phase 2b: Albedo/Surface Encoder z_a (normals)** (`exp/geometry-pca`)
-  * Surface normals successfully add complementary identity signal over z_g.
-  * Structural advantage proven: normals natively resist the affine-scale ambiguity
-    that killed raw depth. z_a ALONE (AUC 0.56) is a stronger identity carrier than
-    geometry alone (0.54) on hegre editorial data.
-  * **Selected variant: `xy` (8,192-d)**. Passed gate cleanly (+0.024 ΔAUC vs ε=0.01 bar),
-    most compact, and cleanly avoided the 'rot paradox' (where Rᵀ de-rotation injects
-    pose into the global mean via visibility bias).
+* **[CONCLUDED — FAIL] Phase 2b: Albedo/Surface Encoder z_a (normals)** (`exp/geometry-pca`)
+  * **[2026-06-11] Face-Crop Re-run OVERTURNS previous PASS.** Re-tested on the
+    `hegre_faces_stratum` dataset using a seg-clean subset (fg≥30%) to prevent
+    the seg-collapse trap.
+  * Baseline z_g (0.688) → +z_a (0.649) = **ΔAUC −0.039 (FAIL)**.
+  * *The counter-intuitive reality:* Visual inspection confirmed Sapiens depth/normals
+    on these crops are stunningly high-resolution and topologically accurate. But
+    mathematically, they add ZERO biological identity over 2D keypoints. Monocular
+    models hallucinate *generic, plausible* human geometry; they do not encode
+    true identity-specific micro-curvature. The "fast path" is definitively dead.
 * **[CONCLUDED — FAIL] Phase 2: Depth Encoder z_d** (`exp/geometry-pca`)
   * Depth (64×64, k=50, FFHQ-fit) adds NO complementary identity signal over z_g.
   * Operational proof: verification AUC z_g=0.541 → +z_d = −0.004 (every mode);

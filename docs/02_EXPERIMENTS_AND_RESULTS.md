@@ -568,11 +568,27 @@ facial geometry is a moderate identity carrier (AUC ≈0.67–0.69), not "very
 weak".** The frozen encoder is unchanged; only its measured strength is
 corrected. All gate baselines on face-crop data use the corrected z_g.
 
-#### Strategic pivot → z_a (normals / albedo)
-Highest-value next trajectory: **surface normals** describe the *angle* of the
-surface, not absolute distance, so they natively resist the affine-scale ambiguity
-that plagues raw depth — structurally positioned to carry a cleaner, scale-invariant
-identity signal. Gated with the verification-AUC instrument (not trace-J).
+#### [2026-06-11 UPDATE] Phase 2b (Normals) Face-Crop OVERTURN
+The initial PASS for surface normals (`z_a`) was a mirage caused by the artificially
+low editorial-keypoint baseline. When re-tested on the proper `hegre_faces_stratum`
+dataset (using the required seg-clean subset, fg≥30%), the gate failed decisively:
+
+*   `z_g` Baseline AUC: 0.688
+*   `z_a` (xy) alone AUC: 0.587
+*   `[z_g | z_a]` AUC: 0.649 (**ΔAUC: −0.039, FAIL**)
+
+**The Scientific Conclusion:**
+Visual inspection confirmed the Sapiens depth/normals on these tight crops are
+stunningly high-resolution, topologically accurate, and cleanly masked. Yet,
+mathematically, they actively dilute the identity signal.
+**Monocular volumetric models hallucinate generic, plausible human geometry.**
+They do not encode the identity-specific biological micro-curvature required
+for face recognition. The entire "fast path" (deriving decoupled structural sliders
+from monocular networks) is a definitive dead end. 
+
+**Eidolon's Conditioning Stack Simplifies:**
+*   Identity: Raw DINOv3 Face Tokens
+*   Interpretable Control: Geometry (`z_g`) ONLY.
 
 ### Artifacts
 - Encoders: `output/encoder_zd_{A,A_prime,C}.npz`
