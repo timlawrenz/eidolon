@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS images (
     reviewed_at TEXT,
     FOREIGN KEY (persona_id) REFERENCES personas(id),
     FOREIGN KEY (set_id) REFERENCES sets(id),
-    UNIQUE(persona_id, set_id, face_index)
+    UNIQUE(persona_id, set_id, source_image, face_index)
 );
 
 CREATE INDEX IF NOT EXISTS idx_images_status ON images(status);
