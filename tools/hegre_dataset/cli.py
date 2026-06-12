@@ -18,7 +18,6 @@ def cmd_discover(args):
     return 0
 
 def cmd_extract_faces(args):
-    import json
     from .face_extraction import extract_all
     dataset = Path(args.dataset)
     manifest_path = dataset / "manifest.json"
@@ -54,6 +53,17 @@ def cmd_review_ui(args):
     app.run(host="127.0.0.1", port=args.port, debug=False)
     return 0
 
+def cmd_enrich(args):
+    from .enrichment import generate_approved_list, run_stratum_enrichment
+    dataset = Path(args.dataset)
+    print("Generating list of approved images for Stratum...")
+    list_path = generate_approved_list(dataset)
+    print(f"Approved list written to: {list_path}")
+    print("Running Stratum enrichment...")
+    run_stratum_enrichment(list_path, dataset)
+    print("Stratum enrichment complete.")
+    return 0
+
 def main():
     parser = argparse.ArgumentParser(prog="hegre-dataset")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -80,6 +90,10 @@ def main():
     p_ui.add_argument("--dataset", required=True)
     p_ui.add_argument("--port", type=int, default=5101)
     p_ui.set_defaults(func=cmd_review_ui)
+
+    p_enrich = sub.add_parser("enrich")
+    p_enrich.add_argument("--dataset", required=True)
+    p_enrich.set_defaults(func=cmd_enrich)
 
     args = parser.parse_args()
     return args.func(args)
