@@ -1,75 +1,88 @@
-"""CLI entry point for the hegre dataset tool.
-
-Usage: python -m tools.hegre_dataset <command> [args...]
-"""
 import argparse
 import sys
+import json
 from pathlib import Path
-
 
 def cmd_discover(args):
     from .identity import discover_identities, build_manifest, save_manifest
-    
     root = Path(args.source)
     try:
         identities = discover_identities(root, min_sets=args.min_sets)
     except FileNotFoundError as e:
         print(f"Error: {e}")
         return 1
-        
-    print(f"Found {len(identities)} identities with ≥{args.min_sets} sets.")
-    
     manifest = build_manifest(root, identities, max_identities=args.max_identities)
-    total_images = sum(len(v) for v in manifest.values())
-    print(f"Manifest: {len(manifest)} identities, {total_images} images total.")
-    
     output = Path(args.dataset)
-    path = save_manifest(manifest, output)
-    print(f"Saved: {path}")
+    save_manifest(manifest, output)
+    print(f"Discovered {len(identities)} identities and saved manifest.")
     return 0
-
 
 def cmd_extract_faces(args):
-    from .face_extraction import extract_faces
+    import json
+    from .face_extraction import extract_all
     dataset = Path(args.dataset)
-    try:
-        extract_faces(dataset)
-    except Exception as e:
-        print(f"Error extracting faces: {e}")
+    manifest_path = dataset / "manifest.json"
+    if not manifest_path.exists():
+        print(f"Error: manifest not found in {dataset}")
         return 1
+    with open(manifest_path, "r") as f:
+        manifest = json.load(f)
+    extract_all(manifest, dataset)
     return 0
 
-
-def main(args=None):
-    parser = argparse.ArgumentParser(
-        prog="hegre-dataset",
-        description="Create and manage hegre face datasets."
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p_discover = sub.add_parser("discover", help="Discover identities from ground truth")
-    p_discover.add_argument("--source", required=True, help="Path to ground truth directory")
-    p_discover.add_argument("--dataset", required=True, help="Path to output dataset directory")
-    p_discover.add_argument("--min-sets", type=int, default=3, help="Minimum number of sets per identity")
-    p_discover.add_argument("--max-identities", type=int, help="Maximum number of identities to process")
-    p_discover.set_defaults(func=cmd_discover)
-
-    p_extract = sub.add_parser("extract-faces", help="Run MTCNN face detection")
-    p_extract.add_argument("--dataset", required=True, help="Path to dataset directory")
-    p_extract.set_defaults(func=cmd_extract_faces)
-
-    sub.add_parser("review", help="Start the review UI")
-    sub.add_parser("enrich", help="Run stratum-hq enrichment")
-    sub.add_parser("export", help="Export gate-ready dataset")
-    sub.add_parser("catalog", help="List/manage dataset versions")
-
-    parsed_args = parser.parse_args(args)
-    if hasattr(parsed_args, "func"):
-        return parsed_args.func(parsed_args)
-    else:
-        print(f"Command '{parsed_args.command}' not yet implemented.")
+def cmd_review_seed(args):
+    from .review.seed import seed_from_extraction
+    dataset = Path(args.dataset)
+    db_path = dataset / "review.db"
+    faces_dir = dataset / "faces"
+    manifest_path = dataset / "manifest.json"
+    try:
+        inserted = seed_from_extraction(db_path, faces_dir, manifest_path)
+        print(f"Inserted {inserted} face crops into review DB.")
+        return 0
+    except Exception as e:
+        print(f"Error seeding DB: {e}")
         return 1
 
+def cmd_review_ui(args):
+    from .review.ui import create_app
+    dataset = Path(args.dataset)
+    db_path = dataset / "review.db"
+    faces_dir = dataset / "faces"
+    app = create_app(db_path, faces_dir)
+    print(f"Review UI running at http://127.0.0.1:{args.port}")
+    app.run(host="127.0.0.1", port=args.port, debug=False)
+    return 0
+
+def main():
+    parser = argparse.ArgumentParser(prog="hegre-dataset")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_disc = sub.add_parser("discover")
+    p_disc.add_argument("--source", required=True)
+    p_disc.add_argument("--dataset", required=True)
+    p_disc.add_argument("--min-sets", type=int, default=3)
+    p_disc.add_argument("--max-identities", type=int)
+    p_disc.set_defaults(func=cmd_discover)
+
+    p_ext = sub.add_parser("extract-faces")
+    p_ext.add_argument("--dataset", required=True)
+    p_ext.set_defaults(func=cmd_extract_faces)
+
+    p_rev = sub.add_parser("review")
+    rsub = p_rev.add_subparsers(dest="review_command", required=True)
+    
+    p_seed = rsub.add_parser("seed")
+    p_seed.add_argument("--dataset", required=True)
+    p_seed.set_defaults(func=cmd_review_seed)
+    
+    p_ui = rsub.add_parser("ui")
+    p_ui.add_argument("--dataset", required=True)
+    p_ui.add_argument("--port", type=int, default=5101)
+    p_ui.set_defaults(func=cmd_review_ui)
+
+    args = parser.parse_args()
+    return args.func(args)
 
 if __name__ == "__main__":
     sys.exit(main())

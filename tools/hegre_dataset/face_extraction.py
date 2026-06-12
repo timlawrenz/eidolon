@@ -1,123 +1,120 @@
 import json
 import logging
-from pathlib import Path
+import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-# Optional import, fallback to None if not installed for some tests
 try:
     from facenet_pytorch import MTCNN
 except ImportError:
     MTCNN = None
 
-def get_square_box(box, img_width, img_height):
-    """
-    Convert a bounding box [x1, y1, x2, y2] to a square box that fits within img bounds.
-    No padding is added. The box is shifted and clamped to stay within the image.
-    """
+# Reusing singleton pattern to avoid multiple model loads
+_mtcnn = None
+
+def get_mtcnn(device="cpu"):
+    global _mtcnn
+    if _mtcnn is None:
+        if not MTCNN:
+            raise RuntimeError("facenet_pytorch is required.")
+        _mtcnn = MTCNN(keep_all=True, device=device)
+    return _mtcnn
+
+def get_square_box(box, img_width, img_height, expand_ratio=1.5):
+    """Square crop box from MTCNN shifted/clamped to image bounds (no padding)."""
     x1, y1, x2, y2 = box
-    w = x2 - x1
-    h = y2 - y1
-    
-    # Target size is the maximum dimension to make a square
-    size = max(w, h)
-    
-    # Calculate center
-    cx = x1 + w / 2
-    cy = y1 + h / 2
-    
-    # Initial square box
-    nx1 = cx - size / 2
-    ny1 = cy - size / 2
-    nx2 = cx + size / 2
-    ny2 = cy + size / 2
-    
-    # Shift if out of bounds (left/top)
+    w, h = x2 - x1, y2 - y1
+    cx, cy = x1 + w / 2, y1 + h / 2
+    side = max(w, h) * expand_ratio
+
+    nx1, ny1 = cx - side / 2, cy - side / 2
+    nx2, ny2 = cx + side / 2, cy + side / 2
+
     if nx1 < 0:
         nx2 -= nx1
         nx1 = 0
     if ny1 < 0:
         ny2 -= ny1
         ny1 = 0
-        
-    # Shift if out of bounds (right/bottom)
     if nx2 > img_width:
-        shift = nx2 - img_width
-        nx1 -= shift
+        nx1 -= nx2 - img_width
         nx2 = img_width
-        if nx1 < 0: # Image too small, clamp
-            nx1 = 0
     if ny2 > img_height:
-        shift = ny2 - img_height
-        ny1 -= shift
+        ny1 -= ny2 - img_height
         ny2 = img_height
-        if ny1 < 0: # Image too small, clamp
-            ny1 = 0
-            
-    return (int(nx1), int(ny1), int(nx2), int(ny2))
 
+    nx1 = max(0, nx1)
+    ny1 = max(0, ny1)
 
-def extract_faces(dataset_path: Path):
-    """
-    Extract faces from images in the dataset and save them.
-    Multi-face outputs are saved as <basename>_face<idx>.jpg (1-indexed).
-    """
-    manifest_file = dataset_path / "manifest.json"
-    if not manifest_file.exists():
-        logging.warning("Manifest not found.")
-        return
+    final_side = min(nx2 - nx1, ny2 - ny1)
+    fx1, fy1 = cx - final_side / 2, cy - final_side / 2
+    fx2, fy2 = cx + final_side / 2, cy + final_side / 2
 
-    with open(manifest_file, "r") as f:
-        manifest = json.load(f)
+    return [max(0, int(fx1)), max(0, int(fy1)), int(fx2), int(fy2)]
 
-    if not MTCNN:
-        raise RuntimeError("facenet_pytorch is required for face extraction.")
-
-    mtcnn = MTCNN(keep_all=True, device='cpu') # multi-face detection
+def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, set_slug: str, filename: str, mtcnn, max_dim=1024, expand_ratio=1.5):
+    """Extracts all faces from a single image and returns relative paths."""
+    name_stem = os.path.splitext(filename)[0]
+    ext = os.path.splitext(filename)[1]
     
-    def process_image(identity, rel_path):
-        img_path = (dataset_path / rel_path).resolve()
-        if not img_path.is_relative_to(dataset_path.resolve()):
-            return
-        if not img_path.exists():
-            return
-            
-        parent_rel = Path(rel_path).parent
-        img_basename = img_path.stem
-        out_dir = (dataset_path / identity / parent_rel).resolve()
-        if not out_dir.is_relative_to(dataset_path.resolve()):
-            return
-            
-        out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = output_dir / "faces" / identity / set_slug
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        img = Image.open(image_path).convert("RGB")
+    except Exception as e:
+        print(f"ERROR opening {image_path}: {e}")
+        return []
         
-        if (out_dir / f"{img_basename}_face1.jpg").exists():
-            return
-
-        try:
-            img = Image.open(img_path).convert("RGB")
-        except Exception as e:
-            logging.error(f"Failed to open {img_path}: {e}")
-            return
-
+    try:
         boxes, probs = mtcnn.detect(img)
+    except Exception as e:
+        print(f"ERROR detecting {image_path}: {e}")
+        return []
         
-        if boxes is None:
-            return
+    if boxes is None or len(boxes) == 0:
+        return []
+        
+    saved = []
+    resample_filter = getattr(Image.Resampling, "LANCZOS", getattr(Image, "LANCZOS", 1))
+    
+    for i, box in enumerate(boxes):
+        face_index = i + 1
+        out_name = f"{name_stem}_face{face_index}{ext}"
+        out_path = out_dir / out_name
+        
+        if out_path.exists():
+            saved.append(str(out_path.relative_to(output_dir)))
+            continue
             
-        for idx, box in enumerate(boxes):
-            sq_box = get_square_box(box, img.width, img.height)
-            crop = img.crop(sq_box)
-            crop = crop.resize((512, 512), Image.Resampling.LANCZOS)
+        try:
+            sq_box = get_square_box(box, img.width, img.height, expand_ratio)
+            face_crop = img.crop(tuple(sq_box))
+            if face_crop.width > max_dim or face_crop.height > max_dim:
+                face_crop = face_crop.resize((max_dim, max_dim), resample_filter)
+            face_crop.save(out_path, quality=95)
+            saved.append(str(out_path.relative_to(output_dir)))
+        except Exception as e:
+            print(f"ERROR cropping {out_name}: {e}")
             
-            out_path = out_dir / f"{img_basename}_face{idx+1}.jpg"
-            crop.save(out_path)
+    return saved
+
+def extract_all(manifest: dict, output_dir: Path, device="cpu", max_workers=4):
+    mtcnn = get_mtcnn(device)
+    tasks = []
+    for identity, entries in manifest.items():
+        for entry in entries:
+            tasks.append((entry["image_path"], identity, entry["set_slug"], entry["filename"]))
             
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        for identity, image_paths in manifest.items():
-            for rel_path in image_paths:
-                futures.append(executor.submit(process_image, identity, rel_path))
-        for future in futures:
-            future.result()
+    def _process(task):
+        img_path, ident, slug, fname = task
+        return extract_faces_for_image(img_path, output_dir, ident, slug, fname, mtcnn)
+        
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = list(executor.map(_process, tasks))
+        
+    print(f"Processed {len(futures)} images.")
+    return futures
