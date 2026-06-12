@@ -20,7 +20,7 @@ def get_mtcnn(device="cuda:0"):
     if _mtcnn is None:
         if not MTCNN:
             raise RuntimeError("facenet_pytorch is required.")
-        _mtcnn = MTCNN(keep_all=True, device=device)
+        _mtcnn = MTCNN(keep_all=True, device=device, image_size=512, margin=20, min_face_size=40)
     return _mtcnn
 
 def get_square_box(box, img_width, img_height, expand_ratio=1.5):
@@ -65,6 +65,14 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
     
     try:
         img = Image.open(image_path).convert("RGB")
+        original_width = img.width
+        original_height = img.height
+        # Downscale 14000px monstrosities so MTCNN's image pyramid doesn't OOM the 4090
+        if img.width > 4000 or img.height > 4000:
+            scale = min(4000 / img.width, 4000 / img.height)
+            new_w = int(img.width * scale)
+            new_h = int(img.height * scale)
+            img = img.resize((new_w, new_h), getattr(Image.Resampling, "LANCZOS", getattr(Image, "LANCZOS", 1)))
     except Exception as e:
         print(f"ERROR opening {image_path}: {e}")
         return []
@@ -74,10 +82,27 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
     except Exception as e:
         print(f"ERROR detecting {image_path}: {e}")
         return []
-        
+            
     if boxes is None or len(boxes) == 0:
         return []
-        
+            
+    # Scale boxes back up to original image coordinates
+    if img.width != original_width or img.height != original_height:
+        scale_x = original_width / img.width
+        scale_y = original_height / img.height
+        scaled_boxes = []
+        for box in boxes:
+            scaled_boxes.append([
+                box[0] * scale_x,
+                box[1] * scale_y,
+                box[2] * scale_x,
+                box[3] * scale_y
+            ])
+        boxes = scaled_boxes
+            
+        # Reopen full resolution image to perform the actual high-quality crop
+        img = Image.open(image_path).convert("RGB")
+            
     saved = []
     resample_filter = getattr(Image.Resampling, "LANCZOS", getattr(Image, "LANCZOS", 1))
     
@@ -95,6 +120,10 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
             face_crop = img.crop(tuple(sq_box))
             if face_crop.width > max_dim or face_crop.height > max_dim:
                 face_crop = face_crop.resize((max_dim, max_dim), resample_filter)
+            elif face_crop.width < max_dim or face_crop.height < max_dim:
+                # Upscale small faces to exactly 512x512
+                face_crop = face_crop.resize((max_dim, max_dim), resample_filter)
+                
             face_crop.save(out_path, quality=95)
             saved.append(str(out_path.relative_to(output_dir)))
         except Exception as e:
