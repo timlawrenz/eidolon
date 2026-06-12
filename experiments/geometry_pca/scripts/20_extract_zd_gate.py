@@ -80,7 +80,12 @@ def main():
 
     for pid, rows in identities:
         pid_ok, pid_skip = 0, 0
-        for ed, name in rows:
+        for ed_orig, name in rows:
+            # Map review.db path to face-tree path
+            ed = os.path.join(
+                "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_faces_stratum",
+                ed_orig.split("hegre_enriched/", 1)[1]
+            )
             try:
                 pose = np.load(os.path.join(ed, "pose.npy")).astype(np.float32)
                 depth = np.load(os.path.join(ed, "depth.npy")).astype(np.float32)

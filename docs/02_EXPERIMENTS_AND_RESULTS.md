@@ -438,7 +438,9 @@ is UNINFORMATIVE (missing control, caught in review).**
     "fast path"). E cannot be derived from DINO embeddings without fatal
     identity loss.
 2.  **Raw `dinov3_cls` face crops are the strongest identity carrier measured:
-    AUC 0.766** — far above real z_a (0.562) and z_g (0.540).
+    AUC 0.766** — above face-crop z_g (0.67–0.69; see Phase 2 [2026-06-11
+    CORRECTION] — the older "z_g 0.540" was an editorial-keypoint-resolution
+    artifact) and far above z_d (0.56).
     *Caveat (C5 Shoot-Leakage):* DINO's "identity" includes same-shoot lighting/
     background recognition (same-shoot sim 0.63 vs cross-shoot 0.19).
     However, for the DiT, DINO tokens are the natural primary *identity*
@@ -519,6 +521,52 @@ levers, now measurable with the sensitive verification-AUC instrument: higher
 resolution (>64px), more components (k>50), a hegre-fit basis (not FFHQ). But raw
 *monocular relative depth* is fundamentally entangled with camera distance/focal
 length (affine-scale ambiguity), so these fight uphill.
+
+#### [2026-06-11 UPDATE] Face-crop re-run: FAIL confirmed at 24× facial resolution
+The resolution + domain-shift rescue levers above are now TESTED, via the new
+`hegre_faces_stratum` dataset (Sapiens enrichment run natively on face crops):
+facial depth resolution ~695² px vs ~140² inside editorial frames (**24× more
+facial depth detail**), and the FFHQ-fit whitening now lands near-in-distribution
+on the gate set (whitened z_d per-comp std ≈1.0–1.3, vs 1.97 on editorial — the
+domain shift is gone). Gate extractor `20` remapped to the face tree.
+
+| | full face-crop set (1,448 img / 101 ids) | seg-clean subset (1,351 / 100) |
+|---|---|---|
+| z_g baseline AUC | 0.6813 | 0.6892 |
+| best z_d-alone AUC | 0.5638 (A) | 0.5553 (A) |
+| best [z_g\|z_d] delta | −0.023 (C) | −0.034 (C) |
+
+**FAIL is robust — all modes, both sets: concatenating z_d *subtracts* identity
+signal.** With resolution and distribution exhausted as excuses, monocular
+relative depth at k=50 is conclusively a dead partition; only k>50 remains
+untested and is not worth pursuing against uniformly *negative* deltas.
+
+**Data defect found & controlled during this review (seg-collapse on face crops):**
+Sapiens body-part segmentation collapses on ~10% of tight face crops (seg
+foreground <30%; 7.5% fully empty at <2%) — visually confirmed perfect frontal
+faces yielding ~99%-empty seg-masked depth maps. These "empty depth" vectors
+created cross-identity near-duplicates in z_d (e.g. gislane≈vika cos 0.994).
+The gate was re-run excluding all 97 affected rows: the FAIL *strengthened*
+(−0.023 → −0.034), proving the defect was not masking a PASS. ⚠️ `normal.npy`
+is masked by the same seg — **Phase 2b (z_a) on face crops MUST apply a
+seg-foreground filter (≥30%)**. Control script: `36_zd_facecrop_seg_control.py`.
+
+#### [2026-06-11 CORRECTION] z_g was understated: keypoint-resolution artifact
+The "Secondary finding" above (z_g AUC = 0.541) is an artifact of editorial-frame
+*keypoint measurement resolution*, not a property of facial geometry. Controlled
+comparison — same 1,429 images, same frozen production encoder, only the DWPose
+source differs:
+
+| pose source | z_g AUC |
+|---|---|
+| editorial-frame DWPose (face ≈140px of frame) | 0.5405 |
+| face-crop DWPose (face ≈695px of frame) | **0.6706** |
+
++0.13 AUC purely from keypoint precision. Note the trap: editorial keypoint
+*confidence* was HIGHER (0.944 vs 0.865) — confidence ≠ precision. **Frontalized
+facial geometry is a moderate identity carrier (AUC ≈0.67–0.69), not "very
+weak".** The frozen encoder is unchanged; only its measured strength is
+corrected. All gate baselines on face-crop data use the corrected z_g.
 
 #### Strategic pivot → z_a (normals / albedo)
 Highest-value next trajectory: **surface normals** describe the *angle* of the

@@ -15,9 +15,10 @@ Link directly to the `exp/*` branch where the work lives.
     review control showed raw dinov3_cls = 0.685 and random 50-d DINO projections
     = 0.627 ± 0.006 ≫ bridge Ŷ_a (0.606). Any DINO shadow passes; the bridge
     *degrades* its input. Gate lacked a random-projection null (lesson recorded).
-  * **Real finding:** raw dinov3_cls is the strongest identity carrier measured on
-    hegre (AUC 0.685 vs z_a 0.562, z_g 0.540) → DINO = identity conditioning;
-    E = interpretable decoupled control. Both fast paths are dead; E non-redundant.
+  * **Real finding:** raw dinov3_cls (face crops) is the strongest identity carrier
+    measured on hegre (AUC 0.766 vs face-crop z_g 0.67–0.69, z_d 0.56) → DINO =
+    identity conditioning; E = interpretable decoupled control. Both fast paths are
+    dead; E non-redundant. (Caveat: DINO AUC includes same-shoot context — see C5.)
 * **[CONCLUDED — PASS] Phase 2b: Albedo/Surface Encoder z_a (normals)** (`exp/geometry-pca`)
   * Surface normals successfully add complementary identity signal over z_g.
   * Structural advantage proven: normals natively resist the affine-scale ambiguity
@@ -30,11 +31,20 @@ Link directly to the `exp/*` branch where the work lives.
   * Depth (64×64, k=50, FFHQ-fit) adds NO complementary identity signal over z_g.
   * Operational proof: verification AUC z_g=0.541 → +z_d = −0.004 (every mode);
     kNN identity acc 4.3% → −0.2%. Depth slightly *dilutes* the weak geometry signal.
+  * **[2026-06-11] FAIL confirmed on face-crop re-run at 24× facial depth
+    resolution, domain shift eliminated:** z_g 0.681 → +z_d best delta −0.023
+    (−0.034 on seg-clean subset). Resolution & distribution are exhausted as
+    excuses; monocular relative depth is conclusively a dead partition.
+  * Data defect found: Sapiens seg collapses on ~10% of tight face crops →
+    empty seg-masked depth. Controlled via fg≥30% filter (script 36); FAIL
+    survives. ⚠️ z_a-on-face-crops must apply the same filter.
   * Metric bug caught + fixed: trace-J = tr(S_B)/tr(S_W) is a weighted average for
     concatenated vectors → blind to complementarity. Gate instrument switched to
     verification AUC. Cross-examined (4 metrics) to rule out a false-fail.
-  * Secondary: z_g verification AUC=0.54 quantifies geometry as a weak identity
-    carrier on editorial data (operationalizes Phase 1-R J≈0.08).
+  * Secondary (CORRECTED 2026-06-11): the "z_g=0.54 weak carrier" reading was an
+    editorial-keypoint-resolution artifact. Face-crop keypoints, same frozen
+    encoder, same images: z_g AUC **0.671** — geometry is a *moderate* carrier;
+    confidence ≠ precision (editorial conf was higher, precision lower).
 
 * **[CONCLUDED] Phase 1-R: Pose-Invariant Geometry Encoder** (`exp/geometry-pca`)
   * Shipped 3D-frontalized geometry encoder (z_scale=1.0) on 69,851 FFHQ faces.
