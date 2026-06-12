@@ -65,11 +65,11 @@ def test_extract_faces_success(mock_mtcnn_class, tmp_path):
 
     extract_faces(dataset_dir)
     
-    # Check outputs: images should be saved as crop_0.jpg, crop_1.jpg
+    # Check outputs: images should be saved as face1.jpg, face2.jpg
     out_dir = dataset_dir / "id1" / "set1"
     assert out_dir.exists()
-    assert (out_dir / "img1_crop_0.jpg").exists()
-    assert (out_dir / "img1_crop_1.jpg").exists()
+    assert (out_dir / "img1_face1.jpg").exists()
+    assert (out_dir / "img1_face2.jpg").exists()
     
     # Check manifest is updated? Or maybe we just check idempotency
     
