@@ -36,7 +36,7 @@ def cmd_review_seed(args):
     faces_dir = dataset / "faces"
     manifest_path = dataset / "manifest.json"
     try:
-        inserted = seed_from_extraction(db_path, faces_dir, manifest_path)
+        inserted = seed_from_extraction(db_path, faces_dir, manifest_path, verbose=getattr(args, 'verbose', False))
         print(f"Inserted {inserted} face crops into review DB.")
         return 0
     except Exception as e:
@@ -86,6 +86,7 @@ def main():
     
     p_seed = rsub.add_parser("seed")
     p_seed.add_argument("--dataset", required=True)
+    p_seed.add_argument("-v", "--verbose", action="store_true", help="Print debug output for what is inserted/skipped")
     p_seed.set_defaults(func=cmd_review_seed)
     
     p_ui = rsub.add_parser("ui")
