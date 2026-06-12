@@ -143,6 +143,7 @@ function renderGrid(ids,statuses,labels){
   const grid=document.getElementById('grid');grid.innerHTML='';
   for(const id of ids){
     const s=statuses[id]||'unreviewed';const lbl=labels[id]||'';
+    if(mode==='unreviewed' && s!=='unreviewed') continue;
     const wrapper=document.createElement('div');wrapper.className='thumb-wrapper';
     const img=document.createElement('img');img.src='/api/thumb/'+id;img.dataset.id=id;img.className='thumb';
     if(s.startsWith('tainted:')){img.classList.add('tainted-'+s.replace('tainted:extraction_','').replace('tainted:',''));}
