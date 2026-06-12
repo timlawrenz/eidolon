@@ -47,8 +47,9 @@ def cmd_review_ui(args):
     from .review.ui import create_app
     dataset = Path(args.dataset)
     db_path = dataset / "review.db"
-    faces_dir = dataset / "faces"
-    app = create_app(db_path, faces_dir)
+    # image_path in DB is stored relative to the dataset root (e.g. 'faces/anna-l/...')
+    # so we must pass dataset as the root, not dataset/"faces"
+    app = create_app(db_path, dataset)
     print(f"Review UI running at http://127.0.0.1:{args.port}")
     app.run(host="127.0.0.1", port=args.port, debug=False)
     return 0
