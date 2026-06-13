@@ -50,8 +50,8 @@ def cmd_review_ui(args):
     # image_path in DB is stored relative to the dataset root (e.g. 'faces/anna-l/...')
     # so we must pass dataset as the root, not dataset/"faces"
     app = create_app(db_path, dataset)
-    print(f"Review UI running at http://127.0.0.1:{args.port}")
-    app.run(host="127.0.0.1", port=args.port, debug=False)
+    print(f"Review UI running at http://{args.bind}:{args.port}")
+    app.run(host=args.bind, port=args.port, debug=False)
     return 0
 
 def cmd_enrich(args):
@@ -92,6 +92,7 @@ def main():
     
     p_ui = rsub.add_parser("ui")
     p_ui.add_argument("--dataset", required=True)
+    p_ui.add_argument("--bind", default="127.0.0.1", help="Host interface to bind to (e.g. 0.0.0.0)")
     p_ui.add_argument("--port", type=int, default=5101)
     p_ui.set_defaults(func=cmd_review_ui)
 
