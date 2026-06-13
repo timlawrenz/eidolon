@@ -132,12 +132,23 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
     return saved
 
 def extract_all(manifest: dict, output_dir: Path, device="cuda:0", max_workers=4):
+    import itertools
     mtcnn = get_mtcnn(device)
-    tasks = []
+    
+    # Breadth-first task generation (round-robin across identities)
+    tasks_per_identity = []
     for identity, entries in manifest.items():
-        for entry in entries:
-            tasks.append((entry["image_path"], identity, entry["set_slug"], entry["filename"]))
-            
+        tasks_per_identity.append([
+            (entry["image_path"], identity, entry["set_slug"], entry["filename"])
+            for entry in entries
+        ])
+        
+    tasks = []
+    for task_batch in itertools.zip_longest(*tasks_per_identity):
+        for task in task_batch:
+            if task is not None:
+                tasks.append(task)
+                
     def _process(task):
         img_path, ident, slug, fname = task
         return extract_faces_for_image(img_path, output_dir, ident, slug, fname, mtcnn)
