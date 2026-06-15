@@ -45,9 +45,14 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
     @app.route("/api/random_persona")
     def api_random_persona():
         mode = request.args.get("mode", "unreviewed")
+        force_persona = request.args.get("persona", None)
         status_filter = "approved" if mode == "review" else "unreviewed"
         db = get_db(db_path)
-        row = db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? GROUP BY p.id ORDER BY RANDOM() LIMIT 1", (status_filter,)).fetchone()
+        
+        if force_persona:
+            row = db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? AND p.name = ? GROUP BY p.id LIMIT 1", (status_filter, force_persona)).fetchone()
+        else:
+            row = db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? GROUP BY p.id ORDER BY RANDOM() LIMIT 1", (status_filter,)).fetchone()
         
         if not row:
             msg = "ALL REVIEWED" if mode == "review" else "ALL DONE"
@@ -154,10 +159,19 @@ h2 { color:#4CAF50; }
 <div class="grid" id="grid"></div>
 <script>
 let personaId=null,brush='tainted:extraction_nonface',tainted={},mode='unreviewed',shownIds=[];
+
+// Parse URL params so user can force a persona via http://.../?persona=anna
+const urlParams = new URLSearchParams(window.location.search);
+const forcePersona = urlParams.get('persona');
+
 function switchMode(m){mode=m;document.getElementById('btn_review_mode').style.display=m==='review'?'none':'inline-block';document.getElementById('btn_unreviewed_mode').style.display=m==='review'?'inline-block':'none';loadPersona();}
 function setBrush(b){brush=b;document.querySelectorAll('.brush').forEach(e=>e.classList.remove('active'));if(b==='tainted:extraction_nonface')document.getElementById('btn_nonface').classList.add('active');if(b==='tainted:contamination')document.getElementById('btn_contam').classList.add('active');if(b==='tainted:unusable')document.getElementById('btn_unusable').classList.add('active');}
 async function loadPersona(){
-  const resp=await fetch('/api/random_persona?mode='+mode);
+  let url = '/api/random_persona?mode=' + mode;
+  if (forcePersona) {
+      url += '&persona=' + encodeURIComponent(forcePersona);
+  }
+  const resp=await fetch(url);
   const data=await resp.json();
   if(!data.persona_id){document.getElementById('grid').innerHTML='<p style="font-size:24px;color:#4CAF50">'+data.persona_name+'!</p>';return;}
   personaId=data.persona_id;
