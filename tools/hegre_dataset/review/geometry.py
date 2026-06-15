@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 # Add project root to sys.path so we can import geometry_pca
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../experiments/geometry_pca")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../experiments/geometry_pca")))
 
 from geometry_pca.zg_inference import encode_zg
 from geometry_pca.fit import load_encoder
