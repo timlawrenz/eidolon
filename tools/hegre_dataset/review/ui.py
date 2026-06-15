@@ -63,7 +63,18 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         
         total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
         
-        all_imgs = db.execute("SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? ORDER BY RANDOM() LIMIT 20", (pid, status_filter)).fetchall()
+        # Determine sorting strategy:
+        # If the persona has computed zg_distances, sort by worst-first (DESC).
+        # We handle NULLs by pushing them to the end, or if we want uncomputed things 
+        # to just fall back to random, we can do that. For now, worst-first.
+        has_distances = db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
+        
+        if has_distances:
+            order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
+        else:
+            order_clause = "ORDER BY RANDOM() LIMIT 20"
+        
+        all_imgs = db.execute(f"SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
         db.close()
         
         return jsonify({
