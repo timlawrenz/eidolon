@@ -39,12 +39,12 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
         img_ids = []
         
         for img in images:
-            # image_path is relative to 'faces', e.g. 'anna-l/anna-l-shoot/img_face1.jpg'
-            # stratum_dir has 'anna-l/anna-l-shoot/img_face1/pose.npy'
-            rel_path = Path(img["image_path"])
-            pose_path = stratum_dir / rel_path.parent / rel_path.stem / "pose.npy"
+            pose_path = None
+            for pth in stratum_dir.rglob(f"{Path(img['image_path']).stem}/pose.npy"):
+                pose_path = pth
+                break
             
-            if pose_path.exists():
+            if pose_path and pose_path.exists():
                 try:
                     pose = np.load(pose_path).astype(np.float32)
                     face_2d = pose[23:91, :2]

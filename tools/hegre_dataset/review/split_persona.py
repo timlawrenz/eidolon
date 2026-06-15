@@ -51,10 +51,21 @@ def cmd_review_split_persona(args):
     img_ids = []
     
     for img in images:
-        rel_path = Path(img["image_path"])
-        pose_path = stratum_dir / rel_path.parent / rel_path.stem / "pose.npy"
+        # img["image_path"] is e.g. "anna/anna-shoot/img_face1.jpg"
+        # stratum_dir has "anna/anna-shoot/img_face1/pose.npy"
+        # The logic was checking stratum_dir / img["image_path"].parent ... 
+        # But wait, Stratum creates a directory per image, but the input to stratum process was:
+        # stratum process /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/faces/anna/ --output /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/stratum/anna/
+        # This strips the "anna" prefix off the relative paths inside stratum_dir!
+        # So stratum_dir/anna-shoot/img_face1/pose.npy might exist, NOT stratum_dir/anna/anna-shoot/img_face1/pose.npy!
         
-        if pose_path.exists():
+        # Let's search for the pose.npy recursively based on the image stem, which is unique enough for the shoot
+        pose_path = None
+        for p in stratum_dir.rglob(f"{Path(img['image_path']).stem}/pose.npy"):
+            pose_path = p
+            break
+            
+        if pose_path and pose_path.exists():
             try:
                 pose = np.load(pose_path).astype(np.float32)
                 face_2d = pose[23:91, :2]
