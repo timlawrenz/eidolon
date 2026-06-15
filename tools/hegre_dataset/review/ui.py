@@ -56,6 +56,11 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             
         pid, pname = row["id"], row["name"]
         
+        # Check for reference images
+        # We only want references that exist and have a valid distance
+        refs = db.execute("SELECT id FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL ORDER BY zg_distance ASC LIMIT 3", (pid,)).fetchall()
+        reference_ids = [r["id"] for r in refs]
+        
         total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
         
         all_imgs = db.execute("SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? ORDER BY RANDOM() LIMIT 20", (pid, status_filter)).fetchall()
@@ -66,6 +71,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             "persona_name": pname,
             "total_for_persona": total_for_persona,
             "image_ids": [r["id"] for r in all_imgs],
+            "reference_ids": reference_ids,
             "unreviewed_ids": [r["id"] for r in all_imgs if r["status"] == status_filter],
             "statuses": {r["id"]: r["status"] for r in all_imgs},
             "labels": {r["id"]: f"face{r['face_index']}" for r in all_imgs},
@@ -133,6 +139,7 @@ h2 { color:#4CAF50; }
   <button class="brush mode" id="btn_unreviewed_mode" style="display:none" onclick="switchMode('unreviewed')">&#x21E0; First Pass</button>
   <span id="status"></span>
 </div>
+<div id="reference-anchors" style="display:flex; gap:10px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #444;"></div>
 <div class="grid" id="grid"></div>
 <script>
 let personaId=null,brush='tainted:extraction_nonface',tainted={},mode='unreviewed',shownIds=[];
@@ -147,7 +154,34 @@ async function loadPersona(){
   document.getElementById('persona_name').innerText=data.persona_name + ' (showing ' + shownIds.length + ' of ' + data.total_for_persona + ' remaining)';
   const n=data.unreviewed_ids.length;document.getElementById('status').innerText=n+' '+(mode==='review'?'approved':'unreviewed');
   tainted={};
+  renderReferences(data.reference_ids);
   renderGrid(data.image_ids,data.statuses,data.labels);
+}
+function renderReferences(ids) {
+    const container = document.getElementById('reference-anchors');
+    container.innerHTML = '<div style="margin-top:40px; margin-right: 15px; color: #aaa;"><strong>True Identity<br>Anchors:</strong></div>';
+    if (!ids || ids.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'flex';
+    for(const id of ids) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thumb-wrapper';
+        const img = document.createElement('img');
+        img.src = '/api/thumb/' + id;
+        img.className = 'thumb approved';
+        img.style.borderColor = '#FFD700'; // Gold border
+        img.style.borderWidth = '3px';
+        img.style.opacity = '1';
+        wrapper.appendChild(img);
+        const lbl = document.createElement('div');
+        lbl.className = 'label';
+        lbl.innerText = 'Reference';
+        lbl.style.color = '#FFD700';
+        wrapper.appendChild(lbl);
+        container.appendChild(wrapper);
+    }
 }
 function renderGrid(ids,statuses,labels){
   const grid=document.getElementById('grid');grid.innerHTML='';

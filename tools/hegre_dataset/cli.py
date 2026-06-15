@@ -55,15 +55,27 @@ def cmd_review_ui(args):
     return 0
 
 def cmd_enrich(args):
-    from .enrichment import generate_approved_list, run_stratum_enrichment
+    from .enrichment import run_stratum_enrichment
     dataset = Path(args.dataset)
-    print("Generating list of approved images for Stratum...")
-    list_path = generate_approved_list(dataset)
-    print(f"Approved list written to: {list_path}")
+    db_path = dataset / "review.db"
+    faces_dir = dataset  # image_path in DB is stored relative to dataset root (e.g. 'faces/anna-l/...')
     print("Running Stratum enrichment...")
-    run_stratum_enrichment(list_path, dataset)
+    run_stratum_enrichment(dataset, db_path, faces_dir)
     print("Stratum enrichment complete.")
     return 0
+
+def cmd_review_compute_geometry(args):
+    from .review.geometry import compute_zg_distances
+    dataset = Path(args.dataset)
+    db_path = dataset / "review.db"
+    stratum_dir = dataset / "stratum"
+    encoder_path = args.encoder
+    
+    if not stratum_dir.exists():
+        print(f"Error: Stratum directory {stratum_dir} not found. Run enrichment first.")
+        return 1
+        
+    return compute_zg_distances(db_path, stratum_dir, encoder_path)
 
 def main():
     parser = argparse.ArgumentParser(prog="hegre-dataset")
@@ -92,9 +104,14 @@ def main():
     
     p_ui = rsub.add_parser("ui")
     p_ui.add_argument("--dataset", required=True)
-    p_ui.add_argument("--bind", default="127.0.0.1", help="Host interface to bind to (e.g. 0.0.0.0)")
+    p_ui.add_argument("--bind", default="127.0.0.1")
     p_ui.add_argument("--port", type=int, default=5101)
     p_ui.set_defaults(func=cmd_review_ui)
+    
+    p_geom = rsub.add_parser("compute-geometry", help="Compute zg_distances for True Identity Anchors")
+    p_geom.add_argument("--dataset", required=True)
+    p_geom.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
+    p_geom.set_defaults(func=cmd_review_compute_geometry)
 
     p_enrich = sub.add_parser("enrich")
     p_enrich.add_argument("--dataset", required=True)
