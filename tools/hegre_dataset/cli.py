@@ -117,7 +117,7 @@ def main():
     p_split.add_argument("--dataset", required=True)
     p_split.add_argument("--persona", required=True, help="Name of the persona to split (e.g. 'anna')")
     p_split.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
-    p_split.add_argument("--eps", type=float, default=40.0, help="DBSCAN distance threshold (default: 40.0)")
+    p_split.add_argument("--eps", type=float, default=20.0, help="DBSCAN distance threshold (default: 20.0)")
     p_split.set_defaults(func=lambda args: __import__('tools.hegre_dataset.review.split_persona', fromlist=['cmd_review_split_persona']).cmd_review_split_persona(args))
 
     p_enrich = sub.add_parser("enrich")
