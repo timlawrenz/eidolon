@@ -112,6 +112,13 @@ def main():
     p_geom.add_argument("--dataset", required=True)
     p_geom.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
     p_geom.set_defaults(func=cmd_review_compute_geometry)
+    
+    p_split = rsub.add_parser("split-persona", help="Use DBSCAN clustering on zg vectors to untangle mixed personas")
+    p_split.add_argument("--dataset", required=True)
+    p_split.add_argument("--persona", required=True, help="Name of the persona to split (e.g. 'anna')")
+    p_split.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
+    p_split.add_argument("--eps", type=float, default=40.0, help="DBSCAN distance threshold (default: 40.0)")
+    p_split.set_defaults(func=lambda args: __import__('tools.hegre_dataset.review.split_persona', fromlist=['cmd_review_split_persona']).cmd_review_split_persona(args))
 
     p_enrich = sub.add_parser("enrich")
     p_enrich.add_argument("--dataset", required=True)
