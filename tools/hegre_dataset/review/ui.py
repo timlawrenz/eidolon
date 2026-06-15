@@ -80,17 +80,38 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             order_clause = "ORDER BY RANDOM() LIMIT 20"
         
         all_imgs = db.execute(f"SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
+        
+        # In multi-person shoots, the worst-first queue might serve us 20 images of the WRONG person.
+        # So we also query the BEST 20 images (closest to centroid) to establish the true identity 
+        # for this cluster in the UI grid, avoiding reviewer drift.
+        best_imgs = db.execute(f"SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? ORDER BY zg_distance ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
+        
         db.close()
+        
+        # Combine the lists, ensuring we don't have duplicates
+        # and limit to 20 total.
+        combined_ids = [r["id"] for r in best_imgs]
+        for img in all_imgs:
+            if img["id"] not in combined_ids:
+                combined_ids.append(img["id"])
+            if len(combined_ids) >= 20:
+                break
+                
+        # Rebuild the final list of row objects for rendering
+        final_imgs = []
+        for img in best_imgs + all_imgs:
+            if img["id"] in combined_ids and img["id"] not in [r["id"] for r in final_imgs]:
+                final_imgs.append(img)
         
         return jsonify({
             "persona_id": pid,
             "persona_name": pname,
             "total_for_persona": total_for_persona,
-            "image_ids": [r["id"] for r in all_imgs],
+            "image_ids": [r["id"] for r in final_imgs],
             "reference_ids": reference_ids,
-            "unreviewed_ids": [r["id"] for r in all_imgs if r["status"] == status_filter],
-            "statuses": {r["id"]: r["status"] for r in all_imgs},
-            "labels": {r["id"]: f"face{r['face_index']}" for r in all_imgs},
+            "unreviewed_ids": [r["id"] for r in final_imgs if r["status"] == status_filter],
+            "statuses": {r["id"]: r["status"] for r in final_imgs},
+            "labels": {r["id"]: f"face{r['face_index']}" for r in final_imgs},
             "mode": mode,
         })
 
