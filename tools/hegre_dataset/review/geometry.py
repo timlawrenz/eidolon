@@ -42,7 +42,9 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
         # We need to map the persona name back to the original directory name by stripping '_cluster_X'.
         base_pname = pname.split("_cluster_")[0]
         
-        images = db.execute("SELECT id, image_path FROM images WHERE persona_id = ?", (pid,)).fetchall()
+        # Only compute geometry for images that are either unreviewed or approved.
+        # Images tainted as non-face or unusable shouldn't skew the true centroid.
+        images = db.execute("SELECT id, image_path FROM images WHERE persona_id = ? AND status IN ('unreviewed', 'approved')", (pid,)).fetchall()
         
         vectors = []
         img_ids = []

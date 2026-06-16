@@ -40,10 +40,11 @@ def cmd_review_split_persona(args):
     pid = persona_row["id"]
     pname = persona_row["name"]
 
-    # Get all unreviewed images for this persona
-    images = db.execute("SELECT id, image_path FROM images WHERE persona_id = ? AND status = 'unreviewed'", (pid,)).fetchall()
+    # Get all unreviewed or approved images for this persona.
+    # Exclude tainted images so they don't skew the DBSCAN clustering.
+    images = db.execute("SELECT id, image_path FROM images WHERE persona_id = ? AND status IN ('unreviewed', 'approved')", (pid,)).fetchall()
     if not images:
-        print(f"No unreviewed images found for '{pname}'.")
+        print(f"No unreviewed or approved images found for '{pname}'.")
         return 0
 
     print(f"Loading pose data for {len(images)} images of '{pname}'...")
