@@ -133,28 +133,47 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
 
 def extract_all(manifest: dict, output_dir: Path, device="cuda:0", max_workers=4):
     import itertools
+    from tqdm import tqdm
+    
     mtcnn = get_mtcnn(device)
     
     # Breadth-first task generation (round-robin across identities)
     tasks_per_identity = []
+    
+    print("Scanning manifest for un-extracted faces...")
     for identity, entries in manifest.items():
-        tasks_per_identity.append([
-            (entry["image_path"], identity, entry["set_slug"], entry["filename"])
-            for entry in entries
-        ])
-        
+        ident_tasks = []
+        for entry in entries:
+            # Idempotency check: see if the crop already exists BEFORE adding to the queue.
+            # This makes resuming nearly instantaneous instead of spinning up thread pool workers
+            # just to check disk presence.
+            img_basename = Path(entry["filename"]).stem
+            out_dir = output_dir / "faces" / identity / entry["set_slug"]
+            if not (out_dir / f"{img_basename}_face1.jpg").exists():
+                ident_tasks.append((entry["image_path"], identity, entry["set_slug"], entry["filename"]))
+        if ident_tasks:
+            tasks_per_identity.append(ident_tasks)
+            
     tasks = []
     for task_batch in itertools.zip_longest(*tasks_per_identity):
         for task in task_batch:
             if task is not None:
                 tasks.append(task)
                 
+    if not tasks:
+        print("All faces in manifest have already been extracted.")
+        return []
+        
+    print(f"Found {len(tasks)} images remaining to process. Starting extraction...")
+    
     def _process(task):
         img_path, ident, slug, fname = task
         return extract_faces_for_image(img_path, output_dir, ident, slug, fname, mtcnn)
         
+    futures = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = list(executor.map(_process, tasks))
-        
-    print(f"Processed {len(futures)} images.")
+        # Wrap the mapping in tqdm for a progress bar
+        for result in tqdm(executor.map(_process, tasks), total=len(tasks), desc="Extracting faces"):
+            futures.append(result)
+            
     return futures
