@@ -36,6 +36,12 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
     
     for p in personas:
         pid, pname = p["id"], p["name"]
+        
+        # When DBSCAN splits personas, the new directory names in `stratum/` don't change!
+        # If the persona is 'anna_cluster_1', the files are still inside `stratum/anna/`.
+        # We need to map the persona name back to the original directory name by stripping '_cluster_X'.
+        base_pname = pname.split("_cluster_")[0]
+        
         images = db.execute("SELECT id, image_path FROM images WHERE persona_id = ?", (pid,)).fetchall()
         
         vectors = []
@@ -46,7 +52,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
             # Instead of a slow rglob across the whole tree, we can just glob the persona dir directly.
             # Stratum outputs: stratum_dir / persona_name / ... / img_stem / pose.npy
             pose_path = None
-            persona_dir = stratum_dir / pname
+            persona_dir = stratum_dir / base_pname
             if persona_dir.exists():
                 for pth in persona_dir.rglob(f"{Path(img['image_path']).stem}/pose.npy"):
                     pose_path = pth
