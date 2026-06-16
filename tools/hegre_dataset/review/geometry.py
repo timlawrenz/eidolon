@@ -30,6 +30,9 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
 
     personas = db.execute("SELECT id, name FROM personas").fetchall()
     total_updated = 0
+    total_images_processed = 0
+    
+    print(f"Starting geometry compute for {len(personas)} personas...")
     
     for p in personas:
         pid, pname = p["id"], p["name"]
@@ -39,10 +42,15 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
         img_ids = []
         
         for img in images:
+            # We know the specific subdirectory structure Stratum uses!
+            # Instead of a slow rglob across the whole tree, we can just glob the persona dir directly.
+            # Stratum outputs: stratum_dir / persona_name / ... / img_stem / pose.npy
             pose_path = None
-            for pth in stratum_dir.rglob(f"{Path(img['image_path']).stem}/pose.npy"):
-                pose_path = pth
-                break
+            persona_dir = stratum_dir / pname
+            if persona_dir.exists():
+                for pth in persona_dir.rglob(f"{Path(img['image_path']).stem}/pose.npy"):
+                    pose_path = pth
+                    break
             
             if pose_path and pose_path.exists():
                 try:
@@ -51,6 +59,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
                     zg = encode_zg(face_2d, encoder)
                     vectors.append(zg)
                     img_ids.append(img["id"])
+                    total_images_processed += 1
                 except Exception:
                     pass
         
@@ -63,7 +72,9 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str):
                 db.execute("UPDATE images SET zg_distance = ? WHERE id = ?", (float(dist), iid))
             db.commit()
             total_updated += len(vectors)
-            print(f"Computed distances for {len(vectors)} images of {pname}")
+            print(f"[{total_images_processed} poses loaded] Computed distances for {len(vectors)} images of {pname}")
+        else:
+            print(f"Skipped {pname} (No valid pose.npy files found)")
             
     db.close()
     print(f"\nDone. Updated zg_distance for {total_updated} total images.")
