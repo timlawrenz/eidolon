@@ -120,9 +120,6 @@ def extract_faces_for_image(image_path: str, output_dir: Path, identity: str, se
             face_crop = img.crop(tuple(sq_box))
             if face_crop.width > max_dim or face_crop.height > max_dim:
                 face_crop = face_crop.resize((max_dim, max_dim), resample_filter)
-            elif face_crop.width < max_dim or face_crop.height < max_dim:
-                # Upscale small faces to exactly 512x512
-                face_crop = face_crop.resize((max_dim, max_dim), resample_filter)
                 
             face_crop.save(out_path, quality=95)
             saved.append(str(out_path.relative_to(output_dir)))

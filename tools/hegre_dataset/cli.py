@@ -77,7 +77,7 @@ def cmd_review_compute_geometry(args):
         
     return compute_zg_distances(db_path, stratum_dir, encoder_path)
 
-def main():
+def main(args=None):
     parser = argparse.ArgumentParser(prog="hegre-dataset")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -124,8 +124,8 @@ def main():
     p_enrich.add_argument("--dataset", required=True)
     p_enrich.set_defaults(func=cmd_enrich)
 
-    args = parser.parse_args()
-    return args.func(args)
+    args_parsed = parser.parse_args(args)
+    return args_parsed.func(args_parsed)
 
 if __name__ == "__main__":
     sys.exit(main())
