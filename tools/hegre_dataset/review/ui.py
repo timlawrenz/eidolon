@@ -62,8 +62,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         pid, pname = row["id"], row["name"]
         
         # Check for reference images
-        # We only want references that exist and have a valid distance
-        refs = db.execute("SELECT id FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL ORDER BY zg_distance ASC LIMIT 3", (pid,)).fetchall()
+        # We only want references that exist, have a valid distance, and are NOT rejected
+        refs = db.execute("SELECT id FROM images WHERE persona_id = ? AND status IN ('unreviewed', 'approved') AND zg_distance IS NOT NULL ORDER BY zg_distance ASC LIMIT 3", (pid,)).fetchall()
         reference_ids = [r["id"] for r in refs]
         
         total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
