@@ -25,7 +25,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
     _thumb_cache = {}
     THUMB_SIZE = (120, 120)
     
-    def _load_thumb(image_path_rel: str, draw_skel: bool = False) -> bytes:
+    def _load_thumb(image_path_rel: str, persona_name: str, draw_skel: bool = False) -> bytes:
         """Load and resize a face crop to thumbnail size."""
         full_path = (faces_root / image_path_rel).resolve()
         if not full_path.is_relative_to(faces_root.resolve()):
@@ -37,21 +37,18 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         img = Image.open(full_path).convert("RGB")
         
         if draw_skel:
-            # Map 'testmodel/testmodel_shoot1/img1_face1.jpg' 
-            # to  'stratum/testmodel/testmodel_shoot1/img1_face1/pose.npy'
             p = Path(image_path_rel)
             
-            # The persona dir might have a _cluster_ suffix from DBSCAN, which isn't in the image_path
-            # Let's find the pose.npy by looking up the image ID in the DB to get the persona_id,
-            # then looking up the persona name, but we only have `image_path_rel` here.
+            # Use the explicit persona_name from the DB to build the stratum path
+            # The persona_name might have a _cluster_ suffix from DBSCAN, which isn't in the image_path!
+            base_pname = persona_name.split("_cluster_")[0]
             
-            # Since the stem is highly unique (e.g. 'anna-coke-10-6000px_face2'), we can just 
-            # search the stratum_dir for it directly!
-            stratum_dir = faces_root / "stratum"
+            stratum_dir = faces_root / "stratum" / base_pname
             pose_path = None
-            for pth in stratum_dir.rglob(f"{p.stem}/pose.npy"):
-                pose_path = pth
-                break
+            if stratum_dir.exists():
+                for pth in stratum_dir.rglob(f"{p.stem}/pose.npy"):
+                    pose_path = pth
+                    break
                 
             if pose_path and pose_path.exists():
                 try:
@@ -85,18 +82,13 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         if cache_key not in _thumb_cache:
             db = get_db(db_path)
             row = db.execute(
-                "SELECT image_path, persona_id FROM images WHERE id = ?", (image_id,)
+                "SELECT i.image_path, p.name FROM images i JOIN personas p ON i.persona_id = p.id WHERE i.id = ?", (image_id,)
             ).fetchone()
-            
-            if not row:
-                db.close()
-                return "", 404
-                
-            persona_name = db.execute("SELECT name FROM personas WHERE id = ?", (row["persona_id"],)).fetchone()["name"]
             db.close()
             
-            # Pass persona_name to load_thumb so it doesn't have to guess from the path
-            _thumb_cache[cache_key] = _load_thumb(row["image_path"], persona_name, draw_skel=draw_skel)
+            if not row:
+                return "", 404
+            _thumb_cache[cache_key] = _load_thumb(row["image_path"], row["name"], draw_skel=draw_skel)
             if len(_thumb_cache) > 400:
                 _thumb_cache.pop(next(iter(_thumb_cache)))
         return send_file(io.BytesIO(_thumb_cache[cache_key]), mimetype="image/jpeg")
