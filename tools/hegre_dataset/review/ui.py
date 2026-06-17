@@ -1,52 +1,111 @@
+"""Interactive review UI for hegre face datasets.
+
+Shows actual MTCNN face crops for visual verification.
+Brush-to-taint, DONE-to-approve. Port-configurable Flask server.
+"""
 import io
 import sqlite3
+import numpy as np
 from pathlib import Path
-from flask import Flask, render_template_string, request, jsonify, send_file
-from PIL import Image
+
+from flask import Flask, jsonify, render_template_string, request, send_file
+from PIL import Image, ImageDraw
+
 
 def get_db(db_path: Path) -> sqlite3.Connection:
     db = sqlite3.connect(str(db_path))
     db.row_factory = sqlite3.Row
     return db
 
+
 def create_app(db_path: Path, faces_root: Path) -> Flask:
+    """Create the Flask application."""
     app = Flask(__name__)
+    
     _thumb_cache = {}
     THUMB_SIZE = (120, 120)
-    resample_filter = getattr(Image.Resampling, "LANCZOS", getattr(Image, "LANCZOS", 1))
     
-    def _load_thumb(image_path_rel: str) -> bytes:
-        full_path = faces_root / image_path_rel
+    def _load_thumb(image_path_rel: str, draw_skel: bool = False) -> bytes:
+        """Load and resize a face crop to thumbnail size."""
+        full_path = (faces_root / image_path_rel).resolve()
+        if not full_path.is_relative_to(faces_root.resolve()):
+            return _get_placeholder()
+            
         if not full_path.exists():
-            placeholder = Image.new("RGB", THUMB_SIZE, (60, 60, 60))
-            buf = io.BytesIO()
-            placeholder.save(buf, format="JPEG", quality=75)
-            return buf.getvalue()
+            return _get_placeholder()
         
         img = Image.open(full_path).convert("RGB")
+        
+        if draw_skel:
+            # Map 'testmodel/testmodel_shoot1/img1_face1.jpg' 
+            # to  'stratum/testmodel/testmodel_shoot1/img1_face1/pose.npy'
+            p = Path(image_path_rel)
+            
+            # The persona dir might have a _cluster_ suffix from DBSCAN, which isn't in the image_path
+            # Let's find the pose.npy by looking up the image ID in the DB to get the persona_id,
+            # then looking up the persona name, but we only have `image_path_rel` here.
+            
+            # Since the stem is highly unique (e.g. 'anna-coke-10-6000px_face2'), we can just 
+            # search the stratum_dir for it directly!
+            stratum_dir = faces_root / "stratum"
+            pose_path = None
+            for pth in stratum_dir.rglob(f"{p.stem}/pose.npy"):
+                pose_path = pth
+                break
+                
+            if pose_path and pose_path.exists():
+                try:
+                    pose = np.load(pose_path)
+                    face_2d = pose[23:91, :2]
+                    draw = ImageDraw.Draw(img)
+                    for x, y in face_2d:
+                        if x > 0 and y > 0:
+                            draw.ellipse([x-2, y-2, x+2, y+2], fill="lime")
+                except Exception as e:
+                    pass
+                        
+        resample_filter = getattr(Image.Resampling, "LANCZOS", getattr(Image, "LANCZOS", 1))
         img.thumbnail(THUMB_SIZE, resample_filter)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=75)
         return buf.getvalue()
-
+        
+    def _get_placeholder() -> bytes:
+        placeholder = Image.new("RGB", THUMB_SIZE, (60, 60, 60))
+        buf = io.BytesIO()
+        placeholder.save(buf, format="JPEG", quality=75)
+        return buf.getvalue()
+    
     @app.route("/api/thumb/<int:image_id>")
     def api_thumb(image_id):
-        if image_id not in _thumb_cache:
+        draw_skel = request.args.get("skel", "0") == "1"
+        # Force cache bypass if we're debugging, or make sure cache key is robust
+        cache_key = f"{image_id}_{draw_skel}"
+        
+        if cache_key not in _thumb_cache:
             db = get_db(db_path)
-            row = db.execute("SELECT image_path FROM images WHERE id = ?", (image_id,)).fetchone()
-            db.close()
+            row = db.execute(
+                "SELECT image_path, persona_id FROM images WHERE id = ?", (image_id,)
+            ).fetchone()
+            
             if not row:
+                db.close()
                 return "", 404
-            _thumb_cache[image_id] = _load_thumb(row["image_path"])
-            if len(_thumb_cache) > 200:
+                
+            persona_name = db.execute("SELECT name FROM personas WHERE id = ?", (row["persona_id"],)).fetchone()["name"]
+            db.close()
+            
+            # Pass persona_name to load_thumb so it doesn't have to guess from the path
+            _thumb_cache[cache_key] = _load_thumb(row["image_path"], persona_name, draw_skel=draw_skel)
+            if len(_thumb_cache) > 400:
                 _thumb_cache.pop(next(iter(_thumb_cache)))
-        return send_file(io.BytesIO(_thumb_cache[image_id]), mimetype="image/jpeg")
-
+        return send_file(io.BytesIO(_thumb_cache[cache_key]), mimetype="image/jpeg")
+    
     @app.route("/api/random_persona")
     def api_random_persona():
         mode = request.args.get("mode", "unreviewed")
         force_persona = request.args.get("persona", None)
-        status_filter = "approved" if mode == "review" else "unreviewed"
+        status_filter = "approved" if mode in ["review", "audit"] else "unreviewed"
         db = get_db(db_path)
         
         if force_persona:
@@ -55,7 +114,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             row = db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? GROUP BY p.id ORDER BY RANDOM() LIMIT 1", (status_filter,)).fetchone()
         
         if not row:
-            msg = "ALL REVIEWED" if mode == "review" else "ALL DONE"
+            msg = "ALL REVIEWED" if mode in ["review", "audit"] else "ALL DONE"
             db.close()
             return jsonify({"persona_id": None, "persona_name": msg, "image_ids": [], "mode": mode})
             
@@ -68,33 +127,26 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         
         total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
         
-        # Determine sorting strategy:
-        # If the persona has computed zg_distances and we are in the 'first pass' (unreviewed), sort by worst-first (DESC).
-        # We handle NULLs by pushing them to the end.
-        # If we are in 'review pass' (status_filter == 'approved'), we want to see random approved images to spot-check them,
-        # not just stare at the worst approved ones over and over.
+        # Determine sorting strategy
         has_distances = db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
         
-        if has_distances and mode == "unreviewed":
+        if mode == "audit":
+            order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
+        elif has_distances and mode == "unreviewed":
             order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
         else:
             order_clause = "ORDER BY RANDOM() LIMIT 20"
         
-        all_imgs = db.execute(f"SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
+        all_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
         
-        # In multi-person shoots, the worst-first queue might serve us 20 images of the WRONG person.
-        # So we also query the BEST 20 images (closest to centroid) to establish the true identity 
-        # for this cluster in the UI grid, avoiding reviewer drift.
-        # We only do this injection in 'unreviewed' mode, otherwise the random review pass gets polluted with the same 5 best images.
+        # Mix in best images only if unreviewed (to prevent drift)
         if mode == "unreviewed":
-            best_imgs = db.execute(f"SELECT id, status, face_index, image_path FROM images WHERE persona_id = ? AND status = ? ORDER BY zg_distance ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
+            best_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY zg_distance ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
         else:
             best_imgs = []
-        
+            
         db.close()
         
-        # Combine the lists, ensuring we don't have duplicates
-        # and limit to 20 total.
         combined_ids = [r["id"] for r in best_imgs]
         for img in all_imgs:
             if img["id"] not in combined_ids:
@@ -102,7 +154,6 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             if len(combined_ids) >= 20:
                 break
                 
-        # Rebuild the final list of row objects for rendering
         final_imgs = []
         for img in best_imgs + all_imgs:
             if img["id"] in combined_ids and img["id"] not in [r["id"] for r in final_imgs]:
@@ -117,9 +168,10 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             "unreviewed_ids": [r["id"] for r in final_imgs if r["status"] == status_filter],
             "statuses": {r["id"]: r["status"] for r in final_imgs},
             "labels": {r["id"]: f"face{r['face_index']}" for r in final_imgs},
+            "distances": {r["id"]: r["zg_distance"] for r in final_imgs},
             "mode": mode,
         })
-
+        
     @app.route("/api/done", methods=["POST"])
     def api_done():
         data = request.get_json()
@@ -132,14 +184,14 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         for img_id_str, reason in tainted.items():
             db.execute("UPDATE images SET status = ?, reviewed_at = datetime('now') WHERE id = ?", (reason, int(img_id_str)))
             
-        if mode != "review":
+        if mode == "unreviewed":
             approved_ids = [int(i) for i in shown_ids if str(i) not in tainted]
             if approved_ids:
                 placeholders = ",".join("?" * len(approved_ids))
                 db.execute(f"UPDATE images SET status = 'approved', reviewed_at = datetime('now') WHERE id IN ({placeholders})", approved_ids)
                 
         db.commit()
-        status_filter = "approved" if mode == "review" else "unreviewed"
+        status_filter = "approved" if mode in ["review", "audit"] else "unreviewed"
         remaining = db.execute("SELECT COUNT(*) FROM images WHERE status = ?", (status_filter,)).fetchone()[0]
         db.close()
         
@@ -155,6 +207,7 @@ h2 { color:#4CAF50; }
 .thumb.tainted-nonface { border-color:#f44336; opacity:0.5; }
 .thumb.tainted-contamination { border-color:#e91e63; opacity:0.5; }
 .thumb.tainted-unusable { border-color:#9C27B0; opacity:0.5; }
+.thumb.tainted-approved_bad_geometry { border-color:#FF9800; opacity:0.8; }
 .thumb.approved { border-color:#4CAF50; opacity:0.6; }
 .thumb.unreviewed { border-color:#555; }
 .tools { margin:12px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -162,36 +215,76 @@ h2 { color:#4CAF50; }
 .brush.nonface { background:#f44336; }
 .brush.contamination { background:#e91e63; }
 .brush.unusable { background:#9C27B0; }
+.brush.badgeom { background:#FF9800; color:black; }
 .brush.done { background:#4CAF50; font-size:16px; padding:10px 24px; }
 .brush.mode { background:#555; font-size:12px; }
+.brush.xray { background:#2196F3; }
 .brush:hover { opacity:0.85; } .brush.active { outline:3px solid white; }
 .key { font-size:12px; color:#666; margin:8px 0; }
 .label { font-size:10px; color:#888; text-align:center; margin-top:2px; }
 .thumb-wrapper { display:flex; flex-direction:column; align-items:center; }
 </style></head><body>
 <h2><span id="persona_name">loading...</span></h2>
-<div class="key"><span style="color:#555">■ unreviewed</span> <span style="color:#4CAF50">■ approved</span> <span style="color:#f44336">■ non-face</span> <span style="color:#e91e63">■ contamination</span> <span style="color:#9C27B0">■ unusable</span></div>
+<div class="key"><span style="color:#555">■ unreviewed</span> <span style="color:#4CAF50">■ approved</span> <span style="color:#f44336">■ non-face</span> <span style="color:#e91e63">■ contamination</span> <span style="color:#9C27B0">■ unusable</span> <span style="color:#FF9800">■ bad geometry</span></div>
 <div class="tools">
   <span style="color:#aaa">Brush:</span>
   <button class="brush nonface active" id="btn_nonface" onclick="setBrush('tainted:extraction_nonface')">Non-face</button>
   <button class="brush contamination" id="btn_contam" onclick="setBrush('tainted:contamination')">Contamination</button>
   <button class="brush unusable" id="btn_unusable" onclick="setBrush('tainted:unusable')">Unusable</button>
+  <button class="brush badgeom" id="btn_badgeom" onclick="setBrush('tainted:approved_bad_geometry')">Bad Geometry</button>
   <button class="brush done" onclick="donePersona()">&#x2713; DONE</button>
-  <button class="brush mode" id="btn_review_mode" onclick="switchMode('review')">&#x21BB; Review Pass</button>
+  
+  <span style="color:#aaa; margin-left:10px;">Modes:</span>
   <button class="brush mode" id="btn_unreviewed_mode" style="display:none" onclick="switchMode('unreviewed')">&#x21E0; First Pass</button>
-  <span id="status"></span>
+  <button class="brush mode" id="btn_review_mode" onclick="switchMode('review')">&#x21BB; Review Pass</button>
+  <button class="brush mode" id="btn_audit_mode" onclick="switchMode('audit')">🔍 Audit Pass</button>
+  <button class="brush xray" onclick="toggleSkel()" id="btn_xray">🦴 X-Ray</button>
+  
+  <span id="status" style="margin-left:10px;"></span>
 </div>
 <div id="reference-anchors" style="display:flex; gap:10px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #444;"></div>
 <div class="grid" id="grid"></div>
 <script>
-let personaId=null,brush='tainted:extraction_nonface',tainted={},mode='unreviewed',shownIds=[];
+let personaId=null,brush='tainted:extraction_nonface',tainted={},mode='unreviewed',shownIds=[],showSkel=false;
+let g_data = null;
 
-// Parse URL params so user can force a persona via http://.../?persona=anna
 const urlParams = new URLSearchParams(window.location.search);
 const forcePersona = urlParams.get('persona');
 
-function switchMode(m){mode=m;document.getElementById('btn_review_mode').style.display=m==='review'?'none':'inline-block';document.getElementById('btn_unreviewed_mode').style.display=m==='review'?'inline-block':'none';loadPersona();}
-function setBrush(b){brush=b;document.querySelectorAll('.brush').forEach(e=>e.classList.remove('active'));if(b==='tainted:extraction_nonface')document.getElementById('btn_nonface').classList.add('active');if(b==='tainted:contamination')document.getElementById('btn_contam').classList.add('active');if(b==='tainted:unusable')document.getElementById('btn_unusable').classList.add('active');}
+function toggleSkel() {
+    showSkel = !showSkel;
+    document.getElementById('btn_xray').style.outline = showSkel ? "3px solid white" : "none";
+    
+    // Dynamically update the src attributes to toggle the skel=1 query param
+    document.querySelectorAll('img.thumb').forEach(img => {
+        let currentSrc = img.src;
+        if (showSkel) {
+            if (!currentSrc.includes('skel=1')) {
+                img.src = currentSrc + (currentSrc.includes('?') ? '&' : '?') + 'skel=1';
+            }
+        } else {
+            img.src = currentSrc.replace(/[\?&]skel=1/, '');
+        }
+    });
+}
+
+function switchMode(m){
+    mode=m;
+    document.getElementById('btn_review_mode').style.display=m==='review'?'none':'inline-block';
+    document.getElementById('btn_audit_mode').style.display=m==='audit'?'none':'inline-block';
+    document.getElementById('btn_unreviewed_mode').style.display=m==='unreviewed'?'none':'inline-block';
+    loadPersona();
+}
+
+function setBrush(b){
+    brush=b;
+    document.querySelectorAll('.brush').forEach(e=>e.classList.remove('active'));
+    if(b==='tainted:extraction_nonface')document.getElementById('btn_nonface').classList.add('active');
+    if(b==='tainted:contamination')document.getElementById('btn_contam').classList.add('active');
+    if(b==='tainted:unusable')document.getElementById('btn_unusable').classList.add('active');
+    if(b==='tainted:approved_bad_geometry')document.getElementById('btn_badgeom').classList.add('active');
+}
+
 async function loadPersona(){
   let url = '/api/random_persona?mode=' + mode;
   if (forcePersona) {
@@ -199,15 +292,17 @@ async function loadPersona(){
   }
   const resp=await fetch(url);
   const data=await resp.json();
+  g_data = data;
   if(!data.persona_id){document.getElementById('grid').innerHTML='<p style="font-size:24px;color:#4CAF50">'+data.persona_name+'!</p>';return;}
   personaId=data.persona_id;
   shownIds=data.image_ids;
   document.getElementById('persona_name').innerText=data.persona_name + ' (showing ' + shownIds.length + ' of ' + data.total_for_persona + ' remaining)';
-  const n=data.unreviewed_ids.length;document.getElementById('status').innerText=n+' '+(mode==='review'?'approved':'unreviewed');
+  const n=data.unreviewed_ids.length;document.getElementById('status').innerText=n+' '+(mode==='unreviewed'?'unreviewed':'approved');
   tainted={};
   renderReferences(data.reference_ids);
-  renderGrid(data.image_ids,data.statuses,data.labels);
+  renderGrid(data.image_ids,data.statuses,data.labels,data.distances);
 }
+
 function renderReferences(ids) {
     const container = document.getElementById('reference-anchors');
     container.innerHTML = '<div style="margin-top:40px; margin-right: 15px; color: #aaa;"><strong>True Identity<br>Anchors:</strong></div>';
@@ -220,9 +315,9 @@ function renderReferences(ids) {
         const wrapper = document.createElement('div');
         wrapper.className = 'thumb-wrapper';
         const img = document.createElement('img');
-        img.src = '/api/thumb/' + id;
+        img.src = '/api/thumb/' + id + (showSkel ? "?skel=1" : "");
         img.className = 'thumb approved';
-        img.style.borderColor = '#FFD700'; // Gold border
+        img.style.borderColor = '#FFD700'; 
         img.style.borderWidth = '3px';
         img.style.opacity = '1';
         wrapper.appendChild(img);
@@ -234,25 +329,48 @@ function renderReferences(ids) {
         container.appendChild(wrapper);
     }
 }
-function renderGrid(ids,statuses,labels){
+
+function renderGrid(ids,statuses,labels,distances){
   const grid=document.getElementById('grid');grid.innerHTML='';
   for(const id of ids){
-    const s=statuses[id]||'unreviewed';const lbl=labels[id]||'';
+    const s=statuses[id]||'unreviewed';
+    let lbl=labels[id]||'';
+    const dist=distances[id];
+    
     if(mode==='unreviewed' && s!=='unreviewed') continue;
+    if(mode==='audit' && s!=='approved' && !s.startsWith('tainted:approved_')) continue;
+    
+    if (dist !== null && dist !== undefined) {
+        lbl += ` (zg: ${parseFloat(dist).toFixed(1)})`;
+    }
+    
     const wrapper=document.createElement('div');wrapper.className='thumb-wrapper';
-    const img=document.createElement('img');img.src='/api/thumb/'+id;img.dataset.id=id;img.className='thumb';
+    const img=document.createElement('img');
+    img.src='/api/thumb/'+id + (showSkel ? "?skel=1" : "");
+    img.dataset.id=id;img.className='thumb';
     if(s.startsWith('tainted:')){img.classList.add('tainted-'+s.replace('tainted:extraction_','').replace('tainted:',''));}
-    else if(s==='approved'){img.classList.add('approved');if(mode==='review')img.onclick=()=>toggleTaint(img,id);}
+    else if(s==='approved'){img.classList.add('approved');if(mode==='review'||mode==='audit')img.onclick=()=>toggleTaint(img,id);}
     else{img.classList.add('unreviewed');img.onclick=()=>toggleTaint(img,id);}
     wrapper.appendChild(img);
     if(lbl){const label=document.createElement('div');label.className='label';label.innerText=lbl;wrapper.appendChild(label);}
     grid.appendChild(wrapper);
   }
 }
+
 function toggleTaint(el,id){
-  if(tainted[id]){delete tainted[id];el.className='thumb';if(mode==='review')el.classList.add('approved');else el.classList.add('unreviewed');}
-  else{tainted[id]=brush;el.className='thumb';el.classList.add('tainted-'+brush.replace('tainted:extraction_','').replace('tainted:',''));}
+  if(tainted[id]){
+      delete tainted[id];
+      el.className='thumb';
+      if(mode==='review'||mode==='audit') el.classList.add('approved');
+      else el.classList.add('unreviewed');
+  }
+  else{
+      tainted[id]=brush;
+      el.className='thumb';
+      el.classList.add('tainted-'+brush.replace('tainted:extraction_','').replace('tainted:',''));
+  }
 }
+
 async function donePersona(){
   const t=Object.keys(tainted).length;
   const resp=await fetch('/api/done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({persona_id:personaId,tainted:tainted,mode:mode,shown_ids:shownIds})});
