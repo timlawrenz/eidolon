@@ -53,12 +53,40 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             if pose_path and pose_path.exists():
                 try:
                     pose = np.load(pose_path)
+                    
+                    # Stratum DWPose coordinates are usually stored normalized [0, 1] relative to the crop!
+                    # Or sometimes centered around 0. We need to map them to pixel coordinates 
+                    # for the 120x120 thumbnail we are drawing on.
+                    # Let's check the scale and map them to the THUMB_SIZE.
                     face_2d = pose[23:91, :2]
+                    
+                    # DWPose in stratum-hq outputs normalized coordinates relative to the original image dimensions.
+                    # Since we are drawing on the raw crop `img` (before thumbnailing), we need to check if 
+                    # they are relative [0,1] or absolute pixels.
+                    # Looking at the sample points: [-0.5, 0.02, 0.15], they appear to be normalized/centered!
+                    # Wait, no, those points might be from the geometry_pca pipeline. DWPose raw is [0, W] pixels usually.
+                    # Let's read the metadata.json if it exists, or dynamically detect the scale.
+                    
+                    # The image we are drawing on is `img`, the raw full-resolution crop.
+                    img_w, img_h = img.size
+                    
                     draw = ImageDraw.Draw(img)
                     for x, y in face_2d:
-                        if x > 0 and y > 0:
-                            draw.ellipse([x-2, y-2, x+2, y+2], fill="lime")
+                        # If DWPose outputs coordinates relative to the FULL original source image (e.g. 14000x14000),
+                        # and we are drawing on a 512x512 crop, the coordinates will be completely off the canvas!
+                        # But wait, Stratum runs DWPose ON the crop itself. 
+                        # Why are the coordinates negative? [-0.5024, -0.1261]
+                        
+                        # Stratum seems to output coordinates centered around (0,0) with scales extending past [-1, 1].
+                        # A face crop is standardly centered in Stratum pipeline output. 
+                        # To plot it onto the 512x512 crop correctly, we map [-1, 1] to [0, img_w].
+                        px = (x / 2.0 + 0.5) * img_w
+                        py = (y / 2.0 + 0.5) * img_h
+                        
+                        if 0 <= px <= img_w and 0 <= py <= img_h:
+                            draw.ellipse([px-4, py-4, px+4, py+4], fill="lime")
                 except Exception as e:
+                    print(f"XRAY ERROR: {e}")
                     pass
                         
         resample_filter = getattr(Image.Resampling, "LANCZOS", getattr(Image, "LANCZOS", 1))
