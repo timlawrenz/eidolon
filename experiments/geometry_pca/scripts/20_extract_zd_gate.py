@@ -43,10 +43,10 @@ def main():
     print("  Done.")
 
     # ── 2. Query review.db (READ-ONLY) ───────────────────────────────
-    db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
+    db = sqlite3.connect("file:/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/review.db?mode=ro", uri=True)
     c = db.cursor()
     c.execute("""
-        SELECT i.enriched_dir, p.name, i.persona_id
+        SELECT i.image_path, p.name, i.persona_id
         FROM images i JOIN personas p ON i.persona_id = p.id
         WHERE i.status = 'approved'
           AND i.persona_id NOT IN (
@@ -59,8 +59,8 @@ def main():
 
     # group by identity
     id_rows = {}
-    for ed, name, pid in all_rows:
-        id_rows.setdefault(pid, []).append((ed, name))
+    for img_path, name, pid in all_rows:
+        id_rows.setdefault(pid, []).append((img_path, name))
 
     identities = list(id_rows.items())
     limit_notice = f" (--limit {args.limit})" if args.limit else ""
@@ -80,7 +80,7 @@ def main():
 
     for pid, rows in identities:
         pid_ok, pid_skip = 0, 0
-        for ed_orig, name in rows:
+        for img_path, name in rows:
             # Map review.db path to face-tree path
             ed = os.path.join(
                 "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_faces_stratum",

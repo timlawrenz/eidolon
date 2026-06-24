@@ -277,6 +277,41 @@ initial PASS was an artifact of the low-resolution z_g baseline. See
 
 ---
 
+### [Recovered from Orphaned Section] The Evidence for Phase 2's Failure
+The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
+FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.
+This is a high-value negative result, established after isolating and correcting a
+metric bug — the two are independent and both are recorded below.
+
+#### Gate run (102 clean identities, 1,665 images from review.db)
+| | trace-J | vs z_g |
+|---|---------|--------|
+| z_g baseline | 0.092 | — |
+| best z_d mode (A_prime, re-std) | 0.094 | **×1.02** |
+| mode C (re-std) | 0.090 | ×0.98 |
+
+Raw `J([z_g\|z_d])` ×1.02 — far short of the pre-registered ×1.15 bar. **FAIL.**
+
+#### ⚠️ Metric bug found during review: trace-J cannot measure complementarity
+The gate used the **trace** Fisher ratio `J = tr(S_B)/tr(S_W)`. For a *concatenated*
+vector the scatter traces decompose additively, so:
+
+```
+J_cat = ( tr(S_B,g) + tr(S_B,d) ) / ( tr(S_W,g) + tr(S_W,d) )
+```
+
+This is **exactly a weighted average** of `J_zg` and `J_zd` (weights = S_W shares).
+If `J_zd` < `J_zg` (which it is: 0.03 vs 0.09), appending z_d will **always pull
+down the trace average**, even if the components are perfectly orthogonal and
+contain 100% independent identity signal. The metric mathematically guarantees
+failure for any partition weaker than the strongest one.
+
+*Correction:* Switched the canonical gate instrument from trace-J to
+**verification AUC** (same/different identity discrimination via cosine distance
+of the concatenated vector).
+
+---
+
 ## [Phase 2b] Surface Normals Partition z_a — `[CONCLUDED — FAIL]`
 
 **Date opened:** 2026-06-10
@@ -361,13 +396,17 @@ corrected z_g baseline (0.688), normals *subtract* identity signal
 
 **z_g baseline: 0.540** (chance=0.5).
 
-**Key findings:**
-1. **z_a ALONE beats z_g ALONE.** Every normal variant's standalone AUC
+**Key findings (⚠️ SUPERSEDED):**
+*The findings below reflect the 2026-06-10 data. They are preserved for provenance, but their conclusions were invalidated by the 2026-06-11 face-crop re-run.*
+
+1. **[INVALIDATED] z_a ALONE beats z_g ALONE.** Every normal variant's standalone AUC
    (0.562–0.570) comfortably exceeds geometry's (0.540). Normals are a stronger
    identity carrier than frontalized 2D keypoints on editorial photos.
-2. **Complementary lift:** appending z_a to z_g lifts AUC by +0.023 to +0.028,
+   *(Correction: The 0.540 baseline was a resolution artifact. Real z_g AUC is 0.688.)*
+2. **[INVALIDATED] Complementary lift:** appending z_a to z_g lifts AUC by +0.023 to +0.028,
    clearing the pre-registered ε=0.01 bar by >2.4× in every mode. (This was
    re-verified across 10 seeds: worst single-seed delta was +0.021.)
+   *(Correction: When tested against the true 0.688 baseline, z_a subtracts -0.039. It is not complementary.)*
 3. **The rot paradox (visibility bias).** The `rot` variant nominally won, but
    the audit flagged it SUSPECT (high pose correlation), while `xy` was CLEAN.
    A mechanistic follow-up proved why: raw normals' mean direction is always
@@ -375,7 +414,7 @@ corrected z_g baseline (0.688), normals *subtract* identity signal
    that camera-facing mean, *injecting* head pose into the global mean direction
    of the grid. PCA promotes this variance. Thus, de-rotation removes pose from
    the texture but injects it globally.
-4. **Architectural choice:** **`xy` (8192-d)** is the canonically selected
+4. **[INVALIDATED] Architectural choice:** **`xy` (8192-d)** is the canonically selected
    variant. It is CLEAN of pose nuisance, requires zero de-rotation (avoiding
    the visibility-bias paradox), is the most compact representation, and passes
    the gate cleanly in 10/10 seeds.
@@ -475,42 +514,6 @@ is UNINFORMATIVE (missing control, caught in review).**
   alignment 1721/1721, dup/finite checks, raw-DINO + random-projection
   controls, C6-noise probe, shoot-leakage probe)
 
-The depth partition `z_d`, as currently encoded (64×64 masked resample, k=50,
-FFHQ-fit basis), adds **no usable complementary identity signal** on top of `z_g`.
-This is a high-value negative result, established after isolating and correcting a
-metric bug — the two are independent and both are recorded below.
-
-#### Gate run (102 clean identities, 1,665 images from review.db)
-| | trace-J | vs z_g |
-|---|---------|--------|
-| z_g baseline | 0.092 | — |
-| best z_d mode (A_prime, re-std) | 0.094 | **×1.02** |
-| mode C (re-std) | 0.090 | ×0.98 |
-
-Raw `J([z_g\|z_d])` ×1.02 — far short of the pre-registered ×1.15 bar. **FAIL.**
-
-#### ⚠️ Metric bug found during review: trace-J cannot measure complementarity
-The gate used the **trace** Fisher ratio `J = tr(S_B)/tr(S_W)`. For a *concatenated*
-vector the scatter traces decompose additively, so:
-
-```
-J_cat = ( tr(S_B,g) + tr(S_B,d) ) / ( tr(S_W,g) + tr(S_W,d) )
-```
-
-This is **exactly a weighted average** of `J_zg` and `J_zd` (weights = S_W shares).
-Therefore `J_cat` can **never exceed `max(J_zg, J_zd)`** and is structurally **blind
-to orthogonality/complementarity** — it tests *replacement* ("is depth a better
-standalone carrier"), not *addition* ("does depth add a new identity axis"). The
-×1.15 gate on trace-J was the wrong instrument. **trace-J is being stripped from the
-gate path (see [Metric fix] below).** This bug is logged regardless of the z_d
-outcome because it would have mis-scored *any* partition.
-
-#### Why we do NOT claim "false FAIL" (the cross-examination that settled it)
-We specifically hunted for the possibility that the metric bug was masking real
-signal. It was not. Four metrics on the real gate vectors, cross-checked against each
-metric's known bias:
-
-| Metric | sees complementarity? | +z_d (best) | reading |
 |--------|----------------------|-------------|---------|
 | trace-J | ❌ (the bug) | ×1.02 | flat — the weighted-avg trap |
 | multivariate-J `tr(S_W⁻¹S_B)` | ✅ but inflates w/ K=100 | ×1.7 | **suspect** (dimensionality) |

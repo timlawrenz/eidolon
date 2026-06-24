@@ -33,10 +33,10 @@ def load_bridge():
 
 def extract_hegre_dino(limit=0):
     """READ-ONLY query of review.db to get dinov3 tokens for clean images."""
-    db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
+    db = sqlite3.connect("file:/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/review.db?mode=ro", uri=True)
     c = db.cursor()
     c.execute("""
-        SELECT i.enriched_dir, p.name, i.persona_id
+        SELECT i.image_path, p.name, i.persona_id
         FROM images i JOIN personas p ON i.persona_id = p.id
         WHERE i.status = 'approved'
           AND i.persona_id NOT IN (
@@ -48,8 +48,8 @@ def extract_hegre_dino(limit=0):
     db.close()
 
     id_rows = {}
-    for ed, name, pid in all_rows:
-        id_rows.setdefault(pid, []).append((ed, name))
+    for img_path, name, pid in all_rows:
+        id_rows.setdefault(pid, []).append((img_path, name))
     identities = list(id_rows.items())
     if limit > 0:
         identities = identities[:limit]
@@ -60,19 +60,17 @@ def extract_hegre_dino(limit=0):
     n_skip = 0
 
     for pid, rows in identities:
-        for ed, name in rows:
+        for img_path, name in rows:
             try:
                 # enriched_dir is relative (data/hegre_enriched/...), but the
                 # dinov3 stratum pass writes to the ABSOLUTE NAS path.
                 # Normalize to the correct absolute location.
-                dinov3_path = os.path.join(
-                    "/mnt/nas-ai-models/training-data/eidolon/hegre_enriched",
-                    ed.split("hegre_enriched/", 1)[1],
-                    "dinov3_cls.npy"
-                )
+                stem = os.path.splitext(img_path[len("faces/"):] if img_path.startswith("faces/") else img_path)[0]
+                ed_abs = os.path.join("/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/stratum", stem)
+                
+                dinov3_path = os.path.join(ed_abs, "dinov3_cls.npy")
                 dino = np.load(dinov3_path).astype(np.float32)
-                # Still check pose confidence to match the z_a gate set
-                pose = np.load(os.path.join(ed, "pose.npy")).astype(np.float32)
+                pose = np.load(os.path.join(ed_abs, "pose.npy")).astype(np.float32)
                 if pose[23:91, 2].mean() < CONF_THRESH:
                     n_skip += 1
                     continue

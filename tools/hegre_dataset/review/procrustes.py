@@ -49,7 +49,30 @@ def scale_and_center_landmarks(avg_landmarks, out_size=(300, 300)):
     return scaled_avg
 
 def generate_pixel_average(image_paths, landmarks_list, avg_landmarks, out_size=(300, 300)):
-    scaled_avg = scale_and_center_landmarks(avg_landmarks, out_size)
+    # 1. Add "forehead" and "corner" points to create a proper bounding box
+    # The standard 68-point model doesn't cover the forehead or the top corners.
+    # We create synthetic points above the eyebrows to pull the triangulation up and out.
+    
+    # Calculate bounding box of the base landmarks
+    min_c = avg_landmarks.min(axis=0)
+    max_c = avg_landmarks.max(axis=0)
+    w = max_c[0] - min_c[0]
+    h = max_c[1] - min_c[1]
+    
+    # Create 4 synthetic corner points that pad the bounding box by 20%
+    pad_w = w * 0.2
+    pad_h = h * 0.2
+    
+    # Define corners in the original unscaled geometry space
+    corners = np.array([
+        [min_c[0] - pad_w, min_c[1] - pad_h], # Top left
+        [max_c[0] + pad_w, min_c[1] - pad_h], # Top right
+        [min_c[0] - pad_w, max_c[1] + pad_h], # Bottom left
+        [max_c[0] + pad_w, max_c[1] + pad_h]  # Bottom right
+    ])
+    
+    augmented_avg = np.vstack([avg_landmarks, corners])
+    scaled_avg = scale_and_center_landmarks(augmented_avg, out_size)
 
     output = np.zeros((out_size[1], out_size[0], 3), np.float32)
     try:
@@ -66,19 +89,37 @@ def generate_pixel_average(image_paths, landmarks_list, avg_landmarks, out_size=
             
         img = np.float32(img) / 255.0
         
-        h, w = img.shape[:2]
-        if w <= 0 or h <= 0:
+        h_img, w_img = img.shape[:2]
+        if w_img <= 0 or h_img <= 0:
             continue
             
         src_px = np.zeros_like(src_points)
-        src_px[:, 0] = (src_points[:, 0] / 2.0 + 0.5) * w
-        src_px[:, 1] = (src_points[:, 1] / 2.0 + 0.5) * h
+        src_px[:, 0] = (src_points[:, 0] / 2.0 + 0.5) * w_img
+        src_px[:, 1] = (src_points[:, 1] / 2.0 + 0.5) * h_img
+        
+        # Calculate bounding box of the source landmarks
+        src_min = src_px.min(axis=0)
+        src_max = src_px.max(axis=0)
+        src_w = src_max[0] - src_min[0]
+        src_h = src_max[1] - src_min[1]
+        
+        src_pad_w = src_w * 0.2
+        src_pad_h = src_h * 0.2
+        
+        src_corners = np.array([
+            [src_min[0] - src_pad_w, src_min[1] - src_pad_h],
+            [src_max[0] + src_pad_w, src_min[1] - src_pad_h],
+            [src_min[0] - src_pad_w, src_max[1] + src_pad_h],
+            [src_max[0] + src_pad_w, src_max[1] + src_pad_h]
+        ])
+        
+        augmented_src = np.vstack([src_px, src_corners])
         
         warped_img = np.zeros((out_size[1], out_size[0], 3), np.float32)
         
         try:
             for t in tri.simplices:
-                t_src = [src_px[t[0]], src_px[t[1]], src_px[t[2]]]
+                t_src = [augmented_src[t[0]], augmented_src[t[1]], augmented_src[t[2]]]
                 t_dst = [scaled_avg[t[0]], scaled_avg[t[1]], scaled_avg[t[2]]]
                 warp_triangle(img, warped_img, t_src, t_dst)
                 

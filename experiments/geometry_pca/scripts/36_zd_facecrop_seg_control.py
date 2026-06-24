@@ -40,7 +40,7 @@ CONF_THRESH = 0.5
 def main():
     zg_enc = dict(np.load("output/encoder_production.npz"))
 
-    db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
+    db = sqlite3.connect("file:/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/review.db?mode=ro", uri=True)
     rows = db.execute("""
         SELECT i.enriched_dir, p.name FROM images i JOIN personas p ON i.persona_id = p.id
         WHERE i.status = 'approved'
@@ -60,7 +60,7 @@ def main():
 
     fg_per_row = np.full(len(Xg_art), np.nan)
     n_matched = 0
-    for ed_orig, name in rows:
+    for img_path, name in rows:
         cand = art_by_name.get(name)
         if not cand:
             continue

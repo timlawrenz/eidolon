@@ -36,10 +36,10 @@ except ImportError as e:
 
 def get_hegre_images():
     """READ-ONLY query of review.db to get image paths and enriched dirs."""
-    db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
+    db = sqlite3.connect("file:/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/review.db?mode=ro", uri=True)
     c = db.cursor()
     c.execute("""
-        SELECT i.image_path, i.enriched_dir
+        SELECT i.image_path
         FROM images i JOIN personas p ON i.persona_id = p.id
         WHERE i.status = 'approved'
           AND i.persona_id NOT IN (
@@ -68,13 +68,11 @@ def main():
     n_ok = n_skip = 0
     t0 = time.time()
 
-    for idx, (img_path, ed_rel) in enumerate(images):
+    for idx, (img_path,) in enumerate(images):
         # Resolve paths
         # enriched_dir is relative (data/hegre_enriched/...)
-        ed_abs = os.path.join(
-            "/mnt/nas-ai-models/training-data/eidolon/hegre_enriched",
-            ed_rel.split("hegre_enriched/", 1)[1]
-        )
+        stem = os.path.splitext(img_path[len("faces/"):] if img_path.startswith("faces/") else img_path)[0]
+        ed_abs = os.path.join("/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/stratum", stem)
         out_path = os.path.join(ed_abs, "dinov3_cls_face.npy")
 
         # Idempotency

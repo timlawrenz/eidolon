@@ -40,10 +40,8 @@ Tracks extraction progress.
 ### Phase 4: Enrichment (enrich)
 Generates a list of absolute paths for all `approved` faces (or `unreviewed` if running early), and natively invokes `stratum process --passes pose,seg,depth,normal`.
 
-### Phase 5: Geometric Clustering (review split-persona and review compute-geometry)
-Solves the "Mixed Persona" (co-stars) problem mathematically.
-* `split-persona`: Loads all z_g vectors for a given persona and runs DBSCAN (default eps=20.0). It fractures a mixed `anna` persona into `anna_cluster_1`, `anna_cluster_2`, leaving noise behind.
-* `compute-geometry`: Averages the z_g vectors of valid (unreviewed/approved) images to find the **True Identity Centroid**. Calculates and writes the Euclidean distance for every image into the `zg_distance` SQL column.
+### Phase 5: Geometric Centroids (review compute-geometry)
+Averages the z_g vectors of valid (unreviewed/approved) images to find the **True Identity Centroid**. Calculates and writes the Euclidean distance for every image into the `zg_distance` SQL column.
 
 ### Phase 6: Human Review (review ui)
 A Flask web interface running on port 5101.
@@ -57,7 +55,7 @@ A Flask web interface running on port 5101.
 When modifying or testing this codebase, adhere strictly to these rules:
 
 1. **Never mutate data/review.db during tests:** Tests must use a `tmp_path` SQLite DB. The live DB has active WAL connections and manual human annotations.
-2. **Missing stratum Paths:** Stratum flattens its output. `faces/anna_cluster_1/anna-shoot/img1_face1.jpg` maps to `stratum/anna/anna-shoot/img1_face1/pose.npy`. Always use `.split('_cluster_')[0]` to find the base directory, and `rglob(f"{Path(img_path).stem}/pose.npy")` to find the artifact.
+2. **Missing stratum Paths:** Stratum flattens its output. `faces/anna-l/anna-shoot/img1_face1.jpg` maps to `stratum/anna-l/anna-shoot/img1_face1/pose.npy`.
 3. **Python 3.14 SQLite db.changes:** Do not use `db.changes` to count rows. It was removed in Python 3.14. Use `db.execute("SELECT changes()").fetchone()[0]`.
 4. **Normalized Coordinates:** Stratum DWPose outputs coordinates normalized around 0 (e.g., `[-1, 1]`). To plot them on the 512px crop, map them using `px = (x / 2.0 + 0.5) * img_w`.
 5. **Ignore Tainted Images in Math:** Never include images with a `tainted:` status when computing centroids or running DBSCAN. They will poison the geometric average.
@@ -78,9 +76,6 @@ python -m tools.hegre_dataset review seed --dataset data/hegre_datasets/v1 -v
 # 4. Enrich and Compute Geometry
 python -m tools.hegre_dataset enrich --dataset data/hegre_datasets/v1
 python -m tools.hegre_dataset review compute-geometry --dataset data/hegre_datasets/v1 --encoder experiments/geometry_pca/output/encoder_production.npz
-
-# 5. Split Co-Stars (if needed)
-python -m tools.hegre_dataset review split-persona --dataset data/hegre_datasets/v1 --persona anna --encoder ...
 
 # 6. Review
 python -m tools.hegre_dataset review ui --dataset data/hegre_datasets/v1 --port 5101 --bind 0.0.0.0

@@ -36,7 +36,7 @@ def block_pool_mask(mask, block_size=16):
     return mask.reshape(gh, block_size, gw, block_size).mean(axis=(1, 3))
 
 def main():
-    db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
+    db = sqlite3.connect("file:/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/review.db?mode=ro", uri=True)
     rows = db.execute("""
         SELECT i.enriched_dir, i.persona_id, i.set_id
         FROM images i

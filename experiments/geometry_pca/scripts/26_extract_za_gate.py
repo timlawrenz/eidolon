@@ -60,10 +60,10 @@ def main():
     print("  Done.")
 
     # Query review.db (READ-ONLY)
-    db = sqlite3.connect("file:data/review.db?mode=ro", uri=True)
+    db = sqlite3.connect("file:/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/review.db?mode=ro", uri=True)
     c = db.cursor()
     c.execute("""
-        SELECT i.enriched_dir, p.name, i.persona_id
+        SELECT i.image_path, p.name, i.persona_id
         FROM images i JOIN personas p ON i.persona_id = p.id
         WHERE i.status = 'approved'
           AND i.persona_id NOT IN (
@@ -75,8 +75,8 @@ def main():
     db.close()
 
     id_rows = {}
-    for ed, name, pid in all_rows:
-        id_rows.setdefault(pid, []).append((ed, name))
+    for img_path, name, pid in all_rows:
+        id_rows.setdefault(pid, []).append((img_path, name))
 
     identities = list(id_rows.items())
     if args.limit > 0:
