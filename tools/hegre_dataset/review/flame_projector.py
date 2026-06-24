@@ -255,73 +255,78 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
 def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 30, resolution: tuple[int, int] = (300, 300)):
     """
     Renders a spinning animation of the mesh into a GIF.
+    We generate a synthetic fallback using matplotlib 3D scatter since the server lacks EGL/OSMesa OpenGL drivers.
     """
-    if pyrender is None:
-        raise ImportError("pyrender is required to generate the GIF")
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FuncAnimation
+    import io
+    from PIL import Image
+    import imageio
+
+    # Recenter mesh to origin
+    centroid = mesh.vertices.mean(axis=0)
+    v = mesh.vertices - centroid
+    
+    # We will just plot a subset of vertices for speed and styling
+    # Plotting 5000 points is fine for a static frame, but for a GIF we might want to subsample
+    sub_v = v[::2] 
+    
+    # Extract the colors from the texture if visual is set
+    colors = None
+    if hasattr(mesh.visual, 'uv'):
+        uvs = mesh.visual.uv
+        img = np.array(mesh.visual.material.image)
+        if img is not None and len(img.shape) == 3:
+            h, w = img.shape[:2]
+            u_px = np.clip((uvs[::2, 0] * w).astype(int), 0, w-1)
+            v_px = np.clip((uvs[::2, 1] * h).astype(int), 0, h-1)
+            colors = img[v_px, u_px] / 255.0
+
+    if colors is None:
+        colors = np.ones((len(sub_v), 3)) * 0.7
         
-    renderer = pyrender.OffscreenRenderer(viewport_width=resolution[0], viewport_height=resolution[1])
-    
-    # Setup scene
-    scene = pyrender.Scene(bg_color=[24, 24, 27, 255]) # Zinc 950
-    
-    pyr_mesh = pyrender.Mesh.from_trimesh(mesh, smooth=True)
-    mesh_node = scene.add(pyr_mesh)
-    
-    # Camera setup
-    camera = pyrender.OrthographicCamera(xmag=0.1, ymag=0.1)
-    
-    # Position camera 1 unit away, looking at origin
-    camera_pose = np.array([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ])
-    scene.add(camera, pose=camera_pose)
-    
-    # Light setup (ambient + directional)
-    light = pyrender.DirectionalLight(color=[1.0, 1.0, 1.0], intensity=3.0)
-    scene.add(light, pose=camera_pose)
-    
     frames = []
-    
-    # Gentle head shake: -30 deg to +30 deg
     angles = np.sin(np.linspace(0, 2*np.pi, num_frames, endpoint=False)) * np.radians(30)
     
-    # Recenter mesh to origin before rotating
-    centroid = mesh.vertices.mean(axis=0)
-    mesh.vertices -= centroid
+    fig = plt.figure(figsize=(resolution[0]/100, resolution[1]/100), dpi=100, facecolor='#18181B') # Zinc 950
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_facecolor('#18181B')
+    
+    # Remove axes
+    ax.set_axis_off()
+    
+    # Set fixed limits to prevent bounding box bouncing
+    r = 0.08
+    ax.set_xlim([-r, r])
+    ax.set_ylim([-r, r])
+    ax.set_zlim([-r, r])
+    
+    # View angle (elevation, azimuth)
+    # X=right, Y=up, Z=forward in FLAME
+    # Matplotlib: Z is up. 
+    # So we need to swap Y and Z for plotting
+    plot_x = sub_v[:, 0]
+    plot_y = sub_v[:, 2] # Forward
+    plot_z = sub_v[:, 1] # Up
+
+    scatter = ax.scatter(plot_x, plot_y, plot_z, c=colors, s=1, depthshade=True, alpha=0.8)
+    
+    # Set the initial view (straight on)
+    ax.view_init(elev=0, azim=-90)
     
     for angle in angles:
-        # Create rotation matrix around Y axis
-        c, s = np.cos(angle), np.sin(angle)
-        rot = np.array([
-            [c, 0, s, 0],
-            [0, 1, 0, 0],
-            [-s, 0, c, 0],
-            [0, 0, 0, 1]
-        ])
+        # We rotate by changing the azimuth
+        azimuth = -90 + np.degrees(angle)
+        ax.view_init(elev=0, azim=azimuth)
         
-        # We replace the node's transform matrix directly
-        scene.set_pose(mesh_node, pose=rot)
+        # Render frame to buffer
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', facecolor='#18181B', bbox_inches='tight', pad_inches=0)
+        buf.seek(0)
+        img_arr = np.array(Image.open(buf).convert("RGB"))
+        frames.append(img_arr)
         
-        # In OffscreenRenderer 0.1.45, pyopengl throws EGL errors if no context is found.
-        # Since we are running in tests and background processes, we need to handle that gracefully.
-        try:
-            # Explicitly force garbage collection / suppress ctypes errors on headless GL
-            color, _ = renderer.render(scene)
-            frames.append(color)
-        except Exception as e:
-            # We already have an error handler, but we want to specifically suppress printing
-            # the spammy ctypes CArgObject errors to the console on every frame.
-            if "CArgObject" not in str(e) and "_ctypes.type" not in str(e):
-                print(f"Skipping render due to PyRender exception (likely headless EGL missing): {e}")
-            # Create a dummy colored frame so we don't crash
-            dummy = np.zeros((resolution[1], resolution[0], 3), dtype=np.uint8)
-            dummy[:,:,1] = 255 # Green square
-            frames.append(dummy)
-        
-    renderer.delete()
+    plt.close(fig)
     
     imageio.mimsave(str(output_path), frames, fps=15, loop=0)
 
