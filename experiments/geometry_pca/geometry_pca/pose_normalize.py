@@ -18,10 +18,10 @@ points rotates the face back to frontal. This is deterministic linear algebra
 import numpy as np
 
 
-def estimate_rotation(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndarray:
+def estimate_rotation(template3d: np.ndarray, observed2d: np.ndarray) -> tuple[np.ndarray, float]:
     """
-    Estimate a 3x3 rotation matrix R such that the observed 2D landmarks are
-    approximately the orthographic projection of R applied to the 3D template.
+    Estimate a 3x3 rotation matrix R and scale s such that the observed 2D landmarks are
+    approximately the orthographic projection of s * R applied to the 3D template.
 
     Args:
         template3d: (68, 3) canonical mean-face 3D coordinates (centered).
@@ -29,6 +29,7 @@ def estimate_rotation(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndar
 
     Returns:
         R: (3, 3) orthonormal rotation matrix (proper, det=+1).
+        s: float scale factor mapping template space to observed space.
     """
     X = template3d - template3d.mean(axis=0)
     y = observed2d - observed2d.mean(axis=0)
@@ -43,8 +44,11 @@ def estimate_rotation(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndar
     # Normalize to unit length (strip the weak-perspective scale).
     n1 = np.linalg.norm(r1)
     n2 = np.linalg.norm(r2)
+    s = float((n1 + n2) / 2.0)
+    
     if n1 < 1e-8 or n2 < 1e-8:
-        return np.eye(3, dtype=np.float32)
+        return np.eye(3, dtype=np.float32), s
+        
     r1 = r1 / n1
     r2 = r2 / n2
 
@@ -52,7 +56,7 @@ def estimate_rotation(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndar
     r2 = r2 - np.dot(r1, r2) * r1
     n2 = np.linalg.norm(r2)
     if n2 < 1e-8:
-        return np.eye(3, dtype=np.float32)
+        return np.eye(3, dtype=np.float32), s
     r2 = r2 / n2
 
     # Third axis via cross product -> proper right-handed rotation.
@@ -66,7 +70,7 @@ def estimate_rotation(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndar
     if np.linalg.det(R) < 0:
         U[:, -1] *= -1
         R = U @ Vt
-    return R.astype(np.float32)
+    return R.astype(np.float32), s
 
 
 def frontalize(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndarray:
@@ -90,10 +94,13 @@ def frontalize(template3d: np.ndarray, observed2d: np.ndarray) -> np.ndarray:
     X = template3d - template3d.mean(axis=0)
     y = observed2d - observed2d.mean(axis=0)
 
-    R = estimate_rotation(X, y)
+    R, s = estimate_rotation(X, y)
 
     # Lift observed 2D to 3D using the template's depth as a prior.
-    lifted = np.concatenate([y, X[:, 2:3]], axis=1)  # (68, 3)
+    # FIX: The camera Z is the Z from the rotated template, preserving true depth,
+    # scaled by 's' so it correctly matches the coordinate space of 'y'.
+    camera_Z = (X @ R.T)[:, 2:3] * s
+    lifted = np.concatenate([y, camera_Z], axis=1)  # (68, 3)
 
     # Remove the estimated head rotation -> frontal frame.
     frontal3d = lifted @ R  # R rows are rotated basis; right-multiply rotates back
