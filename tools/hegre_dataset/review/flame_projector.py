@@ -6,6 +6,8 @@ import torch
 import sys
 import os
 import imageio
+
+os.environ["PYOPENGL_PLATFORM"] = "egl"
 try:
     import pyrender
     import trimesh
@@ -65,8 +67,13 @@ def crop_for_smirk(img: np.ndarray, face_2d: np.ndarray, target_size: int = 224)
     h, w = img.shape[:2]
     
     # Bounding box logic matching depth_encoder
-    min_c = face_2d.min(axis=0)
-    max_c = face_2d.max(axis=0)
+    # NOTE: Stratum DWPose coordinates are normalized [-1, 1], so we must un-normalize to pixel space
+    face_px = np.zeros_like(face_2d)
+    face_px[:, 0] = (face_2d[:, 0] / 2.0 + 0.5) * w
+    face_px[:, 1] = (face_2d[:, 1] / 2.0 + 0.5) * h
+    
+    min_c = face_px.min(axis=0)
+    max_c = face_px.max(axis=0)
     box_w = max_c[0] - min_c[0]
     box_h = max_c[1] - min_c[1]
     
@@ -171,38 +178,59 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
     if trimesh is None:
         raise ImportError("trimesh is required to generate the textured mesh")
         
-    # Import the FLAME layer
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "experiments", "flame_spike"))
-    from FLAME_commercial.FLAME import FLAME
+    # Import the FLAME layer from SMIRK
+    smirk_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "experiments", "flame_spike", "smirk")
+    if smirk_path not in sys.path:
+        sys.path.insert(0, smirk_path)
+    # Monkey patch NumPy 2.0 removals that SMIRK expects
+    import numpy as np
+    if not hasattr(np, 'float_'):
+        np.float_ = np.float64
+        np.bool_ = np.bool_ if hasattr(np, 'bool_') else bool
+        np.int_ = np.int64
+        np.complex_ = np.complex128
+        np.object_ = object
+        np.unicode_ = str
+        np.str_ = str
+
+    from src.FLAME.FLAME import FLAME
     
     device = torch.device("cpu")
     
-    # We use the generic FLAME model (not SMIRK's custom layer) to get standard vertices
-    flame_config = {
-        'flame_model_path': os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "experiments", "flame_spike", "FLAME_commercial", "generic_model.pkl"),
-        'n_shape': 300,
-        'n_exp': 50,
-        'n_cam': 3
-    }
+    flame_model_path = os.path.join(smirk_path, "assets", "FLAME2020", "generic_model.pkl")
     
-    flame_layer = FLAME(flame_config).to(device)
+    # FLAME.py hardcodes relative paths like 'assets/l_eyelid.npy', so we must chdir to SMIRK temporarily
+    cwd = os.getcwd()
+    os.chdir(smirk_path)
+    try:
+        flame_layer = FLAME(flame_model_path=flame_model_path, n_shape=300, n_exp=50).to(device)
+    finally:
+        os.chdir(cwd)
     
     # Zero out pose, expression, global rotation
     shape_tensor = torch.from_numpy(avg_shape).unsqueeze(0).float().to(device)
     exp_tensor = torch.zeros((1, 50), dtype=torch.float32).to(device)
-    pose_tensor = torch.zeros((1, 6), dtype=torch.float32).to(device) # Neck and jaw
-    global_pose = torch.zeros((1, 3), dtype=torch.float32).to(device)
+    pose_params = torch.zeros((1, 3), dtype=torch.float32).to(device)
+    neck_pose_params = torch.zeros((1, 3), dtype=torch.float32).to(device)
+    jaw_params = torch.zeros((1, 3), dtype=torch.float32).to(device)
+    eye_pose_params = torch.zeros((1, 6), dtype=torch.float32).to(device)
+    eyelid_params = torch.zeros((1, 2), dtype=torch.float32).to(device)
     
     with torch.no_grad():
-        vertices, _ = flame_layer(
-            shape_params=shape_tensor,
-            expression_params=exp_tensor,
-            pose_params=pose_tensor,
-            global_pose=global_pose
-        )
+        param_dict = {
+            'shape_params': shape_tensor,
+            'expression_params': exp_tensor,
+            'pose_params': pose_params,
+            'neck_pose_params': neck_pose_params,
+            'jaw_params': jaw_params,
+            'eye_pose_params': eye_pose_params,
+            'eyelid_params': eyelid_params
+        }
+        outputs = flame_layer(param_dict)
+        vertices = outputs['vertices']
         
     v = vertices[0].cpu().numpy()
-    faces = flame_layer.faces
+    faces = flame_layer.faces_tensor.cpu().numpy()
     
     # FLAME point 3331 is the nose tip
     uvs = compute_uv_coordinates(v, nose_idx=3331, out_size=(300, 300))
@@ -280,10 +308,14 @@ def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 
         # In OffscreenRenderer 0.1.45, pyopengl throws EGL errors if no context is found.
         # Since we are running in tests and background processes, we need to handle that gracefully.
         try:
+            # Explicitly force garbage collection / suppress ctypes errors on headless GL
             color, _ = renderer.render(scene)
             frames.append(color)
         except Exception as e:
-            print(f"Skipping render due to PyRender exception (likely headless EGL missing): {e}")
+            # We already have an error handler, but we want to specifically suppress printing
+            # the spammy ctypes CArgObject errors to the console on every frame.
+            if "CArgObject" not in str(e) and "_ctypes.type" not in str(e):
+                print(f"Skipping render due to PyRender exception (likely headless EGL missing): {e}")
             # Create a dummy colored frame so we don't crash
             dummy = np.zeros((resolution[1], resolution[0], 3), dtype=np.uint8)
             dummy[:,:,1] = 255 # Green square
