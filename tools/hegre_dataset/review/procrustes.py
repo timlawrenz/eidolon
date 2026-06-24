@@ -36,7 +36,7 @@ def warp_triangle(img1, img2, t1, t2):
     except ValueError:
         pass
 
-def scale_and_center_landmarks(avg_landmarks, out_size=(300, 300), target_iod_ratio=0.3):
+def scale_and_center_landmarks(avg_landmarks, out_size=(300, 300), target_iod_ratio=0.2):
     nose_tip = avg_landmarks[30]
     left_eye = avg_landmarks[36:42].mean(axis=0)
     right_eye = avg_landmarks[42:48].mean(axis=0)

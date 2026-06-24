@@ -22,7 +22,7 @@ try:
 except ImportError:
     SmirkEncoder = None
 
-def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size: tuple[int, int] = (300, 300), target_iod_ratio=0.3) -> np.ndarray:
+def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size: tuple[int, int] = (300, 300), target_iod_ratio=0.2) -> np.ndarray:
     """
     Map 3D vertices to 2D UV coordinates matching the Pixel Average projection.
     
