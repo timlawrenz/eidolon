@@ -280,6 +280,10 @@ def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 
         return image.resize((int(new_size[0]), int(new_size[1])), resample=resample)
     trimesh.visual.texture.power_resize = patched_power_resize
 
+    # Set up headless rendering
+    import pyglet
+    pyglet.options['headless'] = True
+
     # Set up OSMesa if not already set
     if "PYOPENGL_PLATFORM" not in os.environ:
         os.environ["PYOPENGL_PLATFORM"] = "osmesa"
