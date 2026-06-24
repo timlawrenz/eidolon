@@ -252,81 +252,63 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
     
     return mesh
 
+
 def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 30, resolution: tuple[int, int] = (300, 300)):
     """
     Renders a spinning animation of the mesh into a GIF.
-    We generate a synthetic fallback using matplotlib 3D scatter since the server lacks EGL/OSMesa OpenGL drivers.
+    Uses trimesh offscreen rendering via OSMesa.
     """
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import FuncAnimation
-    import io
-    from PIL import Image
-    import imageio
+    import PIL.Image
+    
+    # Fix trimesh numpy 2.0 issue in power_resize
+    import trimesh.visual.texture
+    def patched_power_resize(image, square=False, resample=1):
+        size = np.array(image.size)
+        new_size = (2 ** np.round(np.log2(size))).astype(int)
+        if square:
+            new_size = np.array([new_size.max()] * 2)
+        if (new_size == size).all():
+            return image
+        return image.resize((int(new_size[0]), int(new_size[1])), resample=resample)
+    trimesh.visual.texture.power_resize = patched_power_resize
+
+    # Set up OSMesa if not already set
+    if "PYOPENGL_PLATFORM" not in os.environ:
+        os.environ["PYOPENGL_PLATFORM"] = "osmesa"
+
+    # Ensure material image is PIL (cv2 reads as numpy)
+    if hasattr(mesh.visual, 'material') and hasattr(mesh.visual.material, 'image'):
+        if isinstance(mesh.visual.material.image, np.ndarray):
+            mesh.visual.material.image = PIL.Image.fromarray(mesh.visual.material.image)
 
     # Recenter mesh to origin
     centroid = mesh.vertices.mean(axis=0)
-    v = mesh.vertices - centroid
-    
-    # We will just plot a subset of vertices for speed and styling
-    # Plotting 5000 points is fine for a static frame, but for a GIF we might want to subsample
-    sub_v = v[::2] 
-    
-    # Extract the colors from the texture if visual is set
-    colors = None
-    if hasattr(mesh.visual, 'uv'):
-        uvs = mesh.visual.uv
-        img = np.array(mesh.visual.material.image)
-        if img is not None and len(img.shape) == 3:
-            h, w = img.shape[:2]
-            u_px = np.clip((uvs[::2, 0] * w).astype(int), 0, w-1)
-            v_px = np.clip((uvs[::2, 1] * h).astype(int), 0, h-1)
-            colors = img[v_px, u_px] / 255.0
+    mesh.vertices -= centroid
 
-    if colors is None:
-        colors = np.ones((len(sub_v), 3)) * 0.7
-        
+    # Zinc 950 background
+    bg_color = [24, 24, 27, 255]
+    
+    scene = trimesh.Scene(mesh)
+    
+    # Position camera
+    scene.set_camera(distance=0.25)
+    
     frames = []
-    angles = np.sin(np.linspace(0, 2*np.pi, num_frames, endpoint=False)) * np.radians(30)
+    angles = np.linspace(0, 2*np.pi, num_frames, endpoint=False)
     
-    fig = plt.figure(figsize=(resolution[0]/100, resolution[1]/100), dpi=100, facecolor='#18181B') # Zinc 950
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor('#18181B')
-    
-    # Remove axes
-    ax.set_axis_off()
-    
-    # Set fixed limits to prevent bounding box bouncing
-    r = 0.08
-    ax.set_xlim([-r, r])
-    ax.set_ylim([-r, r])
-    ax.set_zlim([-r, r])
-    
-    # View angle (elevation, azimuth)
-    # X=right, Y=up, Z=forward in FLAME
-    # Matplotlib: Z is up. 
-    # So we need to swap Y and Z for plotting
-    plot_x = sub_v[:, 0]
-    plot_y = sub_v[:, 2] # Forward
-    plot_z = sub_v[:, 1] # Up
-
-    scatter = ax.scatter(plot_x, plot_y, plot_z, c=colors, s=1, depthshade=True, alpha=0.8)
-    
-    # Set the initial view (straight on)
-    ax.view_init(elev=0, azim=-90)
+    # To rotate the object, we apply a rotation matrix to the mesh node
+    mesh_node_name = next(iter(scene.geometry.keys()))
     
     for angle in angles:
-        # We rotate by changing the azimuth
-        azimuth = -90 + np.degrees(angle)
-        ax.view_init(elev=0, azim=azimuth)
+        # Rotate around Y axis
+        rot = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])
+        scene.graph.update(mesh_node_name, matrix=rot)
         
-        # Render frame to buffer
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', facecolor='#18181B', bbox_inches='tight', pad_inches=0)
-        buf.seek(0)
-        img_arr = np.array(Image.open(buf).convert("RGB"))
-        frames.append(img_arr)
+        png_data = scene.save_image(resolution=resolution, background=bg_color)
         
-    plt.close(fig)
-    
+        # Convert PNG bytes to imageio-compatible array
+        import io
+        img = PIL.Image.open(io.BytesIO(png_data)).convert('RGB')
+        frames.append(np.array(img))
+        
     imageio.mimsave(str(output_path), frames, fps=15, loop=0)
-
