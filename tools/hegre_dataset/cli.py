@@ -71,12 +71,13 @@ def cmd_review_compute_geometry(args):
     stratum_dir = dataset / "stratum"
     encoder_path = args.encoder
     persona = getattr(args, "persona", None)
+    skip_3d = getattr(args, "skip_3d", False)
     
     if not stratum_dir.exists():
         print(f"Error: Stratum directory {stratum_dir} not found. Run enrichment first.")
         return 1
         
-    return compute_zg_distances(db_path, stratum_dir, encoder_path, persona)
+    return compute_zg_distances(db_path, stratum_dir, encoder_path, persona, skip_3d)
 
 def main(args=None):
     parser = argparse.ArgumentParser(prog="hegre-dataset")
@@ -109,10 +110,11 @@ def main(args=None):
     p_ui.add_argument("--port", type=int, default=5101)
     p_ui.set_defaults(func=cmd_review_ui)
     
-    p_geom = rsub.add_parser("compute-geometry", help="Compute zg_distances for True Identity Anchors")
+    p_geom = rsub.add_parser("compute-geometry", help="Compute zg_distances, pixel averages, and 3D FLAME spins")
     p_geom.add_argument("--dataset", required=True)
     p_geom.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
     p_geom.add_argument("--persona", type=str, help="Optional persona name (or ID) to limit computation")
+    p_geom.add_argument("--skip-3d", action="store_true", help="Skip generating the 3D rotating FLAME mesh (PyRender can be slow)")
     p_geom.set_defaults(func=cmd_review_compute_geometry)
     
     p_enrich = sub.add_parser("enrich")

@@ -128,6 +128,19 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             err = traceback.format_exc()
             return err, 200
 
+    @app.route("/api/3d/<persona_name>")
+    def api_3d(persona_name):
+        try:
+            base_pname = persona_name.split("_cluster_")[0]
+            gif_path = faces_root / "stratum" / base_pname / f"3d_{persona_name}.gif"
+            if gif_path.exists():
+                return send_file(str(gif_path), mimetype="image/gif")
+            return "File not found at " + str(gif_path), 404
+        except Exception as e:
+            import traceback
+            err = traceback.format_exc()
+            return err, 200
+
     @app.route("/api/thumb/<int:image_id>")
     def api_thumb(image_id):
         draw_skel = request.args.get("skel", "0") == "1"
@@ -420,6 +433,10 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="Pixel Average (Procrustes Warping)">
                     <img src="/api/pixel/${g_data.persona_name}?t=${Date.now()}" class="w-full h-full object-cover rounded opacity-90" onerror="this.parentElement.style.display='none'" />
                     <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Pixel</div>
+                </div>
+                <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="3D Volume (FLAME + Pixel Average)">
+                    <img src="/api/3d/${g_data.persona_name}?t=${Date.now()}" class="w-full h-full object-cover rounded opacity-90" onerror="this.parentElement.style.display='none'" />
+                    <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Volume</div>
                 </div>`;
             }
 

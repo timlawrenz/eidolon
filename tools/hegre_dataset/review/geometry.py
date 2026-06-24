@@ -12,8 +12,12 @@ from geometry_pca.zg_inference import encode_zg
 from geometry_pca.fit import load_encoder
 try:
     from tools.hegre_dataset.review.procrustes import generate_pixel_average
+    from tools.hegre_dataset.review.flame_projector import extract_canonical_shape, generate_textured_mesh, render_spin_gif
 except ImportError:
     generate_pixel_average = None
+    extract_canonical_shape = None
+    generate_textured_mesh = None
+    render_spin_gif = None
 
 def decode_zg(zg, encoder):
     comps = encoder["components"]
@@ -41,7 +45,7 @@ def normalize_face_geometry(face_2d):
     rotated_face += nose_tip
     return rotated_face
 
-def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str = None):
+def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False):
     db = sqlite3.connect(str(db_path))
     db.row_factory = sqlite3.Row
     
@@ -182,6 +186,25 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                         cv2.imwrite(str(pixel_path), pixel_img)
                 except Exception as e:
                     print(f"Error generating pixel average for {pname}: {e}")
+                    
+            # 3. Spin Rendering (FLAME + Pixel Average)
+            if not skip_3d and extract_canonical_shape is not None and len(image_paths) > 0:
+                print(f"  -> Generating 3D FLAME Mesh for {pname}...")
+                try:
+                    # Phase 1: Extract mean skull geometry from DB via SMIRK
+                    avg_shape = extract_canonical_shape(db_path, dataset_root, pname)
+                    
+                    # Phase 2: Project Pixel Average onto 3D mesh
+                    pixel_path = stratum_dir / base_pname / f"pixel_{pname}.jpg"
+                    if pixel_path.exists() and generate_textured_mesh is not None and render_spin_gif is not None:
+                        mesh = generate_textured_mesh(avg_shape, pixel_path)
+                        
+                        # Phase 3: Render rotation GIF
+                        gif_path = stratum_dir / base_pname / f"3d_{pname}.gif"
+                        render_spin_gif(mesh, gif_path)
+                        print(f"  -> Saved 3D asset: 3d_{pname}.gif")
+                except Exception as e:
+                    print(f"  -> Skipping 3D generation for {pname} due to error: {e}")
             
             dist_updates = []
             nonface_ids = []
