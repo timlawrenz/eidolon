@@ -22,44 +22,43 @@ try:
 except ImportError:
     SmirkEncoder = None
 
-def compute_uv_coordinates(vertices: np.ndarray, nose_idx: int, out_size: tuple[int, int] = (300, 300)) -> np.ndarray:
+def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size: tuple[int, int] = (300, 300), target_iod_ratio=0.3) -> np.ndarray:
     """
     Map 3D vertices to 2D UV coordinates matching the Pixel Average projection.
     
     Args:
         vertices: (V, 3) float array of 3D vertices (right-handed, +Y up, +X right)
-        nose_idx: Integer index of the vertex representing the nose tip.
+        landmarks: (68, 3) float array of 3D landmarks
         out_size: The resolution of the texture image (width, height)
+        target_iod_ratio: The target inter-ocular distance as a ratio of the image width
         
     Returns:
         uvs: (V, 2) float array of UV coordinates normalized to [0, 1].
              Origin (0,0) is top-left of the texture.
     """
-    nose_3d = vertices[nose_idx]
+    nose_3d = landmarks[30]
+    left_eye = landmarks[36:42].mean(axis=0)
+    right_eye = landmarks[42:48].mean(axis=0)
     
-    # Calculate scale based on the bounding box (similar to scale_and_center_landmarks)
-    min_c = vertices.min(axis=0)
-    max_c = vertices.max(axis=0)
-    size_c = max_c - min_c
+    d_x = right_eye[0] - left_eye[0]
+    d_y = right_eye[1] - left_eye[1]
+    current_iod = np.hypot(d_x, d_y)
     
-    # The scale matches the Procrustes average scale logic: 80% of min(width, height)
-    scale = (min(out_size) * 0.8) / max(size_c[:2]) 
+    angle = np.arctan2(d_y, d_x)
+    c, s = np.cos(-angle), np.sin(-angle)
+    R = np.array(((c, -s), (s, c)))
+    
+    v_2d = vertices[:, :2] - nose_3d[:2]
+    v_rotated = v_2d @ R.T
+    
+    target_uv_iod = target_iod_ratio
+    scale = target_uv_iod / current_iod
     
     uvs = np.zeros((len(vertices), 2), dtype=np.float32)
+    uvs[:, 0] = 0.5 + v_rotated[:, 0] * scale
+    uvs[:, 1] = 0.5 - v_rotated[:, 1] * scale # Flip Y since +Y is UP in 3D
     
-    # Center X on the nose
-    uv_x = (out_size[0] / 2.0) + (vertices[:, 0] - nose_3d[0]) * scale
-    
-    # Center Y on the nose, FLIPPING the axis (+Y in 3D -> -Y in UV)
-    uv_y = (out_size[1] / 2.0) - (vertices[:, 1] - nose_3d[1]) * scale
-    
-    # Normalize to [0, 1] for Wavefront .obj UV mapping
-    uvs[:, 0] = uv_x / out_size[0]
-    uvs[:, 1] = uv_y / out_size[1]
-    
-    # Clamp to prevent wrap-around artifacts
     uvs = np.clip(uvs, 0.0, 1.0)
-    
     return uvs
 
 def crop_for_smirk(img: np.ndarray, face_2d: np.ndarray, target_size: int = 224) -> torch.Tensor | None:
@@ -228,12 +227,13 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
         }
         outputs = flame_layer(param_dict)
         vertices = outputs['vertices']
+        landmarks = outputs['landmarks_fan_3d']
         
     v = vertices[0].cpu().numpy()
+    lm = landmarks[0].cpu().numpy()
     faces = flame_layer.faces_tensor.cpu().numpy()
     
-    # FLAME point 3331 is the nose tip
-    uvs = compute_uv_coordinates(v, nose_idx=3331, out_size=(300, 300))
+    uvs = compute_uv_coordinates(v, lm, out_size=(300, 300))
     
     import pyrender
     

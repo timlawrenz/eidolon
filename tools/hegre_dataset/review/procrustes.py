@@ -36,16 +36,32 @@ def warp_triangle(img1, img2, t1, t2):
     except ValueError:
         pass
 
-def scale_and_center_landmarks(avg_landmarks, out_size=(300, 300)):
+def scale_and_center_landmarks(avg_landmarks, out_size=(300, 300), target_iod_ratio=0.3):
     nose_tip = avg_landmarks[30]
-    min_c = avg_landmarks.min(axis=0)
-    max_c = avg_landmarks.max(axis=0)
-    size_c = max_c - min_c
-    scale = (min(out_size) * 0.8) / max(size_c)
-
+    left_eye = avg_landmarks[36:42].mean(axis=0)
+    right_eye = avg_landmarks[42:48].mean(axis=0)
+    
+    d_x = right_eye[0] - left_eye[0]
+    d_y = right_eye[1] - left_eye[1]
+    current_iod = np.hypot(d_x, d_y)
+    
+    # Rotation to make eyes horizontal
+    angle = np.arctan2(d_y, d_x)
+    c, s = np.cos(-angle), np.sin(-angle)
+    R = np.array(((c, -s), (s, c)))
+    
+    # Rotate around nose
+    lm_centered = avg_landmarks[:, :2] - nose_tip[:2]
+    lm_rotated = lm_centered @ R.T
+    
+    # Scale by fixed IOD
+    target_iod_pixels = min(out_size) * target_iod_ratio
+    scale = target_iod_pixels / current_iod
+    
     scaled_avg = np.zeros_like(avg_landmarks)
-    scaled_avg[:, 0] = (out_size[0] / 2.0) + (avg_landmarks[:, 0] - nose_tip[0]) * scale
-    scaled_avg[:, 1] = (out_size[1] / 2.0) + (avg_landmarks[:, 1] - nose_tip[1]) * scale
+    scaled_avg[:, 0] = (out_size[0] / 2.0) + lm_rotated[:, 0] * scale
+    scaled_avg[:, 1] = (out_size[1] / 2.0) + lm_rotated[:, 1] * scale 
+    
     return scaled_avg
 
 def generate_pixel_average(image_paths, landmarks_list, avg_landmarks, out_size=(300, 300)):

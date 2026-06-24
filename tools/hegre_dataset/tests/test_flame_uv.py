@@ -9,44 +9,37 @@ except ImportError:
 
 @pytest.mark.skipif(compute_uv_coordinates is None, reason="Not implemented yet")
 def test_uv_mapping_anchors_nose_to_center():
-    # Mock a FLAME skull with 3 vertices
-    # v0: Left cheek (-10, 0, 0)
-    # v1: Nose tip (0, 0, 10)
-    # v2: Right cheek (10, 0, 0)
     vertices = np.array([
         [-10.0, 0.0, 0.0],
         [0.0, 0.0, 10.0],
         [10.0, 0.0, 0.0]
     ], dtype=np.float32)
     
-    nose_idx = 1
+    landmarks = np.zeros((68, 3))
+    landmarks[30] = vertices[1] # nose
+    landmarks[36:42] = [[-5, 5, 5]] * 6 # left eye
+    landmarks[42:48] = [[5, 5, 5]] * 6 # right eye
+    
     out_size = (300, 300)
+    uvs = compute_uv_coordinates(vertices, landmarks, out_size)
     
-    uvs = compute_uv_coordinates(vertices, nose_idx, out_size)
-    
-    # UV coordinates are normalized [0, 1] for .obj files
-    # The nose (v1) MUST map perfectly to (0.5, 0.5) because we anchored the pixel average there.
     assert np.isclose(uvs[1, 0], 0.5, atol=1e-5), "Nose U coordinate not centered"
     assert np.isclose(uvs[1, 1], 0.5, atol=1e-5), "Nose V coordinate not centered"
-    
-    # Left cheek (negative X in 3D right-handed space) should be on the left side of the UV (u < 0.5)
     assert uvs[0, 0] < 0.5, "Left cheek UV mapping flipped"
-    
-    # Right cheek should be on the right side (u > 0.5)
     assert uvs[2, 0] > 0.5, "Right cheek UV mapping flipped"
 
 @pytest.mark.skipif(compute_uv_coordinates is None, reason="Not implemented yet")
 def test_uv_mapping_flips_y_axis():
-    # v0: Nose tip (0, 0, 10)
-    # v1: Forehead (0, 10, 0) -> +Y is UP in 3D
     vertices = np.array([
         [0.0, 0.0, 10.0],
         [0.0, 10.0, 0.0]
     ], dtype=np.float32)
     
-    uvs = compute_uv_coordinates(vertices, nose_idx=0, out_size=(300, 300))
+    landmarks = np.zeros((68, 3))
+    landmarks[30] = vertices[0] # nose
+    landmarks[36:42] = [[-5, 5, 5]] * 6 # left eye
+    landmarks[42:48] = [[5, 5, 5]] * 6 # right eye
     
-    # Image UV origin (0,0) is TOP-LEFT. 
-    # Therefore, the forehead (+Y in 3D) should have a SMALLER V coordinate than the nose.
+    uvs = compute_uv_coordinates(vertices, landmarks, out_size=(300, 300))
     assert uvs[1, 1] < uvs[0, 1], "Y-axis was not flipped for UV mapping!"
 
