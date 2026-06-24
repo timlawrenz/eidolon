@@ -41,7 +41,6 @@ def test_uv_mapping_flips_y_axis():
     landmarks[42:48] = [[5, 5, 5]] * 6 # right eye
     
     uvs = compute_uv_coordinates(vertices, landmarks, out_size=(300, 300))
-    # Image UV origin (0,0) is TOP-LEFT. 
-    # Therefore, the forehead (+Y in 3D) should have a SMALLER V coordinate than the nose.
-    assert uvs[1, 1] < uvs[0, 1], "Y-axis was not flipped for UV mapping!"
+    # Forehead (vertices[1]) has +Y. In OpenGL, V=1 is TOP. So forehead V > nose V.
+    assert uvs[1, 1] > uvs[0, 1], "Y-axis should NOT be flipped for OpenGL UV mapping!"
 

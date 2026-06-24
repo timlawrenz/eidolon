@@ -56,7 +56,7 @@ def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size
     
     uvs = np.zeros((len(vertices), 2), dtype=np.float32)
     uvs[:, 0] = 0.5 + v_rotated[:, 0] * scale
-    uvs[:, 1] = 0.5 - v_rotated[:, 1] * scale # Flip Y since +Y is UP in 3D
+    uvs[:, 1] = 0.5 + v_rotated[:, 1] * scale # Do not flip Y. In OpenGL, V=1 is TOP, V=0 is BOTTOM.
     
     uvs = np.clip(uvs, 0.0, 1.0)
     return uvs
@@ -235,14 +235,6 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
     
     uvs = compute_uv_coordinates(v, lm, out_size=(300, 300))
     
-    # Create a temporary mesh to compute vertex normals
-    temp_mesh = trimesh.Trimesh(vertices=v, faces=faces, process=False)
-    
-    # Any vertex facing backwards (normal Z < 0.0) should be mapped to the background (UV 0,0)
-    # This prevents the face texture from stretching through the head and appearing on the back.
-    backward_mask = temp_mesh.vertex_normals[:, 2] < 0.0
-    uvs[backward_mask] = [0.0, 0.0]
-    
     import pyrender
     
     # Create the texture material
@@ -300,7 +292,28 @@ def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 
     # Zinc 950 background
     bg_color = [24, 24, 27, 255]
     
-    scene = trimesh.Scene(mesh)
+    # Create front mesh with texture and back mesh with solid color
+    front_mask = mesh.face_normals[:, 2] >= -0.1
+    back_mask = ~front_mask
+    
+    front_faces = mesh.faces[front_mask]
+    back_faces = mesh.faces[back_mask]
+    
+    front_mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=front_faces, process=False)
+    # Reassign texture to front
+    import PIL.Image
+    if hasattr(mesh.visual, 'material') and hasattr(mesh.visual.material, 'image'):
+        img = mesh.visual.material.image
+        if isinstance(img, np.ndarray):
+            img = PIL.Image.fromarray(img)
+        front_mesh.visual = trimesh.visual.TextureVisuals(uv=mesh.visual.uv, image=img)
+        
+    back_mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=back_faces, process=False)
+    back_mesh.visual.face_colors = [39, 39, 42, 255] # Zinc 800
+    
+    scene = trimesh.Scene()
+    front_node = scene.add_geometry(front_mesh)
+    back_node = scene.add_geometry(back_mesh)
     
     # Position camera
     scene.set_camera(distance=0.25)
@@ -308,13 +321,11 @@ def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 
     frames = []
     angles = np.linspace(0, 2*np.pi, num_frames, endpoint=False)
     
-    # To rotate the object, we apply a rotation matrix to the mesh node
-    mesh_node_name = next(iter(scene.geometry.keys()))
-    
     for angle in angles:
         # Rotate around Y axis
         rot = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])
-        scene.graph.update(mesh_node_name, matrix=rot)
+        scene.graph.update(front_node, matrix=rot)
+        scene.graph.update(back_node, matrix=rot)
         
         png_data = scene.save_image(resolution=resolution, background=bg_color)
         
