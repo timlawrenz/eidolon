@@ -56,7 +56,7 @@ def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size
     
     uvs = np.zeros((len(vertices), 2), dtype=np.float32)
     uvs[:, 0] = 0.5 + v_rotated[:, 0] * scale
-    uvs[:, 1] = 0.5 - v_rotated[:, 1] * scale # Flip Y since +Y is UP in 3D
+    uvs[:, 1] = 0.5 + v_rotated[:, 1] * scale # Do not flip Y (OpenGL V=0 is bottom)
     
     uvs = np.clip(uvs, 0.0, 1.0)
     return uvs
@@ -234,6 +234,14 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
     faces = flame_layer.faces_tensor.cpu().numpy()
     
     uvs = compute_uv_coordinates(v, lm, out_size=(300, 300))
+    
+    # Create a temporary mesh to compute vertex normals
+    temp_mesh = trimesh.Trimesh(vertices=v, faces=faces, process=False)
+    
+    # Any vertex facing backwards (normal Z < -0.15) should be mapped to the background (UV 0,0)
+    # This prevents the face texture from stretching through the head and appearing on the back.
+    backward_mask = temp_mesh.vertex_normals[:, 2] < -0.15
+    uvs[backward_mask] = [0.0, 0.0]
     
     import pyrender
     
