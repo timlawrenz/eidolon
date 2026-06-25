@@ -59,8 +59,8 @@ def cmd_enrich(args):
     dataset = Path(args.dataset)
     db_path = dataset / "review.db"
     faces_dir = dataset  # image_path in DB is stored relative to dataset root (e.g. 'faces/anna-l/...')
-    print("Running Stratum enrichment...")
-    run_stratum_enrichment(dataset, db_path, faces_dir)
+    print(f"Running Stratum enrichment with passes: {args.passes}...")
+    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes)
     print("Stratum enrichment complete.")
     return 0
 
@@ -119,6 +119,7 @@ def main(args=None):
     
     p_enrich = sub.add_parser("enrich")
     p_enrich.add_argument("--dataset", required=True)
+    p_enrich.add_argument("--passes", default="pose,seg,depth,normal,caption,t5", help="Comma-separated passes for Stratum")
     p_enrich.set_defaults(func=cmd_enrich)
 
     args_parsed = parser.parse_args(args)

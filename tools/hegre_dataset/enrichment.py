@@ -20,7 +20,7 @@ def generate_approved_list(db_path: Path, faces_dir: Path, output_file: Path) ->
             
     return len(paths)
 
-def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path):
+def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, passes: str = "pose,seg,depth,normal,caption,t5"):
     """Generate the approved list and invoke stratum process."""
     list_file = dataset_dir / "stratum_approved_list.txt"
     stratum_out = dataset_dir / "stratum"
@@ -30,7 +30,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path):
         print("No approved images found. Skipping enrichment.")
         return
         
-    print(f"Found {count} approved images. Invoking stratum-hq...")
+    print(f"Found {count} approved images. Invoking stratum-hq with passes: {passes}...")
     
     # Use shutil.which to detect if stratum is available
     if shutil.which("stratum") is None:
@@ -40,6 +40,6 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path):
     
     cmd = [
         "stratum", "process", str(faces_dir.resolve()),
-        "--output", str(stratum_out.resolve()), "--passes", "pose,seg,depth,normal,caption,t5", "--image-list", str(list_file.resolve())
+        "--output", str(stratum_out.resolve()), "--passes", passes, "--image-list", str(list_file.resolve())
     ]
     subprocess.run(cmd, check=True)
