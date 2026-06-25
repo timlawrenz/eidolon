@@ -13,6 +13,10 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
+* **[ACTIVE] Phase 5a: Semantic Geometry Regression** (`exp/text-to-zg`)
+  * Decouple semantics by training an MLP to map `[T5 || \overline{AuraFace}] -> z_g`.
+  * Persona-averaged AuraFace neutralizes pose leakage discovered in Tier 0.2.
+  * Requires `caption` and `t5` enrichment on Hegre.
 * **[TBD] Phase 5: DiT Fusion Stack** (`exp/geometry-pca`)
   * 2-stream decoupled cross-attention + block-diagonal ingestion (architecture.md §7).
   * Conditioning stack (settled by Phases 2/2b/3/4): flesh-masked DINOv3 patch

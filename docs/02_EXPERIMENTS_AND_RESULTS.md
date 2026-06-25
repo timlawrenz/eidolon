@@ -428,6 +428,26 @@ corrected z_g baseline (0.688), normals *subtract* identity signal
 
 ---
 
+---
+
+## Phase 5a: Semantic Geometry Mapper (text-to-zg)
+
+**Opened:** 2026-06-24
+
+**Goal:** Train an offline MLP to predict canonical geometry ($z_g \in \mathbb{R}^{50}$) from semantic text embedding (T5) and identity (AuraFace).
+
+**Premise:** Text descriptions of geometry ("sharp jawline") are relative to base identity. An AuraFace identity vector resolves this ambiguity. However, because single-image AuraFace embeddings leak head pose (Tier 0.2), we must use the **persona-averaged AuraFace vector** as the identity anchor. This marginalizes out transient pose and expression noise, forcing the MLP to rely on the textual semantics to interpret the geometry.
+
+**Hypotheses:**
+* **$H_0$:** A model predicting $z_g$ from `[T5 || \overline{AuraFace}]` does not significantly decrease validation MSE compared to `T5` alone.
+* **$H_1$:** Identity conditioning resolves semantic ambiguity, resulting in a statistically significant reduction in validation MSE.
+
+**Methodology:**
+1. Enrich Hegre dataset with `caption` and `t5` passes via LLaVA/Ollama.
+2. Build dataset mapping `T5_image` to `[\overline{AuraFace}_{persona} || z_g]`.
+3. Train baseline (T5-only) vs Conditioned MLP and evaluate on a held-out test split.
+
+**Status:** `[ACTIVE]` — Enrichment pipeline patched, dataset builder written. Waiting on VLM captioning run.
 
 ## [Phase 3] DINOv3 Bridge (Premise Validation) — `[CONCLUDED]`
 
