@@ -40,6 +40,6 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path):
     
     cmd = [
         "stratum", "process", str(faces_dir.resolve()),
-        "--output", str(stratum_out.resolve()), "--passes", "pose,seg,depth,normal", "--image-list", str(list_file.resolve())
+        "--output", str(stratum_out.resolve()), "--passes", "pose,seg,depth,normal,caption,t5", "--image-list", str(list_file.resolve())
     ]
     subprocess.run(cmd, check=True)
