@@ -1,0 +1,25 @@
+Based on the synthesis of your literature review, the documented experimental outcomes, and standard ML engineering practices, here are the strategic and architectural recommendations for the Eidolon team on how to continue the project.
+
+### 1. Fully Commit to the Pivoted Conditioning Stack
+The decision to abandon the monocular volumetric/surface path (`z_d` and `z_a`) was scientifically sound. As the team proved, 2.5D estimators like Sapiens produce topologically plausible but generically hallucinated geometry—they lack the micro-curvature required for identity. 
+*   **Recommendation:** Stop chasing monocular depth/normals for identity. Formalize the new conditioning stack: **Flesh-masked DINOv3 patches** (semantic identity) + **`z_g`** (interpretable geometric control via 3D-frontalized 2D keypoints). 
+*   **Literature Backing:** Your literature review highlights that DINO foundation features are already the state-of-the-art for extracting localized cues (e.g., *Pixel3DMM*, 2025). By using masked average pooling on DINO patches, the team has essentially solved the identity-leakage problem computationally.
+
+### 2. Implement the DiT with Decoupled Cross-Attention
+Now that the inputs are locked, the next phase is building the actual Diffusion Transformer (DiT). The literature strongly supports the team’s original "block-diagonal firewall" concept.
+*   **Recommendation:** Implement the DiT using the IP-Adapter paradigm (Ye et al., 2023) and multi-stream decoupled attention (like *MDiTFace* and *MMFace-DiT*). 
+*   **Execution:** Do not concatenate the 1024-d DINO vector and the 50-d `z_g` vector. Instead, project them through separate, isolated linear layers and feed them into independent cross-attention K/V heads. This architectural bottleneck prevents the DiT from tangling geometric control with semantic identity, natively inducing the disentanglement you want (as theorized in the *NeurIPS 2024* paper cited in your review).
+
+### 3. Establish a Rigorous Disentanglement Gate
+With DINOv3 providing the identity, a new risk emerges: DINO patches inherently encode some spatial and structural information. The DiT might get "lazy" and rely on DINO for geometry, ignoring `z_g`.
+*   **Recommendation:** You must prove that `z_g` is the *exclusive* steering wheel for geometry. Implement an unsupervised disentanglement metric (such as the one proposed by *Holtz et al., 2022*, referenced in your synthesis). 
+*   **Test Design:** Generate faces where DINO identity is held constant while traversing `z_g` $\pm3\sigma$. The resulting images must show morphological changes (jaw width, eye spacing) without altering the semantic identity (skin texture, eye color). Conversely, swapping DINO tokens while holding `z_g` constant must change the identity while perfectly maintaining the subject's pose and structural proportions.
+
+### 4. Overhaul the Scientific Methodology and Documentation
+The project nearly amputated functional pipelines due to metric bugs (`trace-J`) and circular synthetic probes. 
+*   **Recommendation:** Enforce strict, pre-registered null hypotheses for every gate. The "random-projection null" that saved Phase 3b from a false positive must become standard practice. If a proposed vector cannot beat a random projection of its own inputs, it is discarded immediately.
+*   **Documentation:** Strip the editorial, manifesto-like language from the repository logs. Phrases like "the counter-intuitive reality" or "amputate a mathematically sound step" obscure the data. Treat the ledger as an engineering artifact: state the hypothesis, define the metric, report the baseline, report the delta, and state the conclusion.
+
+### 5. If Micro-Curvature is Re-attempted, Abandon 2D Maps for True 3DMMs
+If the team ever decides that `z_g` (50-d keypoints) is insufficient for geometric control and wants to revive the `z_d`/`z_a` dream, they cannot use 2D Sapiens maps.
+*   **Recommendation:** You must move to true mesh-based diffusion or 3D Morphable Models (3DMMs) operating directly on vertices, as seen in *ShapeFusion* (Potamias et al., 2024) or *LAMM* (Tarasiou et al., 2024). Extracting orthogonal geometric basis vectors requires operating in a canonical 3D topological space (like the FLAME mesh), not estimating normals in 2D camera space.

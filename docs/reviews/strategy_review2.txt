@@ -1,0 +1,114 @@
+Strategic Assessment: Where Eidolon Stands
+The empirical record from Phases 1–4 has produced a crisp, falsifiable finding: monocular predictive models (Sapiens) hallucinate generic, plausible human geometry — they do not encode identity-specific biometric micro-curvature. Both volumetric partitions (z_d, z_a) are dead, and the DINO→slider bridge is dead. What survives is:
+
+Filter table
+
+Component
+
+Status
+
+Identity AUC
+z_g (pose-invariant geometry from keypoints)	Shipped	0.67–0.69
+DINOv3 flesh-masked patch tokens	Shipped	0.797
+z_d (monocular depth)	Dead	−0.023 Δ
+z_a (monocular normals)	Dead	−0.039 Δ
+DINO→slider bridge	Dead	worse than random projection
+The conditioning stack is settled: DINO patches (identity) + z_g (interpretable geometry control). That is a working two-stream system, but it is a long way from the original vision of three mathematically firewalled PCA partitions.
+
+The question now: can structured, interpretable, identity-bearing geometric partitions be recovered from images at all — just not from monocular predictive layers?
+
+Four Paths Forward (Ranked by Evidence)
+Path A: Ship the DiT With What Works (Lowest Risk)
+Build Phase 5 immediately using the proven stack: flesh-masked DINO patch tokens for identity, z_g for interpretable geometry sliders. Block-diagonal ingestion with two streams instead of three.
+
+Evidence for:
+
+Arc2Face (ECCV 2024 Oral, foivospar et al.) demonstrated that ArcFace embeddings alone — a single 512-d vector — condition a Stable Diffusion model to generate ID-consistent faces at high fidelity. This is the dominant paradigm and it works. Eidolon's DINO patches (AUC 0.797) are a stronger identity carrier than ArcFace embeddings on the hegre corpus, and z_g adds interpretable sliders on top.
+FaceCrafter (BMVC 2025, Mishima et al.) proved that lightweight IP-Adapter-style modules (11.7M params) can independently control pose, expression, and emotion on top of an identity-conditioned base model, with decoupled cross-attention summation. This is architecturally identical to what Eidolon's DiT would do with z_g sliders.
+The block-diagonal ingestion module is already spec'd (§7.1 of architecture.md). The path from here to a training run is short.
+Risk: The DiT is undertrained relative to the massive Arc2Face foundation model (trained on WebFace260M). Eidolon would be a bespoke DiT trained from scratch or fine-tuned. Identity consistency may lag behind Arc2Face-level quality.
+
+Recommendation: This is the immediate next step regardless of what else is pursued. Ship a working DiT with the proven stack, measure identity consistency and slider responsiveness, and iterate. The block-diagonal firewall + decoupled cross-attention pattern is worth validating in a live generative model even if the structured partitions are thinner than originally hoped.
+
+Path B: Replace Monocular Hallucination With 3DMM Parameters (Highest Expected Value)
+The literature synthesis already identifies FLAME as the canonical 3D face model. Here is the argument for making FLAME parameters the structured partitions in E:
+
+FLAME identity shape parameters β (typically 100–300 dims) are:
+
+PCA-derived — FLAME's identity space was built via PCA on 4D scans of real humans (Li et al., SIGGRAPH Asia 2017). The β components are orthogonal by construction. This satisfies Eidolon's core principle natively.
+Identity-specific by design — unlike Sapiens depth/normals, FLAME β was trained to separate identity from expression and pose. It encodes biological morphology (jaw width, nose projection, brow ridge) extracted from real 3D data.
+Monocularly extractable — DECA, MICA, SMIRK, and Pixel3DMM all recover FLAME parameters from a single image. Pixel3DMM (arXiv 2025) uses DINOv2 features + per-pixel normal/UV prediction to achieve >15% improvement in geometric accuracy over baselines.
+Direct literature proof that 3DMM parameters work as diffusion conditioning:
+
+The ICCVW 2025 paper "ID-Consistent, Precise Expression Generation with Blendshape-Guided Diffusion" (built on Arc2Face) uses FLAME expression parameters (55-dim: 50 blendshapes + 2 eyelid + 3 jaw pose) projected through an MLP into the CLIP latent space, then injected via IP-Adapter-style decoupled cross-attention. This is exactly Eidolon's architecture — decoupled K/V per modality, summed outputs — but using model-based parameters instead of PCA on monocular maps. If expression blendshapes work as conditioning, identity shape parameters (β) should work equally well.
+
+What Path B would look like concretely:
+
+E = [ z_β | z_ψ | z_θ ]    where:
+  z_β  = FLAME identity shape (100–300 dims, PCA-derived, identity-bearing)
+  z_ψ  = FLAME expression (50 dims, interpretable blendshapes)
+  z_θ  = FLAME pose (6 dims, jaw + neck rotation)Copy
+Each partition is already disentangled by the FLAME model structure. The block-diagonal ingestion pattern remains identical to the current spec — three independent MLPs, decoupled cross-attention, expanded tokens per scalar. The only change is the source of the partitions: a fitted 3D morphable model instead of PCA on monocular predictive layers.
+
+Evidence against / caveats:
+
+FLAME fitting from monocular images is imperfect (self-occlusion, lighting ambiguity). But the key difference from Sapiens is that FLAME parameters encode a parametric prior — the model constrains the solution to the space of real human faces. Sapiens depth/normals have no such prior; they produce geometrically plausible but identity-generic output.
+The identity shape space may not capture fine detail (scars, wrinkles, micro-asymmetry) that DINO patches capture. That is fine — DINO patches remain the identity carrier; FLAME β provides the interpretable structured control.
+Recommendation: Run a quick spike before committing. Use an off-the-shelf FLAME fitter (DECA or SMIRK) on the hegre face-crop corpus, extract β parameters, and run the verification AUC gate. If AUC(β) > 0.6 and AUC([z_g | β]) > AUC(z_g) + 0.01, the partition earns its place. This spike costs days, not weeks.
+
+Path C: Multi-View / Video Geometry (Highest Ceiling, Highest Cost)
+If the root problem is that monocular models hallucinate, solve it at the data level: use multiple views to recover real identity-specific geometry.
+
+Approaches:
+
+Video-based: Use the hegre corpus's multi-frame nature. Structure-from-motion on face sequences can recover per-identity 3D point clouds. These are real measurements, not hallucinations.
+Multi-view stereo: If the hegre dataset has consistent lighting/camera setups across shoots, multi-view stereo on the same identity across frames can produce dense depth.
+NeRF/Gaussian Splatting per identity: For identities with many views, fit a 3D representation and extract canonical geometry.
+Evidence: The 3D biometrics survey (ACM 2025) confirms that multi-view approaches solve the identity-specificity problem that monocular methods cannot. The USC MVS-on-consistent-topology work produces identity-specific meshes usable for biometric recognition.
+
+Risk: This is a new data pipeline, not a modeling change. It requires per-identity multi-view capture, which the hegre corpus may or may not support. Engineering cost is high. The output (dense identity-specific depth/normals) would feed back into the existing PCA encoder pipeline, so the downstream architecture is unchanged.
+
+Recommendation: Audit the hegre corpus for multi-view availability per identity before committing. If most identities have ≥3 substantially different views, this path is viable as a medium-term investment. If most identities are single-view per shoot, skip it.
+
+Path D: Train a Custom Geometry Encoder (Highest Risk)
+Train a model from scratch to predict identity-discriminative geometric features, supervised by an ArcFace-style loss on the geometric embedding. This would replace both the PCA pipeline and the reliance on off-the-shelf monocular models.
+
+Evidence against: This is essentially the DINO→slider bridge in reverse, and Phase 3 already proved that regression from semantics to geometry destroys identity. Training a custom encoder might avoid the regression problem, but it faces the same fundamental challenge: monocular images do not contain ground-truth identity-specific 3D geometry. Without multi-view or sensor data, the model has no supervision signal.
+
+Recommendation: Do not pursue unless Paths A/B/C are exhausted and a viable supervision source (multi-view geometry, 3D scans) is available.
+
+Concrete Next Steps (Sequenced)
+Immediate (This Week): Spike FLAME β as a Structured Partition
+Select a monocular FLAME fitter (DECA is well-established; SMIRK is state-of-the-art for expressions; Pixel3DMM has code available and uses DINOv2 which is already in the pipeline
+Jun 11, 11:07 PM
+
+
+
+↑
+to response
+Select a monocular FLAME fitter (DECA is well-established; SMIRK is state-of-the-art for expressions; Pixel3DMM has code available and uses DINOv2 which is already in the pipeline). Extract β identity parameters for all 100+ reviewed identities in the hegre face-crop corpus.
+Run the canonical verification AUC gate: AUC(β_alone) and AUC([z_g | β]). Pre-register the gate before seeing results (ε = 0.01 per the settled convention).
+If PASS: freeze a β PCA encoder (FLAME β already IS PCA-derived, but re-fit on the FFHQ distribution for consistency with the existing pipeline) and integrate into the conditioning stack.
+Estimated cost: 2–3 days. Risk: FLAME fitter may struggle with editorial lighting/heavily stylized hegre images. Acceptable for a spike.
+
+Short-Term (Next 2 Weeks): Ship Phase 5 DiT With the Proven Stack
+Do not wait for Path B results. Build the DiT now with what works:
+
+Identity stream: Flesh-masked DINOv3 patch tokens (the Phase 4 representation, AUC 0.797), injected via cross-attention. Prefer the unpooled per-patch tokens (~100–1,900 face tokens, median ~1,261) for fine-grained attention; use the pooled 1×1024 vector as the compact fallback.
+Control stream: z_g (50 whitened scalars, expanded to 50 learned-embedding tokens), injected via decoupled cross-attention with a per-modality λ scalar.
+Architecture: Block-diagonal ingestion (two independent MLPs, not three), decoupled K/V per stream, summed outputs.
+Validation gate (pre-register):
+
+Identity consistency: Train on FFHQ, test ID similarity (ArcFace cosine) on hegre held-out identities. Baseline: Arc2Face-level ID-Sim.
+Slider responsiveness: Vary individual z_g components ±2σ, measure whether the output image changes on the expected morphological axis and NOT on identity.
+If the FLAME β spike passes in parallel, add a third decoupled stream. The architecture is designed for it.
+
+Medium-Term (Next Month): Multi-View Audit
+Review the hegre corpus for multi-view availability. If ≥3 substantially different views exist per identity, commission the multi-view geometry pipeline (Path C). This is the only path that can produce identity-specific volumetric data — everything else is parametric. The output would feed back into the PCA encoder pipeline and could revive z_d/z_a as real identity-bearing partitions.
+
+Long-Term: Reconsider the North Star
+Phase 1–4's empirical record has revealed a deeper truth: the "fast path" from off-the-shelf monocular models to identity-specific structured geometry does not exist. This is not a failure of Eidolon's architecture — it is a fundamental property of monocular depth estimation that the field is only beginning to document (see the ICLR 2026 paper on VLM hallucination mitigation via depth — even the VLM community now treats monocular depth as a hallucination-prone prior, not a measurement).
+
+The original North Star — a vector E = [z_g | z_d | z_a] encoding a person through PCA-derived partitions from monocular predictive layers — was the right question but assumed a data source that does not produce identity-specific signal. The corrected vision should be:
+
+Eidolon v2: A vector E = [z_β | z_g] where z_β is FLAME identity shape (parametric, PCA-derived, biologically grounded) and z_g is pose-invariant keypoint geometry (non-parametric, already shipped). Identity conditioning comes from DINO patches externally. This preserves the core architectural principles — orthogonality guarantees, block-diagonal firewalls, decoupled cross-attention, interpretable sliders — while replacing the dead monocular path with a model-based path that has 30 years of empirical validation behind it.
