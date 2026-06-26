@@ -1,7 +1,16 @@
-"""Interactive review UI for hegre face datasets.
+"""
+Interactive review UI for hegre face datasets.
 
 Shows actual MTCNN face crops for visual verification.
 Brush-to-taint, DONE-to-approve. Port-configurable Flask server.
+
+COORDINATE SYSTEM COUPLING: The @300px convention
+==================================================
+THUMB_SIZE (300, 300), the pixel average generation, UV mapping, and 3D
+FLAME texture all share a hard 300×300 resolution.  Changing THUMB_SIZE
+without updating the matching constants in flame_projector.py
+(compute_uv_coordinates, generate_textured_mesh) and procrustes.py
+(generate_pixel_average) will silently misalign textures.
 """
 import io
 import sqlite3
@@ -112,8 +121,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             return "File not found at " + str(pixel_path), 404
         except Exception as e:
             import traceback
-            err = traceback.format_exc()
-            return err, 200
+            traceback.print_exc()
+            return jsonify({"error": "Internal server error"}), 500
 
     @app.route("/api/ghost/<persona_name>")
     def api_ghost(persona_name):
@@ -125,8 +134,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             return "File not found at " + str(ghost_path), 404
         except Exception as e:
             import traceback
-            err = traceback.format_exc()
-            return err, 200
+            traceback.print_exc()
+            return jsonify({"error": "Internal server error"}), 500
 
     @app.route("/api/3d/<persona_name>")
     def api_3d(persona_name):
@@ -138,8 +147,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             return "File not found at " + str(gif_path), 404
         except Exception as e:
             import traceback
-            err = traceback.format_exc()
-            return err, 200
+            traceback.print_exc()
+            return jsonify({"error": "Internal server error"}), 500
 
     @app.route("/api/thumb/<int:image_id>")
     def api_thumb(image_id):

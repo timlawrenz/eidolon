@@ -167,14 +167,9 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             if generate_pixel_average is not None and len(image_paths) > 0:
                 pixel_path = stratum_dir / base_pname / f"pixel_{pname}.jpg"
                 try:
-                    # Limit to 50 random approved images to keep it fast
-                    if len(image_paths) > 50:
-                        idx = np.random.choice(len(image_paths), 50, replace=False)
-                        sel_paths = [image_paths[i] for i in idx]
-                        sel_marks = [face_2ds[i] for i in idx]
-                    else:
-                        sel_paths = image_paths
-                        sel_marks = face_2ds
+                    # Use all approved images for the pixel average.
+                    sel_paths = image_paths
+                    sel_marks = face_2ds
                         
                     # Pass the rotated_face to Procrustes instead of the tilted face_2d
                     pixel_img = generate_pixel_average(sel_paths, sel_marks, rotated_face) 

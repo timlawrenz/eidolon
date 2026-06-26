@@ -8,6 +8,15 @@ import os
 import imageio
 
 os.environ["PYOPENGL_PLATFORM"] = "egl"
+
+# pyglet.options['headless'] must be set BEFORE trimesh/pyrender/pyglet
+# are imported, otherwise OpenGL will try to create an X11 window.
+try:
+    import pyglet
+    pyglet.options['headless'] = True
+except ImportError:
+    pass
+
 try:
     import pyrender
     import trimesh
@@ -26,6 +35,10 @@ def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size
     """
     Map 3D vertices to 2D UV coordinates matching the Pixel Average projection.
     
+    IMPORTANT: out_size defaults to (300, 300) to match the review UI's
+    THUMB_SIZE and pixel average canvas.  These three values must stay in sync.
+    See ui.py module docstring for details.
+    
     Args:
         vertices: (V, 3) float array of 3D vertices (right-handed, +Y up, +X right)
         landmarks: (68, 3) float array of 3D landmarks
@@ -35,6 +48,9 @@ def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size
     Returns:
         uvs: (V, 2) float array of UV coordinates normalized to [0, 1].
              Origin (0,0) is top-left of the texture.
+    
+    Raises:
+        ValueError: if the inter-ocular distance is degenerate (<1e-6).
     """
     nose_3d = landmarks[30]
     left_eye = landmarks[36:42].mean(axis=0)
@@ -43,6 +59,10 @@ def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size
     d_x = right_eye[0] - left_eye[0]
     d_y = right_eye[1] - left_eye[1]
     current_iod = np.hypot(d_x, d_y)
+    
+    if current_iod < 1e-6:
+        raise ValueError(f"Degenerate landmarks: inter-ocular distance is {current_iod}. "
+                         "This typically indicates all-zero or collapsed DWPose keypoints.")
     
     angle = np.arctan2(d_y, d_x)
     c, s = np.cos(-angle), np.sin(-angle)
@@ -119,6 +139,8 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
     if not rows:
         raise ValueError(f"No approved images found for {persona_name}")
 
+    print(f"  extract_canonical_shape: {len(rows)} approved images for '{persona_name}'")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SmirkEncoder(n_shape=300).to(device)
     model.eval()
@@ -134,6 +156,7 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
         model.load_state_dict(encoder_state_dict)
     
     shapes = []
+    skipped = 0
     
     stratum_root = dataset_root / "stratum"
     base_pname = persona_name.split("_cluster_")[0]
@@ -145,6 +168,7 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
             pose_path = stratum_root / base_pname / Path(row["image_path"]).parent.name / img_stem / "pose.npy"
             
             if not img_path.exists() or not pose_path.exists():
+                skipped += 1
                 continue
                 
             img = cv2.imread(str(img_path))
@@ -155,6 +179,7 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
             
             crop_tensor = crop_for_smirk(img, face_2d)
             if crop_tensor is None:
+                skipped += 1
                 continue
                 
             crop_tensor = crop_tensor.to(device)
@@ -165,9 +190,11 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
             shapes.append(shape_vec)
             
     if not shapes:
-        raise ValueError(f"Failed to extract shape vectors for {persona_name}")
+        raise ValueError(f"Failed to extract shape vectors for {persona_name} "
+                         f"({len(rows)} images found, {skipped} skipped, 0 succeeded)")
         
     # Average the beta vectors
+    print(f"  extract_canonical_shape: {len(shapes)} shapes extracted, {skipped} skipped for '{persona_name}'")
     return np.mean(shapes, axis=0)
 
 def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trimesh.Trimesh:
@@ -181,15 +208,22 @@ def generate_textured_mesh(avg_shape: np.ndarray, pixel_avg_path: Path) -> trime
     smirk_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "experiments", "flame_spike", "smirk")
     if smirk_path not in sys.path:
         sys.path.insert(0, smirk_path)
-    # Monkey patch NumPy 2.0 removals that SMIRK expects
+    # Monkey patch NumPy 2.0 removals that SMIRK expects.
+    # Each alias is guarded individually so a missing alias doesn't crash the block.
     import numpy as np
     if not hasattr(np, 'float_'):
         np.float_ = np.float64
-        np.bool_ = np.bool_ if hasattr(np, 'bool_') else bool
+    if not hasattr(np, 'bool_'):
+        np.bool_ = bool
+    if not hasattr(np, 'int_'):
         np.int_ = np.int64
+    if not hasattr(np, 'complex_'):
         np.complex_ = np.complex128
+    if not hasattr(np, 'object_'):
         np.object_ = object
+    if not hasattr(np, 'unicode_'):
         np.unicode_ = str
+    if not hasattr(np, 'str_'):
         np.str_ = str
 
     from src.FLAME.FLAME import FLAME
@@ -271,14 +305,6 @@ def render_spin_gif(mesh: trimesh.Trimesh, output_path: Path, num_frames: int = 
             return image
         return image.resize((int(new_size[0]), int(new_size[1])), resample=resample)
     trimesh.visual.texture.power_resize = patched_power_resize
-
-    # Set up headless rendering
-    import pyglet
-    pyglet.options['headless'] = True
-
-    # Set up OSMesa if not already set
-    if "PYOPENGL_PLATFORM" not in os.environ:
-        os.environ["PYOPENGL_PLATFORM"] = "osmesa"
 
     # Ensure material image is PIL (cv2 reads as numpy)
     if hasattr(mesh.visual, 'material') and hasattr(mesh.visual.material, 'image'):
