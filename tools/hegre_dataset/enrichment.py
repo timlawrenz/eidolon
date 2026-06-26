@@ -6,9 +6,12 @@ import cv2
 import numpy as np
 from .review.schema import get_db
 
+import sqlite3
+
 def generate_approved_list(db_path: Path, faces_dir: Path) -> list:
     """Query DB for approved images and return their absolute paths."""
-    db = get_db(db_path)
+    db = sqlite3.connect(f"file:{db_path}?mode=ro&nolock=1", uri=True)
+    db.row_factory = sqlite3.Row
     rows = db.execute("SELECT image_path FROM images WHERE status = 'approved'").fetchall()
     db.close()
     
@@ -29,13 +32,23 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
         print("No approved images found. Skipping enrichment.")
         return
 
-    # 1. Check for missing Stratum data
+    # 1. Check for missing Stratum data (respecting the requested passes)
     missing_stratum = []
+    pass_list = passes.split(',')
+    
     for p in paths:
         rel_p = p.relative_to(faces_dir.resolve())
-        # Stratum outputs to stratum/<rel_p.parent>/<rel_p.stem>/pose.npy
-        pose_file = stratum_out.resolve() / rel_p.parent / rel_p.stem / "pose.npy"
-        if not pose_file.exists():
+        base_dir = stratum_out.resolve() / rel_p.parent / rel_p.stem
+        
+        is_missing = False
+        if "pose" in pass_list and not (base_dir / "pose.npy").exists():
+            is_missing = True
+        elif "caption" in pass_list and not (base_dir / "caption.txt").exists():
+            is_missing = True
+        elif "t5" in pass_list and not (base_dir / "t5_hidden.npy").exists():
+            is_missing = True
+            
+        if is_missing:
             missing_stratum.append(str(p))
 
     if missing_stratum:
