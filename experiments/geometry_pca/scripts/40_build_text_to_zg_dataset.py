@@ -5,17 +5,17 @@ import sqlite3
 import numpy as np
 import cv2
 from tqdm import tqdm
-from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from geometry_pca.constants import FACE_SLICE
 from geometry_pca.zg_inference import encode_zg
+
 from insightface.app import FaceAnalysis
 
 def main():
-    # Target dataset
-    dataset_root = "/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1"
-    db_uri = f"file:{os.path.join(dataset_root, 'review.db')}?mode=ro&nolock=1"
+    db_uri = "file:data/review.db?mode=ro"
+    stratum_root = "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_faces_stratum"
+    crops_dir = "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/hegre_face_crops"
     output_dir = "data/text_to_zg"
     os.makedirs(output_dir, exist_ok=True)
     
@@ -35,7 +35,7 @@ def main():
     db = sqlite3.connect(db_uri, uri=True)
     c = db.cursor()
     c.execute('''
-        SELECT p.name, i.image_path
+        SELECT i.enriched_dir, p.name, i.persona_id, i.image_path
         FROM images i JOIN personas p ON i.persona_id = p.id
         WHERE i.status = 'approved'
           AND i.persona_id NOT IN (
@@ -45,60 +45,62 @@ def main():
     rows = c.fetchall()
     db.close()
     
-    print("Pass 1: Computing average AuraFace per persona...")
-    persona_aura = defaultdict(list)
-    valid_images = []
+    X_t5 = []
+    Y_target = []
     
-    for p_name, img_path in tqdm(rows):
-        # Resolve stratum dir (e.g., 'faces/anna-l/anna-l-hegre-model-01.jpg' -> 'stratum/anna-l/anna-l-hegre-model-01')
-        stem = os.path.splitext(img_path[len("faces/"):] if img_path.startswith("faces/") else img_path)[0]
-        stratum_dir = os.path.join(dataset_root, "stratum", stem)
+    print(f"Processing {len(rows)} images...")
+    
+    for row in tqdm(rows):
+        ed_orig, p_name, pid, img_path = row
+        # Resolve stratum dir
+        rel_path = ed_orig.split("hegre_enriched/", 1)[1]
+        stratum_dir = os.path.join(stratum_root, rel_path)
         
         req_t5 = os.path.join(stratum_dir, "t5_hidden.npy")
+        req_mask = os.path.join(stratum_dir, "t5_mask.npy")
         req_pose = os.path.join(stratum_dir, "pose.npy")
         
-        if not (os.path.exists(req_t5) and os.path.exists(req_pose)):
+        if not (os.path.exists(req_t5) and os.path.exists(req_mask) and os.path.exists(req_pose)):
             continue
             
-        full_img = os.path.join(dataset_root, img_path)
-        if not os.path.exists(full_img):
+        # Resolve face crop
+        # crops are like: hegre_face_crops/anna-l/anna-l-hegre-model-01.jpg
+        # Let's derive it from image_path
+        base_name = os.path.splitext(os.path.basename(img_path))[0]
+        # remove -14000px if present
+        base_name = base_name.replace('-14000px', '')
+        crop_path = os.path.join(crops_dir, p_name, f"{base_name}.jpg")
+        
+        if not os.path.exists(crop_path):
             continue
             
-        img = cv2.imread(full_img)
+        # 1. AuraFace
+        img = cv2.imread(crop_path)
         if img is None:
             continue
             
         faces_aura = app_aura.get(img)
         if len(faces_aura) == 0:
             continue
-            
+        # get highest confidence face or largest
         aura_emb = faces_aura[0].normed_embedding # 512-d
-        persona_aura[p_name].append(aura_emb)
-        valid_images.append((p_name, full_img, req_t5, req_pose))
         
-    print("Averaging vectors...")
-    persona_aura_avg = {p: np.mean(embs, axis=0) for p, embs in persona_aura.items()}
-    
-    print("Pass 2: Building T5 -> [AuraAvg || z_g] dataset...")
-    X_t5 = []
-    Y_target = []
-    
-    for p_name, full_img, req_t5, req_pose in tqdm(valid_images):
-        # 1. T5
+        # 2. T5
         t5 = np.load(req_t5)
-        # Using simple mean pool, or you can grab cls token if preferred
-        t5_emb = t5.mean(axis=0).astype(np.float32) # 1024-d
+        mask = np.load(req_mask)
+        seq_len = mask.sum()
+        if seq_len == 0:
+            continue
+        t5_emb = t5[:seq_len].mean(axis=0).astype(np.float32) # 1024-d
         
-        # 2. Z_g
+        # 3. Z_g
         pose = np.load(req_pose)
         face_2d = pose[FACE_SLICE, :2] # (68, 2)
+        # Z_g encode
         z_g = encode_zg(face_2d, prod_encoder) # 50-d
         
-        # 3. Aura Avg
-        aura_avg = persona_aura_avg[p_name] # 512-d
-        
         # Concat Target
-        target = np.concatenate([aura_avg, z_g], axis=0) # 562-d
+        target = np.concatenate([aura_emb, z_g], axis=0) # 562-d
         
         X_t5.append(t5_emb)
         Y_target.append(target)
@@ -106,9 +108,9 @@ def main():
     X_t5 = np.array(X_t5)
     Y_target = np.array(Y_target)
     
-    print(f"Dataset shape: X_t5={X_t5.shape}, Y_target={Y_target.shape}")
-    np.savez_compressed(os.path.join(output_dir, "dataset_hegre.npz"), X=X_t5, Y=Y_target)
-    print(f"Saved to {output_dir}/dataset_hegre.npz")
+    print(f"Dataset shape: X={X_t5.shape}, Y={Y_target.shape}")
+    np.savez_compressed(os.path.join(output_dir, "dataset.npz"), X=X_t5, Y=Y_target)
+    print(f"Saved to {output_dir}/dataset.npz")
 
 if __name__ == '__main__':
     main()
