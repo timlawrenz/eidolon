@@ -71,7 +71,7 @@ The Phase 1 traversals proved C₁ = yaw and C₂ = pitch — clean, but **fatal
    be the **pose-orthogonal complement** of `pose.npy`.
 
 ### Decision
-- **Mandate:** pose-invariance by construction (architecture.md §3.2 updated).
+- **Mandate:** pose-invariance by construction (01_VISION_AND_ARCHITECTURE.md §3.2 updated).
 - **Rejected — Frontal Filter (data solution):** dropping non-frontal samples
   also discards the profile-only biological signal (nose projection, jaw/brow
   depth) that the North Star explicitly wants. Narrows the input distribution
