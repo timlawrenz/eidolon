@@ -206,3 +206,4 @@ experiments/geometry_pca/data
 experiments/geometry_pca/data.db
 __pycache__/
 *.pyc
+models/
