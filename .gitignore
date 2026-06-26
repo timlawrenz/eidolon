@@ -207,3 +207,7 @@ experiments/geometry_pca/data.db
 __pycache__/
 *.pyc
 models/
+
+data/unified_cache
+
+data/unified_state.db
