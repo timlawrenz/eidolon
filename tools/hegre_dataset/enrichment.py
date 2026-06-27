@@ -17,7 +17,7 @@ def generate_approved_list(db_path: Path, faces_dir: Path) -> list:
     
     paths = []
     for row in rows:
-        img_path = (faces_dir / row["image_path"]).resolve()
+        img_path = (faces_dir / row["image_path"]).absolute()
         paths.append(img_path)
     return paths
 
@@ -37,8 +37,8 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
     pass_list = passes.split(',')
     
     for p in paths:
-        rel_p = p.relative_to(faces_dir.resolve())
-        base_dir = stratum_out.resolve() / rel_p.parent / rel_p.stem
+        rel_p = p.relative_to(faces_dir.absolute())
+        base_dir = stratum_out.absolute() / rel_p.parent / rel_p.stem
         
         is_missing = False
         if "pose" in pass_list and not (base_dir / "pose.npy").exists():
@@ -60,8 +60,8 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
                 for p in missing_stratum:
                     f.write(p + "\n")
             cmd = [
-                "stratum", "process", str(faces_dir.resolve()),
-                "--output", str(stratum_out.resolve()), "--passes", passes, "--image-list", str(list_file.resolve())
+                "stratum", "process", str(faces_dir.absolute()),
+                "--output", str(stratum_out.absolute()), "--passes", passes, "--device", "cpu", "--image-list", str(list_file.absolute())
             ]
             subprocess.run(cmd, check=True)
     else:
@@ -70,9 +70,9 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
     # 2. Check for missing AuraFace data
     missing_auraface = []
     for p in paths:
-        rel_p = p.relative_to(faces_dir.resolve())
+        rel_p = p.relative_to(faces_dir.absolute())
         # Store deterministically, keeping folder names and filenames intact
-        auraface_file = auraface_out.resolve() / rel_p.with_suffix(".npy")
+        auraface_file = auraface_out.absolute() / rel_p.with_suffix(".npy")
         if not auraface_file.exists():
             missing_auraface.append((p, auraface_file))
 
