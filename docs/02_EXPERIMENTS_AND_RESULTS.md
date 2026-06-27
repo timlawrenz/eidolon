@@ -730,3 +730,72 @@ criterion for a *concatenated* partition. The re-stated gate for any partition `
 
 Status: `[CONCLUDED]` — instrument implemented in `scripts/23_zd_verification_auc.py`;
 lifted into reusable `geometry_pca/verification.py` for subsequent gates.
+
+---
+
+## [Phase 5-prep] text-to-z_g data pipeline + z_g/AuraFace role split (`exp/text-to-zg`)
+
+**Date:** 2026-06-27
+**Goal:** Build the unified `(text, z_g, AuraFace)` training corpus for the
+text-to-identity Prior, and settle the architectural roles of the two
+conditioning streams empirically rather than by assertion.
+
+### Data artifacts produced
+* **z_g extraction** (`scripts/pipeline/extract_zg_and_averages.py`, idempotent,
+  recomputes-on-rerun to stay synced with `review.db` curation):
+  * FFHQ: 69,862 per-image z_g (50-d) on NAS at `ffhq/zg/`.
+  * Hegre: 69,110–69,896 per-image z_g (approved-only); ~1,124–1,232 approved
+    images had no z_g (failed/zero DWPose) and were skipped.
+  * Per-persona centroids: 324 z_g averages, 323 AuraFace averages
+    (`hegre-faces/v1/averages/`). **Orphan: persona `hera`** has a z_g centroid
+    but no AuraFace centroid (all frames failed detection) — drop or repair.
+* AuraFace already complete: FFHQ 69,960, Hegre 70,257 (all unit-norm, 0 bad).
+
+### Empirical findings
+1. **z_g ↔ AuraFace are orthogonal (R² ≈ 0).** Ridge regression z_g→AuraFace on
+   8k FFHQ pairs: held-out **R² = −0.033** (worse than mean). The 50-d geometry
+   basis explains ~none of the 512-d identity embedding linearly. → The two
+   streams are genuinely complementary; the planned "project z_g out of AuraFace"
+   step is **pointless** (nothing linear to remove) and was dropped.
+2. **z_g carries almost no identity (Fisher-J collapse).** Recomputed the Tier 0.3
+   morphology/transient split on the **full 69,110 / 323-identity** corpus
+   (vs. legacy 1,448 / 101): global Fisher **J = 0.059**. Morphology axes (J>0.15)
+   dropped from **27 → 6**; 22 legacy "morphology" axes fell into noise.
+   **The legacy 27/23 split is retired** — it was small-N optimism.
+   → **z_g is a geometry/pose control space, NOT an identity space.** Identity
+   lives in AuraFace. (Caveat: corpus still curating — 62k `bad_geometry`,
+   216k unreviewed — so within-person scatter may be inflated by DWPose noise;
+   directional, not final.)
+3. **AuraFace has no low-rank PCA structure.** Pooled PCA (140,217 vectors):
+   PC1 = 2.08% var, flat spectrum, participation ratio ≈ 217/512. **PC1 is a
+   domain artifact** (FFHQ vs Hegre, separation 2.05), not identity — must be
+   projected out before identity analysis. → Unsupervised GANSpace-style sliders
+   are NOT available in AuraFace.
+4. **AuraFace identity sliders exist via supervised LDA.** LDA on 259 train
+   personas (PC1 removed), tested on **64 held-out identities**:
+   top-80 LDA dims recover **AUC 0.965** vs 0.969 full-512 (99.6% of power in
+   ~80 dims); top-40 = 0.956; top-20 = 0.934. Generalizes to unseen identities.
+   → Natural compressed target for the identity Prior (~64-d, not raw 512-d).
+5. **LDA basis is global-in-direction but Hegre-scaled.** FFHQ projects onto the
+   Hegre-fit basis without collapsing (random-pair cosine mean +0.004, std 0.167)
+   but with **53% of Hegre's spread**. Usable, but carries a Hegre population prior.
+6. **Top LDA axes are interpretable but demographic + nuisance-contaminated.**
+   Visual contact sheet (`output/auraface_lda_axes.png`): LDA1 ≈ clean
+   coloring/ethnicity axis (Asian/tanned/dark ↔ fair/blonde European); lower axes
+   muddier, with **occlusion (mask), accessories (sunglasses), makeup, and lighting
+   anchoring extremes** → nuisance is leaking into the discriminant basis.
+
+### Verdict
+**Settled architecture:** `z_g` = geometric/pose control (identity-blind);
+**AuraFace (LDA-compressed)** = sole identity carrier. Streams kept separate
+(decoupled cross-attention) with asymmetric CFG dropout on AuraFace as the
+non-linear firewall backstop. **z_g/AuraFace orthogonality is now measured, not
+assumed.** Two separate Priors (text→z_g, text→AuraFace-LDA).
+
+**Open / next:** (a) **nuisance purification** — regress out pose (DWPose yaw/pitch)
+and lighting/occlusion proxies from AuraFace, then refit LDA for cleaner identity
+axes; (b) decide whether to refit LDA on a pooled/relabeled corpus to remove the
+Hegre scale prior; (c) fix `hera` orphan + investigate the ~1.1k missing-z_g
+approved images.
+
+Status: `[ACTIVE]` — measurements in this session via `execute_code`; data on NAS.

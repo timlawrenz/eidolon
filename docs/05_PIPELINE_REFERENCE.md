@@ -118,7 +118,7 @@ aligned crops and stratum pose data.
 |-------------|-----------|--------------------------------|
 | Stratum     | 70,000    | All passes complete            |
 | AuraFace    | 69,960    | 40 faces skipped by detector   |
-| T5/Caption  | N/A       | Not yet requested for FFHQ     |
+| T5/Caption  | 70,000    | Complete                       |
 
 ### Hegre
 
