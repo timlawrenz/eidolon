@@ -59,25 +59,42 @@ def cmd_enrich(args):
     dataset = Path(args.dataset)
     db_path = dataset / "review.db"
     faces_dir = dataset  # image_path in DB is stored relative to dataset root (e.g. 'faces/anna-l/...')
-    print(f"Running Stratum enrichment with passes: {args.passes}...")
-    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes)
-    print("Stratum enrichment complete.")
+    skip_stratum = getattr(args, "skip_stratum", False)
+    if skip_stratum:
+        print("Running AuraFace-only enrichment (--skip-stratum)...")
+    else:
+        print(f"Running Stratum enrichment with passes: {args.passes}...")
+    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes, skip_stratum=skip_stratum)
+    print("Enrichment complete.")
     return 0
 
 def cmd_review_compute_geometry(args):
-    from .review.geometry import compute_zg_distances
+    from .review.geometry import compute_zg_distances, compute_af_distances
     dataset = Path(args.dataset)
     db_path = dataset / "review.db"
     stratum_dir = dataset / "stratum"
     encoder_path = args.encoder
     persona = getattr(args, "persona", None)
     skip_3d = getattr(args, "skip_3d", False)
-    
-    if not stratum_dir.exists():
-        print(f"Error: Stratum directory {stratum_dir} not found. Run enrichment first.")
-        return 1
-        
-    return compute_zg_distances(db_path, stratum_dir, encoder_path, persona, skip_3d)
+    metric = getattr(args, "metric", "both")
+
+    rc = 0
+
+    if metric in ("zg", "both"):
+        if not stratum_dir.exists():
+            print(f"Error: Stratum directory {stratum_dir} not found. Run enrichment first.")
+            rc = 1
+        else:
+            zg_rc = compute_zg_distances(db_path, stratum_dir, encoder_path, persona, skip_3d, metric=metric)
+            if zg_rc != 0:
+                rc = zg_rc
+
+    if metric in ("af", "both"):
+        af_rc = compute_af_distances(db_path, dataset, persona)
+        if af_rc != 0:
+            rc = af_rc
+
+    return rc
 
 def main(args=None):
     parser = argparse.ArgumentParser(prog="hegre-dataset")
@@ -110,16 +127,19 @@ def main(args=None):
     p_ui.add_argument("--port", type=int, default=5101)
     p_ui.set_defaults(func=cmd_review_ui)
     
-    p_geom = rsub.add_parser("compute-geometry", help="Compute zg_distances, pixel averages, and 3D FLAME spins")
+    p_geom = rsub.add_parser("compute-geometry", help="Compute zg_distances, af_distances, pixel averages, and 3D FLAME spins")
     p_geom.add_argument("--dataset", required=True)
     p_geom.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
     p_geom.add_argument("--persona", type=str, help="Optional persona name (or ID) to limit computation")
     p_geom.add_argument("--skip-3d", action="store_true", help="Skip generating the 3D rotating FLAME mesh (PyRender can be slow)")
+    p_geom.add_argument("--metric", choices=["zg", "af", "both"], default="both",
+                        help="Which distance metric to compute: zg (DWPose geometry), af (AuraFace identity), or both (default)")
     p_geom.set_defaults(func=cmd_review_compute_geometry)
     
     p_enrich = sub.add_parser("enrich")
     p_enrich.add_argument("--dataset", required=True)
     p_enrich.add_argument("--passes", default="pose,seg,depth,normal,caption,t5", help="Comma-separated passes for Stratum")
+    p_enrich.add_argument("--skip-stratum", action="store_true", help="Skip Stratum entirely, only extract missing AuraFace embeddings")
     p_enrich.set_defaults(func=cmd_enrich)
 
     args_parsed = parser.parse_args(args)

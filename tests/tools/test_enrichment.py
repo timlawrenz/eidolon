@@ -1,7 +1,7 @@
 import sqlite3
-from tools.hegre_dataset.enrichment import generate_approved_list, run_stratum_enrichment
+from tools.hegre_dataset.enrichment import generate_image_list, run_stratum_enrichment
 
-def test_generate_approved_list(tmp_path):
+def test_generate_image_list(tmp_path):
     dataset_dir = tmp_path / "dataset"
     dataset_dir.mkdir()
     
@@ -15,6 +15,8 @@ def test_generate_approved_list(tmp_path):
     c.execute("INSERT INTO images VALUES ('test2.jpg', 'rejected')")
     c.execute("INSERT INTO images VALUES ('test3.jpg', 'approved')")
     c.execute("INSERT INTO images VALUES ('test4.jpg', 'pending')")
+    c.execute("INSERT INTO images VALUES ('test5.jpg', 'unreviewed')")
+    c.execute("INSERT INTO images VALUES ('test6.jpg', 'unreviewed')")
     conn.commit()
     conn.close()
     
@@ -24,15 +26,20 @@ def test_generate_approved_list(tmp_path):
     (faces_dir / "test2.jpg").touch()
     (faces_dir / "test3.jpg").touch()
     (faces_dir / "test4.jpg").touch()
+    (faces_dir / "test5.jpg").touch()
+    (faces_dir / "test6.jpg").touch()
     
-    list_path = generate_approved_list(dataset_dir)
+    paths = generate_image_list(db_path, faces_dir)
     
-    assert list_path.exists()
-    
-    content = list_path.read_text().splitlines()
-    assert len(content) == 2
-    assert str((faces_dir / "test1.jpg").absolute()) in content
-    assert str((faces_dir / "test3.jpg").absolute()) in content
+    # Should return 4 paths: 2 approved + 2 unreviewed
+    assert len(paths) == 4
+    assert str((faces_dir / "test1.jpg").absolute()) in [str(p) for p in paths]
+    assert str((faces_dir / "test3.jpg").absolute()) in [str(p) for p in paths]
+    assert str((faces_dir / "test5.jpg").absolute()) in [str(p) for p in paths]
+    assert str((faces_dir / "test6.jpg").absolute()) in [str(p) for p in paths]
+    # Rejected and pending should not be included
+    assert str((faces_dir / "test2.jpg").absolute()) not in [str(p) for p in paths]
+    assert str((faces_dir / "test4.jpg").absolute()) not in [str(p) for p in paths]
 
 def test_run_stratum_enrichment(tmp_path, mocker):
     dataset_dir = tmp_path / "dataset"

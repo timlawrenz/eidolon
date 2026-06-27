@@ -45,7 +45,125 @@ def normalize_face_geometry(face_2d):
     rotated_face += nose_tip
     return rotated_face
 
-def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False):
+def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None = None) -> int:
+    """Compute AuraFace cosine distances from the approved-image centroid for each persona.
+
+    Loads deterministic AuraFace .npy files from auraface/faces/<persona>/<set>/<img>.npy,
+    computes the centroid of all valid (unreviewed + approved) embeddings, and stores
+    the cosine distance (1 - cosine_similarity) as af_distance in the images table.
+
+    Args:
+        db_path: Path to review.db.
+        dataset_root: Dataset root containing auraface/ subdirectory.
+        persona: Optional persona name or ID to limit computation.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    auraface_dir = dataset_root / "auraface"
+    if not auraface_dir.exists():
+        print(f"AuraFace directory not found: {auraface_dir}")
+        print("Run 'enrich' first to extract AuraFace embeddings.")
+        return 1
+
+    db = sqlite3.connect(str(db_path))
+    db.row_factory = sqlite3.Row
+
+    # Ensure af_distance column exists
+    try:
+        db.execute("ALTER TABLE images ADD COLUMN af_distance REAL")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    if persona is not None:
+        if str(persona).isdigit():
+            personas = db.execute("SELECT id, name FROM personas WHERE id = ?", (int(persona),)).fetchall()
+        else:
+            personas = db.execute("SELECT id, name FROM personas WHERE name = ?", (persona,)).fetchall()
+    else:
+        personas = db.execute("SELECT id, name FROM personas").fetchall()
+
+    total_updated = 0
+
+    print(f"Starting AuraFace distance compute for {len(personas)} personas...")
+
+    for p in personas:
+        pid, pname = p["id"], p["name"]
+
+        # Load approved images for centroid; all images for distance computation
+        approved_images = db.execute(
+            "SELECT id, image_path FROM images "
+            "WHERE persona_id = ? AND status = 'approved'",
+            (pid,)
+        ).fetchall()
+
+        all_images = db.execute(
+            "SELECT id, image_path FROM images "
+            "WHERE persona_id = ? AND status IN ('unreviewed', 'approved')",
+            (pid,)
+        ).fetchall()
+
+        # Approved embeddings → centroid
+        approved_embeddings = []
+        for img in approved_images:
+            rel_path = Path(img["image_path"])
+            af_path = auraface_dir / rel_path.with_suffix(".npy")
+            if af_path.exists():
+                try:
+                    emb = np.load(af_path)
+                    if emb.ndim == 1:
+                        approved_embeddings.append(emb)
+                except Exception:
+                    continue
+
+        if not approved_embeddings:
+            print(f"[{pname}] Skipped (no approved AuraFace .npy files for centroid)")
+            continue
+
+        approved_embeddings = np.array(approved_embeddings)
+        centroid = np.mean(approved_embeddings, axis=0)
+
+        # All images → distances from approved centroid
+        all_embeddings = []
+        all_img_ids = []
+        for img in all_images:
+            rel_path = Path(img["image_path"])
+            af_path = auraface_dir / rel_path.with_suffix(".npy")
+            if af_path.exists():
+                try:
+                    emb = np.load(af_path)
+                    if emb.ndim == 1:
+                        all_embeddings.append(emb)
+                        all_img_ids.append(img["id"])
+                except Exception:
+                    continue
+
+        if all_embeddings:
+            all_embeddings = np.array(all_embeddings)
+            # Cosine similarity via dot product (embeddings are L2-normalized)
+            similarities = all_embeddings @ centroid  # (N,)
+            distances = 1.0 - similarities  # cosine distance in [0, 2]
+
+            updates = [(float(d), iid) for d, iid in zip(distances, all_img_ids)]
+            db.executemany("UPDATE images SET af_distance = ? WHERE id = ?", updates)
+            db.commit()
+            total_updated += len(updates)
+
+            mean_dist = float(np.mean(distances))
+            n_approved = len(approved_embeddings)
+            print(f"[{pname}] Centroid from {n_approved} approved images; "
+                  f"Computed af_distance for {len(updates)} images "
+                  f"(mean cosine dist: {mean_dist:.4f})")
+        else:
+            print(f"[{pname}] Skipped (no valid AuraFace .npy files found)")
+
+    db.close()
+    print(f"\nDone. Updated af_distance for {total_updated} total images.")
+    return 0
+
+
+def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False, metric: str = "both"):
     db = sqlite3.connect(str(db_path))
     db.row_factory = sqlite3.Row
     
@@ -54,6 +172,14 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
         db.execute("ALTER TABLE images ADD COLUMN zg_distance REAL")
         db.commit()
         print("Added zg_distance column to images table.")
+    except sqlite3.OperationalError:
+        pass # Column already exists
+
+    # 1b. Add af_distance column if it doesn't exist
+    try:
+        db.execute("ALTER TABLE images ADD COLUMN af_distance REAL")
+        db.commit()
+        print("Added af_distance column to images table.")
     except sqlite3.OperationalError:
         pass # Column already exists
         
@@ -75,21 +201,28 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
     total_images_processed = 0
     
     print(f"Starting geometry compute for {len(personas)} personas...")
-    
+
+    skip_zg = metric == "af"
+
     for p in personas:
         pid, pname = p["id"], p["name"]
-        
+
         # When DBSCAN splits personas, the new directory names in `stratum/` don't change!
         # If the persona is 'anna_cluster_1', the files are still inside `stratum/anna/`.
         # We need to map the persona name back to the original directory name by stripping '_cluster_X'.
         base_pname = pname.split("_cluster_")[0]
-        
+
         # Only compute geometry for images that are either unreviewed or approved.
         # Images tainted as non-face or unusable shouldn't skew the true centroid.
         images = db.execute("SELECT id, image_path, status FROM images WHERE persona_id = ? AND status IN ('unreviewed', 'approved')", (pid,)).fetchall()
+
+        if skip_zg:
+            total_images_processed += len(images)
+            continue
         
         vectors = []
         img_ids = []
+        approved_vectors = []  # Only approved images for centroid
         bad_geo_ids = []
         image_paths = []
         face_2ds = []
@@ -121,6 +254,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                     img_ids.append(img["id"])
                     
                     if img["status"] == "approved":
+                        approved_vectors.append(zg)
                         image_paths.append(dataset_root / img["image_path"])
                         face_2ds.append(face_2d)
                         
@@ -134,12 +268,15 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             db.commit()
             print(f"  -> Auto-labeled {len(bad_geo_ids)} DWPose failures as 'Bad Geometry'")
         
-        if vectors:
+        if vectors and approved_vectors:
+            approved_vectors = np.array(approved_vectors)
+            centroid = np.mean(approved_vectors, axis=0)
+            
+            # Compute distances for ALL images from the approved centroid
             vectors = np.array(vectors)
-            centroid = np.mean(vectors, axis=0)
             distances = np.linalg.norm(vectors - centroid, axis=1)
             
-            # Draw the 'Ghost' Average (Inverse PCA)
+            # Draw the 'Ghost' Average (Inverse PCA) from approved centroid
             face_2d = decode_zg(centroid, encoder)
             img = Image.new("RGB", (300, 300), (24, 24, 27)) # Zinc-950
             draw = ImageDraw.Draw(img)
@@ -221,7 +358,10 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                 
             db.commit()
             total_updated += len(vectors)
-            print(f"[{total_images_processed} poses loaded] Computed distances for {len(vectors)} images of {pname}")
+            print(f"[{total_images_processed} poses loaded] Centroid from {len(approved_vectors)} approved; "
+                  f"computed distances for {len(vectors)} images of {pname}")
+        elif vectors:
+            print(f"Skipped {pname} (poses found but no approved images for centroid)")
         else:
             print(f"Skipped {pname} (No valid pose.npy files found)")
             

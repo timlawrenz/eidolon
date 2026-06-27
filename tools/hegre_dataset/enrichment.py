@@ -8,11 +8,11 @@ from .review.schema import get_db
 
 import sqlite3
 
-def generate_approved_list(db_path: Path, faces_dir: Path) -> list:
-    """Query DB for approved images and return their absolute paths."""
+def generate_image_list(db_path: Path, faces_dir: Path) -> list:
+    """Query DB for approved and unreviewed images and return their absolute paths."""
     db = sqlite3.connect(f"file:{db_path}?mode=ro&nolock=1", uri=True)
     db.row_factory = sqlite3.Row
-    rows = db.execute("SELECT image_path FROM images WHERE status = 'approved'").fetchall()
+    rows = db.execute("SELECT image_path FROM images WHERE status IN ('approved', 'unreviewed')").fetchall()
     db.close()
     
     paths = []
@@ -21,51 +21,54 @@ def generate_approved_list(db_path: Path, faces_dir: Path) -> list:
         paths.append(img_path)
     return paths
 
-def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, passes: str = "pose,seg,depth,normal,caption,t5"):
+def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, passes: str = "pose,seg,depth,normal,caption,t5", skip_stratum: bool = False):
     """Invoke stratum process only for images that miss Stratum data, and extract AuraFace for images that miss it."""
     stratum_out = dataset_dir / "stratum"
     auraface_out = dataset_dir / "auraface"
     list_file = dataset_dir / "stratum_approved_list.txt"
     
-    paths = generate_approved_list(db_path, faces_dir)
+    paths = generate_image_list(db_path, faces_dir)
     if not paths:
-        print("No approved images found. Skipping enrichment.")
+        print("No approved or unreviewed images found. Skipping enrichment.")
         return
 
     # 1. Check for missing Stratum data (respecting the requested passes)
-    missing_stratum = []
-    pass_list = passes.split(',')
-    
-    for p in paths:
-        rel_p = p.relative_to(faces_dir.absolute())
-        base_dir = stratum_out.absolute() / rel_p.parent / rel_p.stem
+    if not skip_stratum:
+        missing_stratum = []
+        pass_list = passes.split(',')
         
-        is_missing = False
-        if "pose" in pass_list and not (base_dir / "pose.npy").exists():
-            is_missing = True
-        elif "caption" in pass_list and not (base_dir / "caption.txt").exists():
-            is_missing = True
-        elif "t5" in pass_list and not (base_dir / "t5_hidden.npy").exists():
-            is_missing = True
+        for p in paths:
+            rel_p = p.relative_to(faces_dir.absolute())
+            base_dir = stratum_out.absolute() / rel_p.parent / rel_p.stem
             
-        if is_missing:
-            missing_stratum.append(str(p))
+            is_missing = False
+            if "pose" in pass_list and not (base_dir / "pose.npy").exists():
+                is_missing = True
+            elif "caption" in pass_list and not (base_dir / "caption.txt").exists():
+                is_missing = True
+            elif "t5" in pass_list and not (base_dir / "t5_hidden.npy").exists():
+                is_missing = True
+                
+            if is_missing:
+                missing_stratum.append(str(p))
 
-    if missing_stratum:
-        print(f"Found {len(missing_stratum)} approved images missing Stratum data. Invoking stratum-hq with passes: {passes}...")
-        if shutil.which("stratum") is None:
-            print("Error: 'stratum' command not found in PATH.")
+        if missing_stratum:
+            print(f"Found {len(missing_stratum)} images missing Stratum data. Invoking stratum-hq with passes: {passes}...")
+            if shutil.which("stratum") is None:
+                print("Error: 'stratum' command not found in PATH.")
+            else:
+                with open(list_file, "w") as f:
+                    for p in missing_stratum:
+                        f.write(p + "\n")
+                cmd = [
+                    "stratum", "process", str(faces_dir.absolute()),
+                    "--output", str(stratum_out.absolute()), "--passes", passes, "--device", "cpu", "--image-list", str(list_file.absolute())
+                ]
+                subprocess.run(cmd, check=True)
         else:
-            with open(list_file, "w") as f:
-                for p in missing_stratum:
-                    f.write(p + "\n")
-            cmd = [
-                "stratum", "process", str(faces_dir.absolute()),
-                "--output", str(stratum_out.absolute()), "--passes", passes, "--device", "cpu", "--image-list", str(list_file.absolute())
-            ]
-            subprocess.run(cmd, check=True)
+            print("All images already have Stratum data.")
     else:
-        print("All approved images already have Stratum data.")
+        print("Skipping Stratum enrichment (--skip-stratum).")
 
     # 2. Check for missing AuraFace data
     missing_auraface = []
@@ -107,7 +110,15 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
             return
 
         app = FaceAnalysis(name='auraface', root='/mnt/nas-ai-models', providers=['CPUExecutionProvider'])
-        app.prepare(ctx_id=0, det_size=(512, 512))
+        # det_size in InsightFace forces the input image to be resized to that resolution before passing 
+        # to the SCRFD detector. The default det_size=(640,640) works, but setting it forces padding/scaling logic.
+        # But wait, why are we using SCRFD at all? 
+        # We ALREADY have a perfectly cropped face. SCRFD is failing because the face fills the frame, 
+        # lacking shoulder/background context.
+        # 
+        # If we remove det_size entirely, InsightFace defaults to (640, 640). 
+        # The true fix is padding the 512px MTCNN crop so SCRFD can 'see' the edges.
+        app.prepare(ctx_id=0)
 
         t0 = time.time()
         n_skip = 0
@@ -127,6 +138,17 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
                 
             faces = app.get(img)
             if len(faces) == 0:
+                # SCRFD often fails to detect faces when the image is already a tightly cropped 512px MTCNN box.
+                # We can trick it by padding the image with a black border, running detection, and taking the result.
+                # Pad by 20% on all sides
+                h, w = img.shape[:2]
+                pad_y = int(h * 0.2)
+                pad_x = int(w * 0.2)
+                padded_img = cv2.copyMakeBorder(img, pad_y, pad_y, pad_x, pad_x, cv2.BORDER_CONSTANT, value=[0,0,0])
+                faces = app.get(padded_img)
+                
+            if len(faces) == 0:
+                # If it STILL fails after padding, we skip it
                 n_skip += 1
                 continue
                 

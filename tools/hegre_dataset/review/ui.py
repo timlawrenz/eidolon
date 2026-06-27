@@ -197,45 +197,89 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         
         total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
         
-        # Determine sorting strategy
-        has_distances = db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
-        
+        # Determine sorting strategy - prefer af_distance, fall back to zg_distance
+        has_af = db.execute("SELECT COUNT(af_distance) FROM images WHERE persona_id = ? AND af_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
+        has_zg = db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
+
         if mode == "audit":
-            order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
-        elif has_distances and mode == "unreviewed":
-            order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
+            if has_af:
+                order_clause = "ORDER BY af_distance DESC NULLS LAST LIMIT 20"
+                dist_col = "af_distance"
+            elif has_zg:
+                order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
+                dist_col = "zg_distance"
+            else:
+                order_clause = "ORDER BY RANDOM() LIMIT 20"
+                dist_col = None
+        elif mode == "unreviewed":
+            if has_af:
+                order_clause = "ORDER BY af_distance DESC NULLS LAST LIMIT 20"
+                dist_col = "af_distance"
+            elif has_zg:
+                order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
+                dist_col = "zg_distance"
+            else:
+                order_clause = "ORDER BY RANDOM() LIMIT 20"
+                dist_col = None
         else:
-            order_clause = "ORDER BY RANDOM() LIMIT 20"
-        
-        all_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
-        
+            # review mode
+            if has_af:
+                order_clause = "ORDER BY af_distance DESC NULLS LAST LIMIT 20"
+                dist_col = "af_distance"
+            elif has_zg:
+                order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
+                dist_col = "zg_distance"
+            else:
+                order_clause = "ORDER BY RANDOM() LIMIT 20"
+                dist_col = None
+
+        all_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
+
         # Mix in best images only if unreviewed (to prevent drift)
         if mode == "unreviewed":
-            best_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY zg_distance ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
+            if dist_col:
+                best_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY {dist_col} ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
+            else:
+                best_imgs = []
         else:
             best_imgs = []
-            
+
         db.close()
-        
+
         combined_ids = []
         for r in best_imgs:
             if r["id"] not in approved_ref_ids:
                 combined_ids.append(r["id"])
-                
+
         for img in all_imgs:
             if img["id"] not in combined_ids and img["id"] not in approved_ref_ids:
                 combined_ids.append(img["id"])
             if len(combined_ids) >= 20:
                 break
-                
+
         final_imgs = []
         for img in best_imgs + all_imgs:
             if img["id"] in combined_ids and img["id"] not in [r["id"] for r in final_imgs]:
                 final_imgs.append(img)
-                
+
         if mode == "review":
-            final_imgs.sort(key=lambda x: x["zg_distance"] if x["zg_distance"] is not None else -1.0, reverse=True)
-        
+            if dist_col == "af_distance":
+                final_imgs.sort(key=lambda x: x["af_distance"] if x["af_distance"] is not None else -1.0, reverse=True)
+            elif dist_col == "zg_distance":
+                final_imgs.sort(key=lambda x: x["zg_distance"] if x["zg_distance"] is not None else -1.0, reverse=True)
+
+        # Build distance map with metric prefix
+        distances = {}
+        for r in final_imgs:
+            if dist_col == "af_distance" and r["af_distance"] is not None:
+                distances[r["id"]] = float(r["af_distance"])
+            elif dist_col == "zg_distance" and r["zg_distance"] is not None:
+                distances[r["id"]] = float(r["zg_distance"])
+            elif r["af_distance"] is not None:
+                distances[r["id"]] = float(r["af_distance"])
+            elif r["zg_distance"] is not None:
+                distances[r["id"]] = float(r["zg_distance"])
+
         return jsonify({
             "persona_id": pid,
             "persona_name": pname,
@@ -245,7 +289,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             "unreviewed_ids": [r["id"] for r in final_imgs if r["status"] == status_filter],
             "statuses": {r["id"]: r["status"] for r in final_imgs},
             "labels": {r["id"]: f"face{r['face_index']}" for r in final_imgs},
-            "distances": {r["id"]: r["zg_distance"] for r in final_imgs},
+            "distances": distances,
+            "distance_metric": dist_col or "none",
             "mode": mode,
         })
         
@@ -279,7 +324,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             sys.executable, "-m", "tools.hegre_dataset", "review", "compute-geometry",
             "--dataset", str(faces_root),
             "--encoder", str(encoder_path),
-            "--persona", str(pid)
+            "--persona", str(pid),
+            "--metric", "both"
         ], stdout=sys.stdout, stderr=sys.stderr)
         
         return jsonify({"remaining": remaining, "mode": mode})
@@ -489,7 +535,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
 
                 let distHtml = '';
                 if (dist !== null && dist !== undefined) {
-                    distHtml = `<span class="bg-zinc-950/80 backdrop-blur text-[10px] px-1.5 py-0.5 rounded border border-zinc-800 text-rose-300">dist: ${parseFloat(dist).toFixed(4)}</span>`;
+                    const metricLabel = (g_data && g_data.distance_metric === 'af_distance') ? 'af' : 'zg';
+                    distHtml = `<span class="bg-zinc-950/80 backdrop-blur text-[10px] px-1.5 py-0.5 rounded border border-zinc-800 text-rose-300">${metricLabel}: ${parseFloat(dist).toFixed(4)}</span>`;
                 }
 
                 wrapper.innerHTML = `
