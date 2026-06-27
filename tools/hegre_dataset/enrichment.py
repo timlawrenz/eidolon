@@ -90,7 +90,15 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
             if cudnn_path not in current_ld and os.path.exists(cudnn_path):
                 os.environ['LD_LIBRARY_PATH'] = f"{cudnn_path}:{cublas_path}:{current_ld}".strip(':')
                 print("Restarting subprocess to load CUDA libraries...")
-                os.execv(sys.executable, [sys.executable] + sys.argv)
+                # When called as 'python -m tools.hegre_dataset', sys.argv[0]
+                # is __main__.py and relative imports break on direct re-exec.
+                # Reconstruct the -m invocation so package imports resolve.
+                argv0 = sys.argv[0]
+                if argv0.endswith('__main__.py') and 'tools/hegre_dataset' in argv0:
+                    new_argv = [sys.executable, '-m', 'tools.hegre_dataset'] + sys.argv[1:]
+                else:
+                    new_argv = [sys.executable] + sys.argv
+                os.execv(sys.executable, new_argv)
                 
             from insightface.app import FaceAnalysis
         except ImportError:
