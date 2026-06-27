@@ -106,7 +106,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
             print("Error: insightface not installed. Skipping AuraFace extraction.")
             return
 
-        app = FaceAnalysis(name='auraface', root='/mnt/nas-ai-models', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        app = FaceAnalysis(name='auraface', root='/mnt/nas-ai-models', providers=['CPUExecutionProvider'])
         app.prepare(ctx_id=0, det_size=(512, 512))
 
         t0 = time.time()
