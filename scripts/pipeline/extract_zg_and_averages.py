@@ -123,7 +123,10 @@ def process_hegre(encoder):
         
         for rel_base, zg_path in items:
             if zg_path.exists():
-                zg_vectors.append(np.load(zg_path))
+                z = np.load(zg_path)
+                # Reject degenerate z_g (DWPose missed eyes/face → wild PCA projection)
+                if np.linalg.norm(z) < 25:
+                    zg_vectors.append(z)
                 
             aura_path = HEGRE_ROOT / "auraface" / f"{rel_base}.npy"
             if aura_path.exists():
