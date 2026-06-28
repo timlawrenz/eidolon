@@ -792,10 +792,93 @@ conditioning streams empirically rather than by assertion.
 non-linear firewall backstop. **z_g/AuraFace orthogonality is now measured, not
 assumed.** Two separate Priors (text→z_g, text→AuraFace-LDA).
 
-**Open / next:** (a) **nuisance purification** — regress out pose (DWPose yaw/pitch)
-and lighting/occlusion proxies from AuraFace, then refit LDA for cleaner identity
-axes; (b) decide whether to refit LDA on a pooled/relabeled corpus to remove the
-Hegre scale prior; (c) fix `hera` orphan + investigate the ~1.1k missing-z_g
-approved images.
+**Open / next:** (a) ~~nuisance purification~~ — yaw pose leakage removed (R²=0.41→0,
+committed as `auraface_preprocessing.py`); occlusion/lighting proxies remain
+unaddressed (no labels); (b) ~~LDA refit~~ — basis re-measured on full 69k corpus,
+generalizes to held-out identities (AUC 0.965), used as Prior 2 target;
+(c) **Prior training** → see pre-registered Phase 5a below;
+(d) fix `hera` orphan + investigate the ~1.1k missing-z_g approved images.
 
 Status: `[ACTIVE]` — measurements in this session via `execute_code`; data on NAS.
+
+---
+
+## [PRE-REGISTERED] Phase 5a: Text-to-Identity Priors (`exp/text-to-zg`)
+
+**Date pre-registered:** 2026-06-27
+**Goal:** Train two Rectified Flow Matching Priors that map text (T5 embeddings) to
+the conditioning vectors needed by the Phase 5 DiT — a 50-d geometric $z_g$ and a
+compressed AuraFace-LDA identity vector — with held-out identity-generalizing quality.
+
+**Background:** The pooled AuraFace PCA (140k vectors, 2026-06-27) showed no low-rank
+structure suitable for unsupervised sliders. Supervised LDA on Hegre persona clusters
+(69k vectors, 323 identities, PC1-domain axis removed) produced a compact,
+generalizing identity basis: top-80 LDA dims recover AUC 0.965 on held-out identities
+vs. 0.969 for full 512-d. AuraFace preprocessing (`auraface_preprocessing.py`) now
+deterministically removes the domain axis (PC1) and pose-yaw nuisance (R²=0.41, costs
+zero identity discrimination) before LDA projection. $z_g$ is identity-blind
+(Fisher J≈0.06 on 70k corpus); AuraFace-LDA is geometry-blind (R²≈0 against z_g).
+→ Two separate Priors, two independent learning problems.
+
+### Hypotheses
+
+| Prior | Input | Output | Hypothesis ($H_1$) | Null ($H_0$) |
+|---|---|---|---|---|
+| P1: text→$z_g$ | T5 caption embedding | 50-d whitened $z_g$ vector | Flow Matching MLP predicts geometry with held-out MSE below the within-person $z_g$ variance ($σ²_w$) | MSE ≥ $σ²_w$ (predicting the global mean is as good) |
+| P2: text→AuraFace-LDA | T5 caption embedding | 64-d LDA coordinates (to be reconstructed + L2-normalized to hypersphere) | Flow Matching MLP predicts identity direction with held-out cosine similarity > 0.3 (directional correctness) | cosine ≤ 0.0 (random direction on sphere) |
+
+### Gates (pre-registered — thresholds fixed before any training)
+
+**Gate G1 (z_g Prior):** `MSE(z_g_pred, z_g_true) / σ²_w < 1.0` on held-out identities.
+$σ²_w$ = mean within-identity z_g variance computed from the Hegre persona clusters
+(excluding `hera`). A ratio < 1.0 means the Prior's predictions are closer to ground
+truth than the person's own neutral resting face is to any single photo.
+
+**Gate G2 (AuraFace-LDA Prior):** `mean(cosine_sim(aura_pred_norm, aura_true_norm)) > 0.3`
+on held-out identities. Reference points: random direction ≈ 0.0, within-person
+cosine ≈ 0.5–0.7, inter-person cosine ≈ 0.0. A score > 0.3 means the Prior is
+consistently pointing toward the correct identity region on the hypersphere.
+
+**Gate G3 (Δ-Gate — optional, run only if G1+G2 pass):** Train a single *joint* Prior
+predicting `[z_g | AuraFace-LDA]` concatenated (114-d), apply the same held-out gates.
+If the joint Prior matches or beats the separate Priors, a single model suffices.
+If it underperforms, the mixed-topology risk (Euclidean PCA + hyperspherical AuraFace
+in one output) is real and two Priors are the correct architecture.
+
+### Training protocol
+
+- **Architecture:** Rectified Flow Matching (straight-line ODE, velocity prediction)
+  with an AdaLN-ResNet MLP backbone (~12 residual blocks, hidden dim ~1024–2048).
+  Text conditioning via adaptive LayerNorm (T5 encoder → scale/shift params per block).
+  ~10 Euler ODE steps at inference.
+- **Data:** FFHQ 70k (per-image T5→z_g, T5→AuraFace-LDA) + Hegre per-persona centroids
+  (for identity-clean Type 2 pairs). AuraFace preprocessing applied deterministically.
+- **Training split:** Held-out identities (not held-out images — prevents cross-shoot
+  leakage). Same split for both Priors.
+- **Optimizer:** AdamW, cosine schedule, ~50–100 epochs on 70k samples (batch 256–512).
+- **Compute:** CPU-bound (Strix Halo 128GB); no GPU required for 1D Flow Matching MLPs.
+
+### Implementation phases
+
+| Phase | Deliverable | Gate |
+|---|---|---|
+| A | Permanent LDA basis + `project_to_lda()` in preprocessing module | N/A (infra) |
+| B | Prior 1: text→z_g (50-d) — TDD RED-GREEN-REFACTOR | G1 |
+| C | Prior 2: text→AuraFace-LDA (64-d) — TDD | G2 |
+| D | Gate evaluation (held-out identities, both Priors) | G1+G2 confirmed |
+| E | (Optional) Joint Prior ablation | G3 |
+
+### Risks and mitigations
+
+- **Mixed-topology instability (Joint Prior):** z_g is Euclidean whitened PCA;
+  AuraFace-LDA lives on a tangent space of the hypersphere. Separate Priors avoid
+  this. G3 tests whether a joint model can handle it.
+- **T5 coverage on Hegre incomplete:** The `caption/t5` backfill is ~57% complete
+  (~25k of ~70k). FFHQ is 100%. Train primarily on FFHQ; Hegre centroids supplement.
+- **Small held-out set:** 64 identities may have too few extremes for stable metrics.
+  Use bootstrap confidence intervals on all gate numbers.
+- **Corpus still curating:** The Hegre approved set will grow. Re-training after
+  major curation passes is expected.
+
+Status: `[PRE-REGISTERED]` — hypotheses and gates fixed; no training code written yet.
+Branch: `exp/text-to-zg`.
