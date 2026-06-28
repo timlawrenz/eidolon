@@ -54,8 +54,6 @@ class ResidualBlock(nn.Module):
         self.norm = AdaGN(dim, cond_dim)
         self.linear1 = nn.Linear(dim, inner_dim)
         self.linear2 = nn.Linear(inner_dim, dim)
-        nn.init.zeros_(self.linear2.weight)
-        nn.init.zeros_(self.linear2.bias)
 
     def forward(self, x, cond):
         h = self.norm(x, cond)
@@ -101,10 +99,8 @@ class AdaLNResNet(nn.Module):
             ResidualBlock(d_hidden, cond_hidden) for _ in range(n_blocks)
         ])
         
-        # Output projection
+        # Output projection (random init — honest baseline, not zero-biased)
         self.proj_out = nn.Linear(d_hidden, d_out)
-        nn.init.zeros_(self.proj_out.weight)
-        nn.init.zeros_(self.proj_out.bias)
 
     def forward(self, x, t, cond):
         """Forward pass.

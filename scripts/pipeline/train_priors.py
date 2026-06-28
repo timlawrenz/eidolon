@@ -120,6 +120,10 @@ def train_prior(prior_name, train_ds, held_ds, d_out, d_hidden, n_blocks, device
     best_loss = float('inf')
     gate_results = {}
     
+    # Pre-training baseline: evaluate BEFORE any optimizer steps
+    print("  Pre-training baseline...")
+    gate_results = evaluate_gate(prior_name, model, device, 0, d_out, held_ds, sigma2_w)
+    
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0.0
