@@ -188,7 +188,7 @@ def train_prior(prior_name, dataset, d_out, d_hidden, n_blocks, device,
         
         # Held-out evaluation every 5 epochs
         if (epoch + 1) % 5 == 0 or epoch == 0 or epoch == epochs - 1:
-            gate_results = evaluate_gate(prior_name, model, device, epoch + 1,
+            gate_results = evaluate_gate(prior_name, model, device, epoch + 1, d_out,
                                          zg_held, aura_held, persona_labels, sigma2_w)
         
         # Save checkpoint if best
@@ -207,12 +207,24 @@ def train_prior(prior_name, dataset, d_out, d_hidden, n_blocks, device,
     return gate_results
 
 
-def evaluate_gate(prior_name, model, device, step,
+def evaluate_gate(prior_name, model, device, step, d_out,
                   zg_held, aura_held, persona_labels, sigma2_w):
     """Evaluate pre-registered gates on held-out identities."""
     model.eval()
-    rfm = RectifiedFlowMatching(model, d_output=0, device=device)  # d_output unused for eval
     results = {}
+    n_steps = 10
+    
+    @torch.no_grad()
+    def sample_ode(x_0, cond):
+        """Euler ODE sampler — inline to avoid RectifiedFlowMatching wrapper."""
+        x = x_0
+        dt = 1.0 / n_steps
+        for s in range(n_steps):
+            t_val = s * dt
+            t_arr = torch.full((x.shape[0], 1), t_val, device=device)
+            v = model(x, t_arr, cond)
+            x = x + v * dt
+        return x
     
     if prior_name == "zg" and zg_held is not None and sigma2_w is not None:
         # Gate G1: MSE(zg_pred, zg_true) / σ²_w
@@ -229,8 +241,7 @@ def evaluate_gate(prior_name, model, device, step,
         # (we don't have T5 for Hegre held-out — use zeros for now as a baseline)
         cond = torch.zeros(n, 1024, device=device)  # placeholder
         
-        with torch.no_grad():
-            z_pred = rfm.sample(cond, n_samples=n)
+        z_pred = sample_ode(torch.randn(n, d_out, device=device), cond)
         
         mse = torch.mean((z_pred - z_true) ** 2).item()
         ratio = mse / sigma2_w
@@ -260,8 +271,7 @@ def evaluate_gate(prior_name, model, device, step,
         
         cond = torch.zeros(n, 1024, device=device)  # placeholder
         
-        with torch.no_grad():
-            lda_pred = rfm.sample(cond, n_samples=n)
+        lda_pred = sample_ode(torch.randn(n, d_out, device=device), cond)
         
         # Reconstruct and L2-normalize
         lda_pred_np = lda_pred.cpu().numpy()
