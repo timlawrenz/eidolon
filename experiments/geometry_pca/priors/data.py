@@ -11,14 +11,17 @@ class PriorDataset:
     
     Args:
         t5_paths: list of paths to t5_hidden.npy files
-        target_paths: list of paths to target .npy files (z_g or AuraFace-LDA)
+        target_paths: list of paths to target .npy files (z_g or AuraFace-LDA),
+                      OR list of pre-loaded numpy arrays (if from_arrays=True)
         pool_t5: if True, mean-pool T5 sequence (512,1024) → (1024,)
+        from_arrays: if True, target_paths is a list of numpy arrays
     """
     
-    def __init__(self, t5_paths, target_paths, pool_t5=True):
+    def __init__(self, t5_paths, target_paths, pool_t5=True, from_arrays=False):
         self.t5_paths = t5_paths
         self.target_paths = target_paths
         self.pool_t5 = pool_t5
+        self.from_arrays = from_arrays
         assert len(t5_paths) == len(target_paths)
     
     def __len__(self):
@@ -28,7 +31,10 @@ class PriorDataset:
         t5 = np.load(self.t5_paths[idx]).astype(np.float64)
         if self.pool_t5 and t5.ndim == 2:
             t5 = t5.mean(axis=0)  # (512,1024) → (1024,)
-        target = np.load(self.target_paths[idx]).astype(np.float64)
+        if self.from_arrays:
+            target = self.target_paths[idx]  # already an array
+        else:
+            target = np.load(self.target_paths[idx]).astype(np.float64)
         return t5, target
 
 
@@ -70,3 +76,39 @@ def _skip_slow(reason):
     """Decorator to skip slow tests that scan the full FFHQ dataset over NAS."""
     import pytest
     return pytest.mark.skip(reason=reason)
+
+
+def build_ffhq_lda_dataset(ffhq_root="/mnt/nas-ai-models/training-data/ffhq", max_samples=None):
+    """Build paired (T5, AuraFace-LDA) dataset from FFHQ.
+    
+    Applies clean_auraface() + project_to_lda() to each AuraFace vector.
+    
+    Args:
+        ffhq_root: root of the FFHQ data tree
+        max_samples: cap on number of pairs (for testing; None = load all)
+    """
+    from geometry_pca.auraface_preprocessing import clean_auraface, project_to_lda
+    
+    aura_dir = Path(ffhq_root) / "auraface"
+    stratum_dir = Path(ffhq_root) / "stratum"
+    
+    # Use os.listdir on auraface for speed (no glob star over NAS)
+    import os
+    aura_files = [f for f in os.listdir(str(aura_dir)) if f.endswith('.npy')]
+    aura_files.sort()
+    
+    t5_paths, lda_targets = [], []
+    for af in aura_files:
+        if max_samples and len(t5_paths) >= max_samples:
+            break
+        fid = af.replace('.npy', '')
+        t5_f = stratum_dir / fid / "t5_hidden.npy"
+        aura_f = aura_dir / af
+        if t5_f.exists() and aura_f.exists():
+            aura_vec = np.load(aura_f).astype(np.float64)
+            cleaned = clean_auraface(aura_vec)
+            lda = project_to_lda(cleaned)
+            t5_paths.append(str(t5_f))
+            lda_targets.append(lda.ravel())  # (64,)
+    
+    return PriorDataset(t5_paths, lda_targets, from_arrays=True)
