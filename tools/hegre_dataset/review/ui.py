@@ -348,6 +348,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         .approved { border-color: #10b981 !important; opacity: 1.0; }
         .unreviewed { border-color: #3f3f46; opacity: 1.0; }
         .brush-active { outline: 2px solid white; outline-offset: 2px; }
+        .image-card img { -webkit-user-drag: none; user-select: none; }
     </style>
 </head>
 <body class="min-h-[100dvh] flex flex-col antialiased selection:bg-zinc-800">
@@ -539,7 +540,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 }
 
                 wrapper.innerHTML = `
-                    <img src="/api/thumb/${id}${showSkel ? "?skel=1" : ""}" class="w-full h-full object-cover transition-opacity" loading="lazy" />
+                    <img src="/api/thumb/${id}${showSkel ? "?skel=1" : ""}" class="w-full h-full object-cover transition-opacity" loading="lazy" draggable="false" />
                     <div class="absolute top-2 left-2 flex flex-col gap-1">
                         ${distHtml}
                     </div>
