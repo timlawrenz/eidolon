@@ -122,3 +122,98 @@ class AdaLNResNet(nn.Module):
             h = block(h, cond_feat)
         
         return self.proj_out(h)
+
+
+class SeqCrossAttnPool(nn.Module):
+    """Pools a (B, S, d_cond) token sequence into a (B, cond_hidden) conditioning
+    vector via multihead cross-attention from learned query tokens.
+
+    Unlike mean-pooling, this lets the model attend to specific identity-bearing
+    tokens (e.g. 'light brown skin', 'dark eyes') rather than averaging them away.
+    """
+    def __init__(self, d_cond, cond_hidden, n_heads=8, n_queries=4):
+        super().__init__()
+        self.n_queries = n_queries
+        self.query = nn.Parameter(torch.randn(1, n_queries, cond_hidden) * 0.02)
+        self.kv_proj = nn.Linear(d_cond, cond_hidden)
+        self.attn = nn.MultiheadAttention(cond_hidden, n_heads, batch_first=True)
+        self.out = nn.Linear(cond_hidden * n_queries, cond_hidden)
+
+    def forward(self, cond_seq):
+        # cond_seq: (B, S, d_cond)
+        B = cond_seq.shape[0]
+        kv = self.kv_proj(cond_seq)                 # (B, S, cond_hidden)
+        q = self.query.expand(B, -1, -1)            # (B, n_queries, cond_hidden)
+        attended, _ = self.attn(q, kv, kv)          # (B, n_queries, cond_hidden)
+        return self.out(attended.reshape(B, -1))    # (B, cond_hidden)
+
+
+class AdaLNResNetCrossAttn(nn.Module):
+    """Flow-Matching velocity model conditioned on the FULL T5 token sequence
+    via cross-attention pooling (Arm B). Same residual-AdaGN backbone as
+    AdaLNResNet, but conditioning comes from attending to all tokens instead of
+    a mean-pooled vector.
+    """
+    def __init__(self, d_in, d_out, d_hidden=1024, n_blocks=12, d_cond=1024,
+                 t_embed_dim=64, n_heads=8, n_queries=4):
+        super().__init__()
+        self.d_in = d_in
+        self.d_out = d_out
+        cond_hidden = d_hidden
+
+        self.time_embed = SinusoidalEmbedding(t_embed_dim)
+        self.seq_pool = SeqCrossAttnPool(d_cond, cond_hidden, n_heads, n_queries)
+        # Fuse pooled-sequence conditioning with the timestep embedding
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(cond_hidden + t_embed_dim, cond_hidden),
+            nn.SiLU(),
+            nn.Linear(cond_hidden, cond_hidden),
+        )
+        self.proj_in = nn.Linear(d_in, d_hidden)
+        self.blocks = nn.ModuleList([
+            ResidualBlock(d_hidden, cond_hidden) for _ in range(n_blocks)
+        ])
+        self.proj_out = nn.Linear(d_hidden, d_out)
+
+    def forward(self, x, t, cond_seq):
+        """Args:
+            x: (B, d_in) noisy vector
+            t: (B, 1) timestep
+            cond_seq: (B, S, d_cond) full T5 token sequence
+        Returns: (B, d_out) predicted velocity
+        """
+        t_emb = self.time_embed(t)                  # (B, t_embed_dim)
+        seq_feat = self.seq_pool(cond_seq)          # (B, cond_hidden)
+        cond_feat = self.cond_mlp(torch.cat([seq_feat, t_emb], dim=1))
+        h = self.proj_in(x)
+        for block in self.blocks:
+            h = block(h, cond_feat)
+        return self.proj_out(h)
+
+
+class IdentityRegressor(nn.Module):
+    """Deterministic regressor (Arm C): full-sequence cross-attention → target,
+    NO flow matching, NO noise. Tests whether FM stochasticity is hurting a
+    near-deterministic text→identity mapping.
+    """
+    def __init__(self, d_out, d_hidden=1024, n_blocks=6, d_cond=1024,
+                 n_heads=8, n_queries=4):
+        super().__init__()
+        self.d_out = d_out
+        cond_hidden = d_hidden
+        self.seq_pool = SeqCrossAttnPool(d_cond, cond_hidden, n_heads, n_queries)
+        self.trunk = nn.ModuleList([
+            ResidualBlock(d_hidden, cond_hidden) for _ in range(n_blocks)
+        ])
+        # A constant learned token serves as the "input" the trunk refines
+        self.x0 = nn.Parameter(torch.zeros(1, d_hidden))
+        self.proj_out = nn.Linear(d_hidden, d_out)
+
+    def forward(self, cond_seq):
+        """Args: cond_seq (B, S, d_cond). Returns: (B, d_out) predicted target."""
+        B = cond_seq.shape[0]
+        cond_feat = self.seq_pool(cond_seq)         # (B, cond_hidden)
+        h = self.x0.expand(B, -1)
+        for block in self.trunk:
+            h = block(h, cond_feat)
+        return self.proj_out(h)
