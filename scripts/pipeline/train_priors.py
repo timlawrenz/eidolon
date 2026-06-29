@@ -129,7 +129,9 @@ def train_prior(prior_name, train_ds, held_ds, d_out, d_hidden, n_blocks, device
     
     # Pre-training baseline: evaluate BEFORE any optimizer steps
     print("  Pre-training baseline...")
-    gate_results = evaluate_gate(prior_name, model, device, 0, d_out, held_ds, sigma2_w)
+    step_results = evaluate_gate(prior_name, model, device, 0, d_out, held_ds, sigma2_w)
+    for key, val in step_results.items():
+        gate_results.setdefault(key, []).append(val)
     
     for epoch in range(epochs):
         model.train()
@@ -163,8 +165,10 @@ def train_prior(prior_name, train_ds, held_ds, d_out, d_hidden, n_blocks, device
         
         # Held-out evaluation every 5 epochs with REAL T5 conditioning
         if (epoch + 1) % 5 == 0 or epoch == 0 or epoch == epochs - 1:
-            gate_results = evaluate_gate(prior_name, model, device, epoch + 1, d_out,
-                                         held_ds, sigma2_w)
+            step = epoch + 1
+            step_results = evaluate_gate(prior_name, model, device, step, d_out, held_ds, sigma2_w)
+            for key, val in step_results.items():
+                gate_results.setdefault(key, []).append(val)
         
         if avg_loss < best_loss:
             best_loss = avg_loss
