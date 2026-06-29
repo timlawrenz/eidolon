@@ -61,11 +61,22 @@ def cmd_enrich(args):
     faces_dir = dataset  # image_path in DB is stored relative to dataset root (e.g. 'faces/anna-l/...')
     skip_stratum = getattr(args, "skip_stratum", False)
     status_filter = getattr(args, "status", "both")
+    zg_max_distance = getattr(args, "zg_max_distance", None)
+    sort_by = getattr(args, "sort_by", None)
+
+    filter_parts = []
+    if zg_max_distance is not None:
+        filter_parts.append(f"zg<={zg_max_distance}")
+    if sort_by:
+        filter_parts.append(f"sorted by {sort_by} ASC")
+    filter_desc = f" ({', '.join(filter_parts)})" if filter_parts else ""
+
     if skip_stratum:
-        print(f"Running AuraFace-only enrichment (--skip-stratum) for {status_filter} images...")
+        print(f"Running AuraFace-only enrichment (--skip-stratum) for {status_filter} images{filter_desc}...")
     else:
-        print(f"Running Stratum enrichment with passes: {args.passes} for {status_filter} images...")
-    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes, skip_stratum=skip_stratum, status_filter=status_filter)
+        print(f"Running Stratum enrichment with passes: {args.passes} for {status_filter} images{filter_desc}...")
+    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes, skip_stratum=skip_stratum,
+                           status_filter=status_filter, zg_max_distance=zg_max_distance, sort_by=sort_by)
     print("Enrichment complete.")
     return 0
 
@@ -146,6 +157,10 @@ def main(args=None):
     p_enrich.add_argument("--skip-stratum", action="store_true", help="Skip Stratum entirely, only extract missing AuraFace embeddings")
     p_enrich.add_argument("--status", choices=["approved", "unreviewed", "both"], default="both",
                           help="Which images to enrich: approved, unreviewed, or both (default: both)")
+    p_enrich.add_argument("--zg-max-distance", type=float, default=None,
+                          help="Exclude approved images with zg_distance above this threshold")
+    p_enrich.add_argument("--sort-by", choices=["af", "zg"], default=None,
+                          help="Sort enrichment order by distance ascending: af (identity) or zg (geometry)")
     p_enrich.set_defaults(func=cmd_enrich)
 
     args_parsed = parser.parse_args(args)

@@ -8,23 +8,59 @@ from .review.schema import get_db
 
 import sqlite3
 
-def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "both") -> list:
+def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "both",
+                         zg_max_distance: float | None = None,
+                         sort_by: str | None = None) -> list:
     """Query DB for images matching the status filter and return their absolute paths.
 
     Args:
         db_path: Path to review.db.
         faces_dir: Root directory for face images.
         status_filter: 'approved', 'unreviewed', or 'both' (default: 'both').
+        zg_max_distance: If set, exclude approved images with zg_distance above this
+            threshold. Images with NULL zg_distance (not yet computed) are always
+            included. Only applies to approved images, not unreviewed.
+        sort_by: 'af' to sort by af_distance ASC then zg_distance ASC;
+            'zg' to sort by zg_distance ASC then af_distance ASC;
+            None for no ordering (default).
     """
     db = sqlite3.connect(f"file:{db_path}?mode=ro&nolock=1", uri=True)
     db.row_factory = sqlite3.Row
 
+    # Build WHERE clause
     if status_filter == "approved":
-        rows = db.execute("SELECT image_path FROM images WHERE status = 'approved'").fetchall()
+        where = "WHERE status = 'approved'"
     elif status_filter == "unreviewed":
-        rows = db.execute("SELECT image_path FROM images WHERE status = 'unreviewed'").fetchall()
+        where = "WHERE status = 'unreviewed'"
     else:
-        rows = db.execute("SELECT image_path FROM images WHERE status IN ('approved', 'unreviewed')").fetchall()
+        where = "WHERE status IN ('approved', 'unreviewed')"
+
+    params: list = []
+
+    # Add zg_distance filter for approved images
+    if zg_max_distance is not None:
+        # Check if zg_distance column exists
+        col_exists = db.execute(
+            "SELECT 1 FROM pragma_table_info('images') WHERE name = 'zg_distance'"
+        ).fetchone() is not None
+        if col_exists:
+            if status_filter == "approved":
+                where += " AND (zg_distance IS NULL OR zg_distance <= ?)"
+                params.append(zg_max_distance)
+            elif status_filter == "both":
+                where += (" AND (status = 'unreviewed' OR zg_distance IS NULL "
+                          "OR (status = 'approved' AND zg_distance <= ?))")
+                params.append(zg_max_distance)
+            # unreviewed: no filter
+
+    # Build ORDER BY clause
+    order = ""
+    if sort_by == "af":
+        order = "ORDER BY af_distance ASC NULLS LAST, zg_distance ASC NULLS LAST"
+    elif sort_by == "zg":
+        order = "ORDER BY zg_distance ASC NULLS LAST, af_distance ASC NULLS LAST"
+
+    rows = db.execute(f"SELECT image_path FROM images {where} {order}", params).fetchall()
     db.close()
 
     paths = []
@@ -33,19 +69,27 @@ def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "bo
         paths.append(img_path)
     return paths
 
-def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, passes: str = "pose,seg,depth,normal,caption,t5", skip_stratum: bool = False, status_filter: str = "both"):
+def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
+                            passes: str = "pose,seg,depth,normal,caption,t5",
+                            skip_stratum: bool = False, status_filter: str = "both",
+                            zg_max_distance: float | None = None,
+                            sort_by: str | None = None):
     """Invoke stratum process only for images that miss Stratum data, and extract AuraFace for images that miss it.
 
     Args:
         status_filter: 'approved', 'unreviewed', or 'both' (default: 'both').
+        zg_max_distance: Exclude approved images with zg_distance above this threshold.
+        sort_by: 'af' or 'zg' to sort by distance ascending; None for no ordering.
     """
     stratum_out = dataset_dir / "stratum"
     auraface_out = dataset_dir / "auraface"
     list_file = dataset_dir / "stratum_approved_list.txt"
 
-    paths = generate_image_list(db_path, faces_dir, status_filter=status_filter)
+    paths = generate_image_list(db_path, faces_dir, status_filter=status_filter,
+                                zg_max_distance=zg_max_distance, sort_by=sort_by)
     if not paths:
-        print(f"No {status_filter} images found. Skipping enrichment.")
+        filter_desc = f"zg<={zg_max_distance} " if zg_max_distance else ""
+        print(f"No {filter_desc}{status_filter} images found. Skipping enrichment.")
         return
 
     # 1. Check for missing Stratum data (respecting the requested passes)
