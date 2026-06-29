@@ -23,6 +23,7 @@ class PriorDataset:
         self.target_paths = target_paths
         self.pool_t5 = pool_t5
         self.from_arrays = from_arrays
+        self.raw_targets = None
         assert len(t5_paths) == len(target_paths)
     
     def __len__(self):
@@ -124,7 +125,7 @@ def build_ffhq_lda_dataset(ffhq_root="/mnt/nas-ai-models/training-data/ffhq", ma
     aura_files.sort()
     
     if preload:
-        t5_arrays, lda_arrays = [], []
+        t5_arrays, lda_arrays, raw_arrays = [], [], []
         for af in aura_files:
             if max_samples and len(t5_arrays) >= max_samples:
                 break
@@ -140,8 +141,11 @@ def build_ffhq_lda_dataset(ffhq_root="/mnt/nas-ai-models/training-data/ffhq", ma
                     t5 = t5.mean(axis=0)
                 t5_arrays.append(t5)
                 lda_arrays.append(lda)
+                raw_arrays.append(aura_vec.ravel())
         print(f"  Preloaded {len(t5_arrays)} LDA pairs into memory")
-        return PriorDataset(t5_arrays, lda_arrays, pool_t5=False, from_arrays=True)
+        ds = PriorDataset(t5_arrays, lda_arrays, pool_t5=False, from_arrays=True)
+        ds.raw_targets = raw_arrays
+        return ds
     
     t5_paths, lda_targets = [], []
     for af in aura_files:

@@ -922,3 +922,47 @@ cross 0.37), but *AUC* (rank-based) shows near-perfect separability.
 Status: `[REOPENED — G1 FAIL (informative), G2 weak pass; ceiling test localizes
 loss to the Prior's text conditioning, not the representation]`.
 Branch: `exp/text-to-zg`.
+
+---
+
+## [PRE-REGISTERED] Phase 5a-exp1: G2 Conditioning Fix (`exp/text-to-zg`)
+
+**Date:** 2026-06-28
+**Motivation:** Ceiling test proved the LDA-64 representation is near-lossless
+(AUC 0.9998); the entire G2 gap (0.575 achieved) lives in the Prior's text
+conditioning. Current Prior mean-pools the (512,1024) T5 sequence into one
+1024-vector, destroying token-level identity detail that the richly
+identity-centric FFHQ captions demonstrably carry.
+
+**Hypothesis (H₁):** Conditioning on the full T5 sequence via cross-attention
+substantially raises held-out verification AUC over mean-pooling.
+**Null (H₀):** No improvement beyond noise → text→identity is information-ceilinged
+(many-to-one), and weak AUC is correct calibrated behavior, not a model defect.
+
+### Arms (same data, same held-out FFHQ tail)
+| Arm | Conditioning | Model | Tests |
+|---|---|---|---|
+| A (baseline) | mean-pooled T5 (1024-d) | FM AdaLN-ResNet | reproduces AUC 0.575 |
+| B (full-seq) | full T5 (512×1024) cross-attn | FM + cross-attn | conditioning hypothesis |
+| C (regressor) | full T5 cross-attn | deterministic regressor | is FM the wrong tool? |
+
+### Pre-registered gates (fixed before training)
+- **G2′ (primary):** Verification AUC vs RAW AuraFace, held-out FFHQ tail.
+  Credit H₁ only if Arm B beats Arm A by ≥ +0.05 AUC (identity-bootstrap CI excl. 0).
+- **Attribute-consistency (secondary):** does predicted identity land closer to
+  faces sharing the caption's attributes (skin tone/hair) than to random faces?
+  Separates "can't match exact person" (expected/fine) from "can't match
+  description" (real failure).
+
+### Eliminated levers (per ceiling test — do NOT pursue)
+- Increasing LDA dims / predicting richer 512-d target (64-d ceilings at 0.9998)
+- Swapping the T5 encoder (stays until full-seq conditioning proven insufficient)
+
+### Decision tree
+- B ≫ A → conditioning was the bug; adopt cross-attn, proceed to DiT.
+- B ≈ A, C ≫ A → FM wrong tool; switch to deterministic regression.
+- B ≈ A ≈ C ≈ 0.6 → information ceiling; text→identity is many-to-one.
+  Reframe: text = coarse identity region; fine identity from reference-image AuraFace.
+
+Status: `[PRE-REGISTERED]` — gates fixed; no code written yet.
+Branch: `exp/text-to-zg`.
