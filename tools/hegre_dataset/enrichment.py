@@ -8,28 +8,44 @@ from .review.schema import get_db
 
 import sqlite3
 
-def generate_image_list(db_path: Path, faces_dir: Path) -> list:
-    """Query DB for approved and unreviewed images and return their absolute paths."""
+def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "both") -> list:
+    """Query DB for images matching the status filter and return their absolute paths.
+
+    Args:
+        db_path: Path to review.db.
+        faces_dir: Root directory for face images.
+        status_filter: 'approved', 'unreviewed', or 'both' (default: 'both').
+    """
     db = sqlite3.connect(f"file:{db_path}?mode=ro&nolock=1", uri=True)
     db.row_factory = sqlite3.Row
-    rows = db.execute("SELECT image_path FROM images WHERE status IN ('approved', 'unreviewed')").fetchall()
+
+    if status_filter == "approved":
+        rows = db.execute("SELECT image_path FROM images WHERE status = 'approved'").fetchall()
+    elif status_filter == "unreviewed":
+        rows = db.execute("SELECT image_path FROM images WHERE status = 'unreviewed'").fetchall()
+    else:
+        rows = db.execute("SELECT image_path FROM images WHERE status IN ('approved', 'unreviewed')").fetchall()
     db.close()
-    
+
     paths = []
     for row in rows:
         img_path = (faces_dir / row["image_path"]).absolute()
         paths.append(img_path)
     return paths
 
-def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, passes: str = "pose,seg,depth,normal,caption,t5", skip_stratum: bool = False):
-    """Invoke stratum process only for images that miss Stratum data, and extract AuraFace for images that miss it."""
+def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, passes: str = "pose,seg,depth,normal,caption,t5", skip_stratum: bool = False, status_filter: str = "both"):
+    """Invoke stratum process only for images that miss Stratum data, and extract AuraFace for images that miss it.
+
+    Args:
+        status_filter: 'approved', 'unreviewed', or 'both' (default: 'both').
+    """
     stratum_out = dataset_dir / "stratum"
     auraface_out = dataset_dir / "auraface"
     list_file = dataset_dir / "stratum_approved_list.txt"
-    
-    paths = generate_image_list(db_path, faces_dir)
+
+    paths = generate_image_list(db_path, faces_dir, status_filter=status_filter)
     if not paths:
-        print("No approved or unreviewed images found. Skipping enrichment.")
+        print(f"No {status_filter} images found. Skipping enrichment.")
         return
 
     # 1. Check for missing Stratum data (respecting the requested passes)
@@ -80,7 +96,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
             missing_auraface.append((p, auraface_file))
 
     if missing_auraface:
-        print(f"Found {len(missing_auraface)} approved images missing AuraFace data. Extracting...")
+        print(f"Found {len(missing_auraface)} {status_filter} images missing AuraFace data. Extracting...")
         try:
             import sys
             import os
@@ -158,4 +174,4 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path, pa
         elapsed = time.time() - t0
         print(f"AuraFace extraction complete in {elapsed:.0f}s. Skipped {n_skip} images.")
     else:
-        print("All approved images already have AuraFace data.")
+        print(f"All {status_filter} images already have AuraFace data.")

@@ -60,11 +60,12 @@ def cmd_enrich(args):
     db_path = dataset / "review.db"
     faces_dir = dataset  # image_path in DB is stored relative to dataset root (e.g. 'faces/anna-l/...')
     skip_stratum = getattr(args, "skip_stratum", False)
+    status_filter = getattr(args, "status", "both")
     if skip_stratum:
-        print("Running AuraFace-only enrichment (--skip-stratum)...")
+        print(f"Running AuraFace-only enrichment (--skip-stratum) for {status_filter} images...")
     else:
-        print(f"Running Stratum enrichment with passes: {args.passes}...")
-    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes, skip_stratum=skip_stratum)
+        print(f"Running Stratum enrichment with passes: {args.passes} for {status_filter} images...")
+    run_stratum_enrichment(dataset, db_path, faces_dir, passes=args.passes, skip_stratum=skip_stratum, status_filter=status_filter)
     print("Enrichment complete.")
     return 0
 
@@ -140,6 +141,8 @@ def main(args=None):
     p_enrich.add_argument("--dataset", required=True)
     p_enrich.add_argument("--passes", default="pose,seg,depth,normal,caption,t5", help="Comma-separated passes for Stratum")
     p_enrich.add_argument("--skip-stratum", action="store_true", help="Skip Stratum entirely, only extract missing AuraFace embeddings")
+    p_enrich.add_argument("--status", choices=["approved", "unreviewed", "both"], default="both",
+                          help="Which images to enrich: approved, unreviewed, or both (default: both)")
     p_enrich.set_defaults(func=cmd_enrich)
 
     args_parsed = parser.parse_args(args)
