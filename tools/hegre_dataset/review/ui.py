@@ -202,6 +202,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         has_zg = db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
 
         if mode == "audit":
+            # Audit: pick approved images with the highest af distance
             if has_af:
                 order_clause = "ORDER BY af_distance DESC NULLS LAST LIMIT 20"
                 dist_col = "af_distance"
@@ -222,15 +223,13 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 order_clause = "ORDER BY RANDOM() LIMIT 20"
                 dist_col = None
         else:
-            # review mode
+            # Review: pick a random set of approved images, then sort by af distance
+            order_clause = "ORDER BY RANDOM() LIMIT 20"
             if has_af:
-                order_clause = "ORDER BY af_distance DESC NULLS LAST LIMIT 20"
                 dist_col = "af_distance"
             elif has_zg:
-                order_clause = "ORDER BY zg_distance DESC NULLS LAST LIMIT 20"
                 dist_col = "zg_distance"
             else:
-                order_clause = "ORDER BY RANDOM() LIMIT 20"
                 dist_col = None
 
         all_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()

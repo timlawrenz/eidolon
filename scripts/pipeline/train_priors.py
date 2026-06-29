@@ -261,7 +261,8 @@ def main():
     
     if args.prior in ("zg", "both") and not args.eval_only:
         print("\nBuilding FFHQ z_g dataset...")
-        ds_zg = build_ffhq_zg_dataset(max_samples=args.max_samples)
+        ds_zg = build_ffhq_zg_dataset(max_samples=args.max_samples,
+                                      skip_norm_check=(args.max_samples is None))
         train_ds, held_ds = split_ffhq(ds_zg)
         cfg = CONFIG["zg"]
         epochs = args.epochs or cfg["epochs"]
