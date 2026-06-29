@@ -40,17 +40,24 @@ CONFIG = {
 
 # ---------------------------------------------------------------------------
 
-def compute_sigma_w_from_hegre():
-    """Compute mean within-identity z_g variance from Hegre (only source of multi-image-per-ID)."""
+def compute_sigma_w_from_hegre(fallback=104.0):
+    """Compute mean within-identity z_g variance from Hegre.
+    
+    Falls back to a cached value if the review DB is unavailable (locked by UI).
+    """
     import sqlite3
     HEGRE = Path("/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1")
     
-    conn = sqlite3.connect(f"file:{HEGRE / 'review.db'}?mode=ro&nolock=1", uri=True)
-    c = conn.cursor()
-    c.execute("""SELECT i.image_path, i.persona_id
-                 FROM images i WHERE i.status = 'approved'""")
-    rows = c.fetchall()
-    conn.close()
+    try:
+        conn = sqlite3.connect(f"file:{HEGRE / 'review.db'}?mode=ro&nolock=1", uri=True)
+        c = conn.cursor()
+        c.execute("""SELECT i.image_path, i.persona_id
+                     FROM images i WHERE i.status = 'approved'""")
+        rows = c.fetchall()
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"  WARNING: review DB unavailable ({e}), using fallback σ²_w = {fallback}")
+        return fallback
     
     # Group z_g by persona
     persona_zg = defaultdict(list)
