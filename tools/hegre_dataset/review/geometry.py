@@ -275,6 +275,18 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             # Compute distances for ALL images from the approved centroid
             vectors = np.array(vectors)
             distances = np.linalg.norm(vectors - centroid, axis=1)
+
+            # Filter approved images for visual anchor generation: only use
+            # those with zg_distance < 20 to keep ghost/pixel/volume tight.
+            approved_dists = np.linalg.norm(approved_vectors - centroid, axis=1)
+            anchor_mask = approved_dists < 20.0
+            anchor_paths = [image_paths[i] for i in range(len(image_paths)) if anchor_mask[i]]
+            anchor_marks = [face_2ds[i] for i in range(len(face_2ds)) if anchor_mask[i]]
+
+            if len(image_paths) > 0:
+                n_filtered = len(image_paths) - len(anchor_paths)
+                if n_filtered > 0:
+                    print(f"  -> Excluded {n_filtered} approved images (zg >= 20) from visual anchors")
             
             # Draw the 'Ghost' Average (Inverse PCA) from approved centroid
             face_2d = decode_zg(centroid, encoder)
@@ -301,12 +313,12 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                 img.save(ghost_path)
             
             # Draw the 'Pixel' Average (Procrustes Warping)
-            if generate_pixel_average is not None and len(image_paths) > 0:
+            if generate_pixel_average is not None and len(anchor_paths) > 0:
                 pixel_path = stratum_dir / base_pname / f"pixel_{pname}.jpg"
                 try:
-                    # Use all approved images for the pixel average.
-                    sel_paths = image_paths
-                    sel_marks = face_2ds
+                    # Only use approved images with zg_distance < 20 for the pixel average.
+                    sel_paths = anchor_paths
+                    sel_marks = anchor_marks
                         
                     # Pass the rotated_face to Procrustes instead of the tilted face_2d
                     pixel_img = generate_pixel_average(sel_paths, sel_marks, rotated_face) 
@@ -320,7 +332,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                     print(f"Error generating pixel average for {pname}: {e}")
                     
             # 3. Spin Rendering (FLAME + Pixel Average)
-            if not skip_3d and extract_canonical_shape is not None and len(image_paths) > 0:
+            if not skip_3d and extract_canonical_shape is not None and len(anchor_paths) > 0:
                 print(f"  -> Generating 3D FLAME Mesh for {pname}...")
                 try:
                     # Phase 1: Extract mean skull geometry from DB via SMIRK
