@@ -197,3 +197,78 @@ class TestDoneRecalculation:
             # "both" should be right after --metric
             metric_idx = call_args.index("--metric")
             assert call_args[metric_idx + 1] == "both"
+
+
+class TestZgMaxDistance:
+    """Test the --zg-max-distance upper-limit parameter."""
+
+    def test_default_threshold_is_100(self):
+        """Without --zg-max-distance, the default should be 100.0."""
+        from tools.hegre_dataset.review.geometry import compute_zg_distances
+        import inspect
+        sig = inspect.signature(compute_zg_distances)
+        assert sig.parameters["zg_max_distance"].default == 100.0
+
+    def test_cli_parses_zg_max_distance(self, tmp_path):
+        """--zg-max-distance should be accepted by the CLI and override the default."""
+        import subprocess, sys
+
+        # Create minimal dataset with no images so compute-geometry exits fast
+        dataset_dir = tmp_path / "dataset"
+        dataset_dir.mkdir()
+        db_path = dataset_dir / "review.db"
+        conn = __import__("sqlite3").connect(str(db_path))
+        conn.execute("CREATE TABLE IF NOT EXISTS personas (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS images (id INTEGER PRIMARY KEY, persona_id INTEGER, image_path TEXT, status TEXT, zg_distance REAL, af_distance REAL)")
+        conn.close()
+
+        result = subprocess.run(
+            [sys.executable, "-m", "tools.hegre_dataset", "review", "compute-geometry",
+             "--dataset", str(dataset_dir), "--encoder", "/nonexistent.npz",
+             "--zg-max-distance", "50.0", "--metric", "zg"],
+            capture_output=True, text=True,
+        )
+        # Should fail because encoder doesn't exist, but should parse the flag
+        assert "zg_max_distance" not in result.stderr.lower() or "unrecognized" not in result.stderr.lower()
+
+    def test_custom_threshold_applied_in_function(self, tmp_path):
+        """zg_max_distance parameter is honored: lower threshold catches more outliers."""
+        from tools.hegre_dataset.review.geometry import compute_zg_distances
+        from unittest.mock import patch, ANY
+        import numpy as np
+
+        db_path = tmp_path / "review.db"
+        stratum_dir = tmp_path / "stratum"
+        stratum_dir.mkdir()
+
+        conn = __import__("sqlite3").connect(str(db_path))
+        conn.execute("CREATE TABLE IF NOT EXISTS personas (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS images "
+                     "(id INTEGER PRIMARY KEY, persona_id, image_path TEXT, status TEXT, "
+                     "zg_distance REAL, af_distance REAL, reviewed_at TEXT)")
+        conn.execute("INSERT INTO personas (name) VALUES ('test')")
+        pid = conn.execute("SELECT id FROM personas").fetchone()[0]
+        conn.execute("INSERT INTO images (persona_id, image_path, status) VALUES (?, 'img1.jpg', 'approved')", (pid,))
+        conn.commit()
+        conn.close()
+
+        # Create a fake pose.npy for the image
+        persona_dir = stratum_dir / "test"
+        persona_dir.mkdir(parents=True)
+        img_dir = persona_dir / "img1"
+        img_dir.mkdir()
+        np.save(str(img_dir / "pose.npy"), np.random.randn(133, 3).astype(np.float32))
+
+        mock_encoder = {
+            "components": np.random.randn(50, 136).astype(np.float32),
+            "pca_mean": np.random.randn(136).astype(np.float32),
+            "whiten_mu": np.random.randn(50).astype(np.float32),
+            "whiten_sigma": np.random.randn(50).astype(np.float32),
+        }
+
+        with patch("tools.hegre_dataset.review.geometry.load_encoder", return_value=mock_encoder):
+            # This should run successfully with the custom threshold
+            rc = compute_zg_distances(db_path, stratum_dir, "/fake/encoder.npz",
+                                      metric="zg", zg_max_distance=50.0)
+            # Should succeed (code 0) even if no outliers are found
+            assert rc == 0

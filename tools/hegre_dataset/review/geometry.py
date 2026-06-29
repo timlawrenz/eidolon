@@ -163,7 +163,7 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
     return 0
 
 
-def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False, metric: str = "both"):
+def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False, metric: str = "both", zg_max_distance: float = 100.0):
     db = sqlite3.connect(str(db_path))
     db.row_factory = sqlite3.Row
     
@@ -345,7 +345,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                 float_dist = float(dist)
                 
                 # 2. Catch extreme geometric outliers (Not a face)
-                if float_dist > 100.0:
+                if float_dist > zg_max_distance:
                     nonface_ids.append((iid,))
                 else:
                     dist_updates.append((float_dist, iid))
@@ -354,7 +354,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             
             if nonface_ids:
                 db.executemany("UPDATE images SET status = 'tainted:extraction_nonface', reviewed_at = datetime('now') WHERE id = ?", nonface_ids)
-                print(f"  -> Auto-labeled {len(nonface_ids)} extreme outliers (dist > 100) as 'Non-face'")
+                print(f"  -> Auto-labeled {len(nonface_ids)} extreme outliers (dist > {zg_max_distance}) as 'Non-face'")
                 
             db.commit()
             total_updated += len(vectors)

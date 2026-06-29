@@ -78,6 +78,7 @@ def cmd_review_compute_geometry(args):
     persona = getattr(args, "persona", None)
     skip_3d = getattr(args, "skip_3d", False)
     metric = getattr(args, "metric", "both")
+    zg_max_distance = getattr(args, "zg_max_distance", 100.0)
 
     rc = 0
 
@@ -86,7 +87,7 @@ def cmd_review_compute_geometry(args):
             print(f"Error: Stratum directory {stratum_dir} not found. Run enrichment first.")
             rc = 1
         else:
-            zg_rc = compute_zg_distances(db_path, stratum_dir, encoder_path, persona, skip_3d, metric=metric)
+            zg_rc = compute_zg_distances(db_path, stratum_dir, encoder_path, persona, skip_3d, metric=metric, zg_max_distance=zg_max_distance)
             if zg_rc != 0:
                 rc = zg_rc
 
@@ -133,6 +134,8 @@ def main(args=None):
     p_geom.add_argument("--encoder", required=True, help="Path to geometry_pca encoder_production.npz")
     p_geom.add_argument("--persona", type=str, help="Optional persona name (or ID) to limit computation")
     p_geom.add_argument("--skip-3d", action="store_true", help="Skip generating the 3D rotating FLAME mesh (PyRender can be slow)")
+    p_geom.add_argument("--zg-max-distance", type=float, default=100.0,
+                        help="Maximum zg_distance before auto-labeling as non-face (default: 100.0)")
     p_geom.add_argument("--metric", choices=["zg", "af", "both"], default="both",
                         help="Which distance metric to compute: zg (DWPose geometry), af (AuraFace identity), or both (default)")
     p_geom.set_defaults(func=cmd_review_compute_geometry)
