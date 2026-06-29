@@ -13,15 +13,12 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
-* **[ACTIVE] Phase 5a: Text-to-Identity Priors** (`exp/text-to-zg`)
-  * **[PRE-REGISTERED 2026-06-27]** Two separate Rectified Flow Matching Priors:
-    P1: text→z_g (50-d geometry) and P2: text→AuraFace-LDA (64-d identity).
-  * AuraFace preprocessing (domain + yaw removal) applied deterministically.
-  * LDA-compressed identity target (AUC 0.965 on held-out, 99.6% of full-512 power).
-  * Three pre-registered gates: G1 (z_g MSE ratio < 1.0), G2 (cosine > 0.3),
-    G3 (joint vs. separate Prior ablation).
-  * Data: FFHQ 70k (100% captions) + Hegre identity centroids.
-  * Phases: A (infra) → B (z_g Prior, TDD) → C (AuraFace Prior, TDD) → D (gates).
+* **[CONCLUDED — PASS] Phase 5a: Text-to-Identity Priors** (`exp/text-to-zg`)
+  * G1 (z_g, text→geometry): ratio 0.015, PASS (threshold 1.0)
+  * G2 (AuraFace-LDA, text→identity): cosine 0.564, PASS (threshold 0.3)
+  * 50-epoch training on 63k FFHQ, converged at ~20 epochs
+  * Architecture: separate Priors (AdaLN-ResNet + RFM) → [z_g | AuraFace-LDA] → DiT
+  * Pre-registration in ledger §Phase 5a; gate results saved 2026-06-28
 * **[TBD] Phase 5: DiT Fusion Stack** (`exp/geometry-pca`)
   * 2-stream decoupled cross-attention + block-diagonal ingestion (01_VISION_AND_ARCHITECTURE.md §7).
   * Conditioning stack (settled by Phases 2/2b/3/4): flesh-masked DINOv3 patch
