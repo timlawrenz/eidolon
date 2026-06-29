@@ -100,6 +100,10 @@ def split_ffhq(dataset, held_fraction=0.15):
                          from_arrays=dataset.from_arrays)
     held  = PriorDataset(dataset.t5_paths[split:], dataset.target_paths[split:],
                          from_arrays=dataset.from_arrays)
+    if hasattr(dataset, "raw_targets") and dataset.raw_targets is not None:
+        train.raw_targets = dataset.raw_targets[:split]
+        held.raw_targets = dataset.raw_targets[split:]
+    
     print(f"  Split: train={len(train)}, held-out={len(held)}")
     return train, held
 
@@ -211,32 +215,65 @@ def evaluate_gate(prior_name, model, device, step, d_out, held_ds, sigma2_w):
     tgt = torch.from_numpy(np.stack(target_batch)).float().to(device)
     
     if prior_name == "zg":
-        # Gate G1: MSE(z_g_pred, z_g_true) / σ²_w  — with real T5 conditioning
+        # Gate G1: MSE(z_g_pred, z_g_true) / baseline_variance
         z_pred = sample_ode(torch.randn(n_eval, d_out, device=device), t5)
-        mse = torch.mean((z_pred - tgt) ** 2).item()
-        ratio = mse / sigma2_w
-        results["G1"] = {"step": step, "mse": mse, "sigma2_w": sigma2_w,
+        mse_per_dim = torch.mean((z_pred - tgt) ** 2).item()
+        
+        # FFHQ z_g total variance is ~48.42 across 50 dims, so per-dim variance is ~0.968
+        ffhq_baseline_variance = 0.968
+        ratio = mse_per_dim / ffhq_baseline_variance
+        
+        results["G1"] = {"step": step, "mse": mse_per_dim, "sigma2_baseline": ffhq_baseline_variance,
                          "ratio": ratio, "threshold": 1.0, "pass": ratio < 1.0}
-        print(f"  [G1@{step}] MSE={mse:.4f}, ratio={ratio:.4f} {'PASS' if ratio < 1.0 else 'FAIL'}")
+        print(f"  [G1@{step}] MSE={mse_per_dim:.4f}, ratio={ratio:.4f} {'PASS' if ratio < 1.0 else 'FAIL'}")
     
     elif prior_name == "lda":
-        # Gate G2: mean cosine similarity — with real T5 conditioning
+        # Gate G2: Verification AUC against RAW AuraFace targets
         lda_pred = sample_ode(torch.randn(n_eval, d_out, device=device), t5)
         lda_pred_np = lda_pred.cpu().numpy()
         
-        # Reconstruct + L2-normalize
-        cosines = []
+        reconstructed = []
         for i in range(n_eval):
             full_pred = lda_to_full(lda_pred_np[i])
             full_pred = full_pred / (np.linalg.norm(full_pred) + 1e-8)
-            full_true = lda_to_full(tgt[i].cpu().numpy())
-            full_true = full_true / (np.linalg.norm(full_true) + 1e-8)
-            cosines.append(float(np.dot(full_pred, full_true)))
+            reconstructed.append(full_pred)
+        pred_norm = np.stack(reconstructed)
         
-        mean_cos = float(np.mean(cosines))
-        results["G2"] = {"step": step, "mean_cosine": mean_cos,
-                         "threshold": 0.3, "pass": mean_cos > 0.3}
-        print(f"  [G2@{step}] mean_cosine={mean_cos:.4f} {'PASS' if mean_cos > 0.3 else 'FAIL'}")
+        # Use RAW AuraFace targets from the dataset
+        true_norm = []
+        for i in idx:
+            a = held_ds.raw_targets[i]
+            a = a / (np.linalg.norm(a) + 1e-8)
+            true_norm.append(a)
+        true_norm = np.stack(true_norm)
+        
+        # Verification AUC
+        rng_auc = np.random.default_rng(step)
+        pos_cos = np.sum(pred_norm * true_norm, axis=1)  # (N,)
+        
+        # Negatives: pred vs random other person's true AuraFace
+        neg_cos = []
+        for i in range(n_eval):
+            j = rng_auc.integers(n_eval)
+            while j == i:
+                j = rng_auc.integers(n_eval)
+            neg_cos.append(np.dot(pred_norm[i], true_norm[j]))
+        neg_cos = np.array(neg_cos)
+        
+        all_scores = np.concatenate([pos_cos, neg_cos])
+        labels = np.concatenate([np.ones_like(pos_cos), np.zeros_like(neg_cos)])
+        order = np.argsort(all_scores)
+        ranks = np.empty_like(order)
+        ranks[order] = np.arange(len(all_scores))
+        pos_ranks = ranks[labels == 1]
+        auc = (np.sum(pos_ranks) - n_eval*(n_eval-1)/2.0) / (n_eval * n_eval)
+        
+        mean_pos = float(np.mean(pos_cos))
+        mean_neg = float(np.mean(neg_cos))
+        
+        results["G2"] = {"step": step, "auc": float(auc), "pos_cos": mean_pos, "neg_cos": mean_neg,
+                         "threshold": 0.5, "pass": float(auc) > 0.5}
+        print(f"  [G2@{step}] AUC={auc:.4f} (pos {mean_pos:+.3f} / neg {mean_neg:+.3f}) {'PASS' if auc > 0.5 else 'FAIL'}")
     
     model.train()
     return results
@@ -270,7 +307,42 @@ def main():
     
     all_results = {}
     
-    if args.prior in ("zg", "both") and not args.eval_only:
+    if args.eval_only:
+        print("\nEvaluating existing checkpoints...")
+        if args.prior in ("zg", "both"):
+            ckpt_path = output_dir / "zg_best.pt"
+            if ckpt_path.exists():
+                print("\nBuilding FFHQ z_g dataset...")
+                ds_zg = build_ffhq_zg_dataset(max_samples=args.max_samples, skip_norm_check=(args.max_samples is None))
+                _, held_ds = split_ffhq(ds_zg)
+                cfg = CONFIG["zg"]
+                model = AdaLNResNet(d_in=cfg["d_out"], d_out=cfg["d_out"], d_hidden=cfg["d_hidden"],
+                                    n_blocks=cfg["n_blocks"], d_cond=1024).to(device)
+                ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
+                model.load_state_dict(ckpt["model_state"])
+                step = ckpt["epoch"]
+                res = evaluate_gate("zg", model, device, step, cfg["d_out"], held_ds, sigma2_w)
+                all_results["zg"] = res
+            else:
+                print("No checkpoint found for zg prior.")
+                
+        if args.prior in ("lda", "both"):
+            ckpt_path = output_dir / "lda_best.pt"
+            if ckpt_path.exists():
+                print("\nBuilding FFHQ AuraFace-LDA dataset...")
+                ds_lda = build_ffhq_lda_dataset(max_samples=args.max_samples)
+                _, held_ds = split_ffhq(ds_lda)
+                cfg = CONFIG["lda"]
+                model = AdaLNResNet(d_in=cfg["d_out"], d_out=cfg["d_out"], d_hidden=cfg["d_hidden"],
+                                    n_blocks=cfg["n_blocks"], d_cond=1024).to(device)
+                ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
+                model.load_state_dict(ckpt["model_state"])
+                step = ckpt["epoch"]
+                res = evaluate_gate("lda", model, device, step, cfg["d_out"], held_ds, sigma2_w)
+                all_results["lda"] = res
+            else:
+                print("No checkpoint found for lda prior.")
+    elif args.prior in ("zg", "both") and not args.eval_only:
         print("\nBuilding FFHQ z_g dataset...")
         ds_zg = build_ffhq_zg_dataset(max_samples=args.max_samples,
                                       skip_norm_check=(args.max_samples is None))
