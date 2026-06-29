@@ -862,14 +862,63 @@ streams, asymmetric CFG dropout). The 50 z_g axes serve as geometric sliders
 at inference — traverse any axis to control pose/expression/proportion without
 affecting identity.
 
-### Open items
+### Corrected Gate Results (2026-06-28)
 
-- G3 (joint Prior ablation): optional, low priority given both separate Priors
-  pass their gates cleanly
-- Hegre T5 backfill: ~57% complete; retrain Priors on combined FFHQ+Hegre
-  identity centroids when Hegre captions reach sufficient coverage
-- σ²_w recomputation: 18k Hegre images skipped (missing z_g). Recompute after
-  re-running `extract_zg_and_averages.py` with the z_g norm > 25 filter.
+After fixing the two metric bugs, the corrected gates were evaluated on the FFHQ
+held-out tail (2,000 / 1,999 samples) using the saved 50-epoch checkpoints:
 
-Status: `[REOPENED — gate metrics defective]` — evaluating corrected metrics on existing checkpoints.
+| Gate | Metric (corrected) | Value | Threshold | Verdict |
+|---|---|---|---|---|
+| **G1** | per-dim MSE / per-dim FFHQ variance | **1.75** | < 1.0 | ❌ **FAIL** |
+| **G2** | Verification AUC vs **raw** AuraFace | **0.575** | > 0.5 | ⚠️ **WEAK PASS** |
+
+**G1 (text→z_g) FAILS — and is worse than the null.** Model per-dim MSE = 1.73;
+FFHQ per-dim variance = 0.99. Predicting the global mean scores ratio 1.0 by
+definition, so the FM model is ~75% *worse* than a constant mean predictor.
+Confirmed negative: **text does not predict z_g.** This is informative — z_g is
+pose/framing/camera detail that captions don't describe, so z_g should be supplied
+by the user's slider/pose control at inference, NOT predicted from text. (The FM
+model underperforms the mean because it samples from noise; with little learnable
+signal, samples scatter around the mean rather than collapsing to it.)
+
+**G2 (text→AuraFace) WEAK PASS.** AUC 0.575 (pos cos 0.220, neg cos 0.204, margin
+0.016). Real but modest identity signal — the pre-train→trained jump confirms
+genuine learning, but 0.575 is far from production-grade verification.
+
+### Ceiling Test (2026-06-28) — where is G2's loss?
+
+To attribute the G2 weakness, the **maximum achievable AUC** given the LDA
+representation was measured by skipping the Prior entirely: take ground-truth LDA
+coords → reconstruct → verify against raw AuraFace.
+
+| Representation | AUC vs raw AuraFace | Reading |
+|---|---|---|
+| raw vs raw (sanity) | 0.9989 | harness correct |
+| cleaned (PC1+yaw removed) vs raw | 0.9989 | **cleaning costs zero identity** |
+| **GT LDA-64 reconstruction vs raw** | **0.9998** | **ceiling is ~perfect** |
+| GT LDA-32 | 0.9765 | still strong |
+| GT LDA-16 | 0.8658 | degrades |
+
+**Decisive finding: the LDA-64 representation is NOT the bottleneck.** Its ceiling
+is 0.9998 — virtually all verification-relevant identity survives the 64-d
+projection + reconstruction. Therefore the entire G2 gap (0.575 achieved vs 0.9998
+achievable) lives in the **Prior** — the text→LDA-64 mapping itself. This corrects
+an earlier mis-reading: raw *cosine* on this manifold is compressed (self 0.40 /
+cross 0.37), but *AUC* (rank-based) shows near-perfect separability.
+
+**Re-ranked improvement levers (representation levers eliminated):**
+- ❌ Increase LDA dims / predict richer 512-d target — pointless (64-d ceilings at 0.9998)
+- ✅ **Conditioning quality** — mean-pooling the (512,1024) T5 sequence into one
+  1024-vector smears identity-rich token detail. FFHQ captions are highly
+  identity-centric (skin tone, hair, face shape, eye/nose detail per the Stratum
+  prompt), so the token structure carries the signal that mean-pooling destroys.
+  → strongest suspect.
+- ✅ **Objective alignment** — add cosine/endpoint loss term (training optimizes FM
+  velocity MSE but is gated on cosine direction).
+- ✅ **FM stochasticity** — test a deterministic regressor baseline; if plain MLP
+  regression beats the FM Prior on AUC, FM is the wrong tool for a near-deterministic
+  text→identity mapping.
+
+Status: `[REOPENED — G1 FAIL (informative), G2 weak pass; ceiling test localizes
+loss to the Prior's text conditioning, not the representation]`.
 Branch: `exp/text-to-zg`.
