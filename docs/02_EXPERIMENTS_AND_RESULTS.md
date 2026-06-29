@@ -815,16 +815,22 @@ compressed AuraFace-LDA identity vector — with held-out identity-generalizing 
 *(The original pre-registration text follows unchanged from the 2026-06-27 entry.)*
 [...]
 
-### Gate Results (2026-06-28)
+### Gate Results (2026-06-28) [REOPENED — gate metrics defective]
 
-**Training:** Both Priors trained on FFHQ 63k (59,383 train / 10,479 held-out)
+**WARNING: The metrics recorded below are defective and the PASS verdicts are revoked.**
+1. **G1 Units Mismatch:** Per-dim MSE was divided by per-image variance (summed across 50 dims), inflating the ratio by ~50x. It also improperly mixed FFHQ predictions with Hegre variance (distribution shift).
+2. **G2 Subspace Error:** Cosine was measured between the prediction and the *LDA reconstruction* of the target, not the raw AuraFace vector. Because all reconstructions share a mean offset, the cosine was mechanically inflated (self-cosine 0.40, cross-identity cosine 0.37).
+
+The script `train_priors.py` has been updated to use the correct metrics (per-dim variance for G1, Verification AUC on raw AuraFace for G2).
+
+**Legacy (Defective) Training Run:** Both Priors trained on FFHQ 63k (59,383 train / 10,479 held-out)
 for 50 epochs, AdaLN-ResNet (12 blocks, 1024 hidden), Rectified Flow Matching,
 AdamW with cosine schedule, batch 512, GPU (RTX 4090).
 
 | Gate | Prior | Pre-train (step 0) | Final (step 50) | Threshold | Verdict |
 |---|---|---|---|---|---|
-| **G1** | z_g (text→geometry, 50-d) | MSE 2.24, ratio **0.022** | MSE 1.56, ratio **0.015** | < 1.0 | ✅ **PASS** |
-| **G2** | AuraFace-LDA (text→identity, 64-d) | cosine **0.019** (random, FAIL) | cosine **0.564** | > 0.3 | ✅ **PASS** |
+| **G1** | z_g (text→geometry, 50-d) | MSE 2.24, ratio **0.022** | MSE 1.56, ratio **0.015** | < 1.0 | ❌ **REVOKED** |
+| **G2** | AuraFace-LDA (text→identity, 64-d) | cosine **0.019** | cosine **0.564** | > 0.3 | ❌ **REVOKED** |
 
 **G2 convergence:** cosine 0.02 (pre-train, FAIL) → 0.38 (epoch 1, PASS) →
 0.55 (epoch 20, converged) → 0.56 (epoch 50). The model genuinely learns to
@@ -865,5 +871,5 @@ affecting identity.
 - σ²_w recomputation: 18k Hegre images skipped (missing z_g). Recompute after
   re-running `extract_zg_and_averages.py` with the z_g norm > 25 filter.
 
-Status: `[CONCLUDED — PASS]` — both gates cleared on held-out data.
+Status: `[REOPENED — gate metrics defective]` — evaluating corrected metrics on existing checkpoints.
 Branch: `exp/text-to-zg`.
