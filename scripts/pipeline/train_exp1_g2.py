@@ -30,7 +30,7 @@ FFHQ = Path("/mnt/nas-ai-models/training-data/ffhq")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 D_OUT = 64          # AuraFace-LDA target dim
 D_COND = 1024       # T5 hidden dim
-MAX_TOKENS = 128    # cap T5 sequence length for memory/speed (identity content is early)
+MAX_TOKENS = 256    # cover full real captions (~150-210 valid tokens, padded to 512)
 
 
 def build_index(max_samples=None):
@@ -49,16 +49,31 @@ def build_index(max_samples=None):
 
 
 def load_batch(ids, pool_t5):
-    """Load a batch from disk. Returns (t5, lda_target, raw_aura)."""
+    """Load a batch from disk. Returns (t5, lda_target, raw_aura).
+
+    Uses t5_mask to ignore padding tokens: mean-pool (Arm A) averages only real
+    tokens; full-seq (Arm B/C) keeps real tokens up to MAX_TOKENS. Padding-token
+    contamination would otherwise handicap both conditioning paths.
+    """
     t5s, ldas, raws = [], [], []
     for fid in ids:
         raw = np.load(FFHQ / "auraface" / f"{fid}.npy").astype(np.float32).ravel()
         lda = project_to_lda(clean_auraface(raw.astype(np.float64))).ravel().astype(np.float32)
         t5 = np.load(FFHQ / "stratum" / fid / "t5_hidden.npy").astype(np.float32)
-        if pool_t5:
-            t5 = t5.mean(axis=0)                  # (1024,)
+        mask_f = FFHQ / "stratum" / fid / "t5_mask.npy"
+        if mask_f.exists():
+            m = np.load(mask_f).astype(bool)
         else:
-            t5 = t5[:MAX_TOKENS]                  # (<=128, 1024)
+            m = np.ones(t5.shape[0], dtype=bool)
+        valid = t5[m]                                  # (n_real, 1024)
+        if pool_t5:
+            t5 = valid.mean(axis=0) if len(valid) else t5.mean(axis=0)  # (1024,)
+        else:
+            seq = valid[:MAX_TOKENS]                    # (<=MAX_TOKENS, 1024)
+            # pad to MAX_TOKENS so the batch stacks; cross-attn ignores zero rows
+            if len(seq) < MAX_TOKENS:
+                seq = np.vstack([seq, np.zeros((MAX_TOKENS - len(seq), seq.shape[1]), dtype=np.float32)])
+            t5 = seq
         t5s.append(t5); ldas.append(lda); raws.append(raw)
     return np.stack(t5s), np.stack(ldas), np.stack(raws)
 
@@ -79,6 +94,79 @@ def verification_auc(pred_lda, raw_true, seed=0):
     order = np.argsort(alls); ranks = np.empty_like(order); ranks[order] = np.arange(len(alls))
     auc = (ranks[lab == 1].sum() - n*(n-1)/2) / (n*n)
     return float(auc), float(pos.mean()), float(neg.mean())
+
+
+# --- Attribute-consistency gate -------------------------------------------------
+SKIN_TERMS = {
+    "fair": ["fair skin", "pale skin", "light skin"],
+    "light_brown": ["light brown skin", "tan skin", "olive skin"],
+    "dark": ["dark skin", "brown skin", "deep skin"],
+}
+HAIR_TERMS = {
+    "blonde": ["blonde hair", "blond hair"],
+    "dark": ["dark hair", "black hair", "brown hair"],
+    "red": ["red hair", "auburn hair"],
+    "gray": ["gray hair", "grey hair", "white hair"],
+}
+
+def _attr_label(caption, term_map):
+    c = caption.lower()
+    for label, terms in term_map.items():
+        if any(t in c for t in terms):
+            return label
+    return None
+
+def attribute_consistency_auc(pred_lda, held_ids, raw_true, ffhq_root, seed=0):
+    """Does the predicted identity match the DESCRIBED attribute better than chance?
+
+    For each held-out sample with a parseable skin/hair attribute:
+      positive = mean cosine of pred vs REAL faces sharing that attribute (excl self)
+      negative = mean cosine of pred vs REAL faces NOT sharing it
+    Returns AUC over (pos, neg) pairs. >0.5 means text attributes steer the
+    prediction toward the right attribute cluster — distinct from pinning the
+    exact person (verification AUC).
+    """
+    import numpy as np
+    n = len(pred_lda)
+    pred_norm = np.stack([
+        (lambda f: f / (np.linalg.norm(f) + 1e-8))(lda_to_full(pred_lda[i]))
+        for i in range(n)
+    ])
+    true_norm = raw_true / (np.linalg.norm(raw_true, axis=1, keepdims=True) + 1e-8)
+
+    skin_labels, hair_labels = [], []
+    for fid in held_ids:
+        cf = Path(ffhq_root) / "stratum" / fid / "caption.txt"
+        txt = cf.read_text() if cf.exists() else ""
+        skin_labels.append(_attr_label(txt, SKIN_TERMS))
+        hair_labels.append(_attr_label(txt, HAIR_TERMS))
+    skin_labels = np.array(skin_labels, dtype=object)
+    hair_labels = np.array(hair_labels, dtype=object)
+
+    def _auc_for(labels):
+        pos_scores, neg_scores = [], []
+        for i in range(n):
+            li = labels[i]
+            if li is None:
+                continue
+            same = np.array([j for j in range(n) if j != i and labels[j] == li])
+            diff = np.array([j for j in range(n) if labels[j] is not None and labels[j] != li])
+            if len(same) < 3 or len(diff) < 3:
+                continue
+            pos_scores.append(np.mean(pred_norm[i] @ true_norm[same].T))
+            neg_scores.append(np.mean(pred_norm[i] @ true_norm[diff].T))
+        if len(pos_scores) < 10:
+            return None, 0
+        pos = np.array(pos_scores); neg = np.array(neg_scores)
+        m = len(pos)
+        alls = np.concatenate([pos, neg]); lab = np.concatenate([np.ones(m), np.zeros(m)])
+        order = np.argsort(alls); ranks = np.empty_like(order); ranks[order] = np.arange(len(alls))
+        auc = (ranks[lab == 1].sum() - m*(m-1)/2) / (m*m)
+        return float(auc), m
+
+    skin_auc, n_skin = _auc_for(skin_labels)
+    hair_auc, n_hair = _auc_for(hair_labels)
+    return {"skin_auc": skin_auc, "n_skin": n_skin, "hair_auc": hair_auc, "n_hair": n_hair}
 
 
 def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir):
@@ -149,8 +237,32 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir)
             history.append(evaluate(ep+1))
         print(f"  ep {ep+1}/{epochs} loss={ep_loss/max(nb,1):.4f}")
 
+    # Final attribute-consistency gate (does the prediction match DESCRIBED traits?)
+    model.eval()
+    n_eval = min(2000, len(held_ids))
+    ev_ids = held_ids[:n_eval]
+    preds = []
+    with torch.no_grad():
+        for s in range(0, n_eval, batch_size):
+            bids = ev_ids[s:s+batch_size]
+            t5, _, _ = load_batch(bids, pool_t5)
+            cond = torch.from_numpy(t5).float().to(device)
+            if is_fm:
+                x = torch.randn(len(bids), D_OUT, device=device); dt = 0.1
+                for k in range(10):
+                    t = torch.full((len(bids), 1), k*dt, device=device)
+                    x = x + model(x, t, cond) * dt
+                preds.append(x.cpu().numpy())
+            else:
+                preds.append(model(cond).cpu().numpy())
+    pred_lda = np.concatenate(preds)
+    _, _, raw = load_batch(ev_ids, pool_t5=True)
+    attr = attribute_consistency_auc(pred_lda, ev_ids, raw, FFHQ)
+    print(f"  [ATTR] skin_auc={attr['skin_auc']} (n={attr['n_skin']}) "
+          f"hair_auc={attr['hair_auc']} (n={attr['n_hair']})")
+
     torch.save({"model_state": model.state_dict(), "arm": arm}, out_dir / f"exp1_arm_{arm}.pt")
-    return history
+    return {"history": history, "attribute": attr}
 
 
 def main():
@@ -181,11 +293,12 @@ def main():
         with open(out_dir / "exp1_results.json", "w") as f:
             json.dump(results, f, indent=2)
 
-    print("\n=== SUMMARY (final AUC) ===")
-    for arm, hist in results.items():
-        print(f"  Arm {arm}: {hist[-1]['auc']:.4f}")
+    print("\n=== SUMMARY (final verification AUC + attribute AUC) ===")
+    for arm, res in results.items():
+        h = res["history"][-1]; a = res["attribute"]
+        print(f"  Arm {arm}: verif_AUC={h['auc']:.4f} | skin={a['skin_auc']} hair={a['hair_auc']}")
     if "A" in results and "B" in results:
-        delta = results["B"][-1]["auc"] - results["A"][-1]["auc"]
+        delta = results["B"]["history"][-1]["auc"] - results["A"]["history"][-1]["auc"]
         print(f"  B - A = {delta:+.4f} (credit hypothesis if >= +0.05)")
     print(f"\nResults: {out_dir / 'exp1_results.json'}")
 
