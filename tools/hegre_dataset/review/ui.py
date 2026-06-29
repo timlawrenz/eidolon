@@ -542,7 +542,6 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                     <img src="/api/thumb/${id}${showSkel ? "?skel=1" : ""}" class="w-full h-full object-cover transition-opacity" loading="lazy" />
                     <div class="absolute top-2 left-2 flex flex-col gap-1">
                         ${distHtml}
-                        <span class="bg-zinc-950/80 backdrop-blur text-[9px] px-1.5 py-0.5 rounded border border-zinc-800 text-zinc-500">${lbl}</span>
                     </div>
                 `;
                 grid.appendChild(wrapper);

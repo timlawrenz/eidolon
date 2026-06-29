@@ -29,13 +29,14 @@ class PriorDataset:
         return len(self.t5_paths)
     
     def __getitem__(self, idx):
-        t5 = np.load(self.t5_paths[idx]).astype(np.float64)
+        if self.from_arrays:
+            t5 = self.t5_paths[idx]
+            target = self.target_paths[idx]
+        else:
+            t5 = np.load(self.t5_paths[idx]).astype(np.float64)
+            target = np.load(self.target_paths[idx]).astype(np.float64)
         if self.pool_t5 and t5.ndim == 2:
             t5 = t5.mean(axis=0)  # (512,1024) → (1024,)
-        if self.from_arrays:
-            target = self.target_paths[idx]  # already an array
-        else:
-            target = np.load(self.target_paths[idx]).astype(np.float64)
         return t5, target
 
 
