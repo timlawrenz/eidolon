@@ -290,7 +290,7 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir,
                 preds.append(x.cpu().numpy())
             else:
                 preds.append(model(cond).cpu().numpy())
-        pred_lda = np.concatenate(preds)
+        pred_lda = np.concatenate(preds)[:n_eval]  # Truncate to exact n_eval
         raw = raw_held[:n_eval]
         auc, p, ng = verification_auc(pred_lda, raw)
         logger.info(f"  [G2'@{step}] AUC={auc:.4f} (pos {p:+.3f}/neg {ng:+.3f})")
@@ -344,7 +344,7 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir,
                 preds.append(x.cpu().numpy())
             else:
                 preds.append(model(cond).cpu().numpy())
-    pred_lda = np.concatenate(preds)
+    pred_lda = np.concatenate(preds)[:n_eval]  # Truncate to exact n_eval
     raw = raw_held[:n_eval]
     attr = attribute_consistency_auc(pred_lda, ev_ids, raw, FFHQ)
     logger.info(f"  [ATTR] skin_auc={attr['skin_auc']} (n={attr['n_skin']}) "
