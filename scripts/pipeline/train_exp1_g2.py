@@ -53,8 +53,13 @@ logger = logging.getLogger()
 def build_index(max_samples=None):
     """List FFHQ ids that have both AuraFace and T5. Returns sorted list of ids."""
     aura_dir = FFHQ / "auraface"
+    try:
+        all_files = sorted(os.listdir(str(aura_dir)))
+    except FileNotFoundError:
+        return []
+    
     ids = []
-    for af in sorted(os.listdir(aura_dir)):
+    for af in all_files:
         if not af.endswith(".npy"):
             continue
         fid = af[:-4]
@@ -65,19 +70,26 @@ def build_index(max_samples=None):
     return ids
 
 
-def load_batch(ids, pool_t5):
-    """Load a batch from disk. Returns (t5, lda_target, raw_aura).
-
-    Uses t5_mask to ignore padding tokens: mean-pool (Arm A) averages only real
-    tokens; full-seq (Arm B/C) keeps real tokens up to MAX_TOKENS. Padding-token
-    contamination would otherwise handicap both conditioning paths.
+def preload_dataset(ids, pool_t5):
+    """Preload all requested data into CPU RAM.
+    
+    Returns:
+        t5_arrays: (N, 1024) or (N, MAX_TOKENS, 1024) float32/16 array
+        lda_arrays: (N, 64) float32 array
+        raw_arrays: (N, 512) float32 array
     """
-    t5s, ldas, raws = [], [], []
-    for fid in ids:
+    logger.info(f"Preloading {len(ids)} samples into RAM (pool_t5={pool_t5})...")
+    t5_list, lda_list, raw_list = [], [], []
+    
+    start_t = time.time()
+    for i, fid in enumerate(ids):
+        if (i + 1) % 10000 == 0:
+            logger.info(f"  Loaded {i + 1}/{len(ids)}... ({time.time() - start_t:.1f}s)")
+            
         try:
             raw = np.load(FFHQ / "auraface" / f"{fid}.npy").astype(np.float32).ravel()
             lda = project_to_lda(clean_auraface(raw.astype(np.float64))).ravel().astype(np.float32)
-            t5 = np.load(FFHQ / "stratum" / fid / "t5_hidden.npy").astype(np.float32)
+            t5 = np.load(FFHQ / "stratum" / fid / "t5_hidden.npy").astype(np.float16) # float16 saves 50% CPU RAM
             mask_f = FFHQ / "stratum" / fid / "t5_mask.npy"
             if mask_f.exists():
                 m = np.load(mask_f).astype(bool)
@@ -89,15 +101,27 @@ def load_batch(ids, pool_t5):
             else:
                 seq = valid[:MAX_TOKENS]                    # (<=MAX_TOKENS, 1024)
                 if len(seq) < MAX_TOKENS:
-                    seq = np.vstack([seq, np.zeros((MAX_TOKENS - len(seq), seq.shape[1]), dtype=np.float32)])
+                    seq = np.vstack([seq, np.zeros((MAX_TOKENS - len(seq), seq.shape[1]), dtype=np.float16)])
                 t5 = seq
-            t5s.append(t5); ldas.append(lda); raws.append(raw)
+                
+            t5_list.append(t5)
+            lda_list.append(lda)
+            raw_list.append(raw)
         except Exception as e:
             logger.warning(f"Failed to load sample {fid}: {e}")
             continue
-    if not t5s:
-        raise ValueError("Batch load failed: all samples corrupt or missing")
-    return np.stack(t5s), np.stack(ldas), np.stack(raws)
+            
+    if not t5_list:
+        raise ValueError("Preload failed: all samples corrupt or missing")
+        
+    logger.info(f"Stacking arrays in memory... (this may take a moment)")
+    t5_arr = np.stack(t5_list)
+    lda_arr = np.stack(lda_list)
+    raw_arr = np.stack(raw_list)
+    
+    mb = (t5_arr.nbytes + lda_arr.nbytes + raw_arr.nbytes) / (1024 * 1024)
+    logger.info(f"Preload complete: {len(t5_list)} pairs, {mb:.1f} MB total RAM.")
+    return t5_arr, lda_arr, raw_arr
 
 
 def verification_auc(pred_lda, raw_true, seed=0):
@@ -217,6 +241,10 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir,
     pool_t5 = (arm == "A")
     is_fm = (arm in ("A", "B"))
 
+    # Preload datasets for this arm
+    t5_train, lda_train, _ = preload_dataset(train_ids, pool_t5)
+    t5_held, _, raw_held = preload_dataset(held_ids, pool_t5)
+    
     if arm == "A":
         model = AdaLNResNet(d_in=D_OUT, d_out=D_OUT, d_hidden=1024, n_blocks=12, d_cond=D_COND)
     elif arm == "B":
@@ -238,22 +266,20 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir,
     def evaluate(step):
         model.eval()
         n_eval = min(2000, len(held_ids))
-        ev_ids = held_ids[:n_eval]
         preds = []
         for s in range(0, n_eval, batch_size):
-            bids = ev_ids[s:s+batch_size]
-            t5, _, _ = load_batch(bids, pool_t5)
+            t5 = t5_held[s:s+batch_size]
             cond = torch.from_numpy(t5).float().to(device)
             if is_fm:
-                x = torch.randn(len(bids), D_OUT, device=device); dt = 0.1
+                x = torch.randn(len(t5), D_OUT, device=device); dt = 0.1
                 for k in range(10):
-                    t = torch.full((len(bids), 1), k*dt, device=device)
+                    t = torch.full((len(t5), 1), k*dt, device=device)
                     x = x + model(x, t, cond) * dt
                 preds.append(x.cpu().numpy())
             else:
                 preds.append(model(cond).cpu().numpy())
         pred_lda = np.concatenate(preds)
-        _, _, raw = load_batch(ev_ids, pool_t5=True)  # raw aura same regardless of pooling
+        raw = raw_held[:n_eval]
         auc, p, ng = verification_auc(pred_lda, raw)
         logger.info(f"  [G2'@{step}] AUC={auc:.4f} (pos {p:+.3f}/neg {ng:+.3f})")
         model.train()
@@ -266,8 +292,9 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir,
         idx = np.random.permutation(len(train_ids))
         ep_loss, nb = 0.0, 0
         for s in range(0, len(train_ids), batch_size):
-            bids = [train_ids[i] for i in idx[s:s+batch_size]]
-            t5, lda, _ = load_batch(bids, pool_t5)
+            batch_idx = idx[s:s+batch_size]
+            t5 = t5_train[batch_idx]
+            lda = lda_train[batch_idx]
             cond = torch.from_numpy(t5).float().to(device)
             tgt = torch.from_numpy(lda).float().to(device)
             if is_fm:
@@ -295,19 +322,18 @@ def train_arm(arm, train_ids, held_ids, epochs, batch_size, lr, device, out_dir,
     preds = []
     with torch.no_grad():
         for s in range(0, n_eval, batch_size):
-            bids = ev_ids[s:s+batch_size]
-            t5, _, _ = load_batch(bids, pool_t5)
+            t5 = t5_held[s:s+batch_size]
             cond = torch.from_numpy(t5).float().to(device)
             if is_fm:
-                x = torch.randn(len(bids), D_OUT, device=device); dt = 0.1
+                x = torch.randn(len(t5), D_OUT, device=device); dt = 0.1
                 for k in range(10):
-                    t = torch.full((len(bids), 1), k*dt, device=device)
+                    t = torch.full((len(t5), 1), k*dt, device=device)
                     x = x + model(x, t, cond) * dt
                 preds.append(x.cpu().numpy())
             else:
                 preds.append(model(cond).cpu().numpy())
     pred_lda = np.concatenate(preds)
-    _, _, raw = load_batch(ev_ids, pool_t5=True)
+    raw = raw_held[:n_eval]
     attr = attribute_consistency_auc(pred_lda, ev_ids, raw, FFHQ)
     logger.info(f"  [ATTR] skin_auc={attr['skin_auc']} (n={attr['n_skin']}) "
           f"hair_auc={attr['hair_auc']} (n={attr['n_hair']})")
