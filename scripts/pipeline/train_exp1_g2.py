@@ -114,13 +114,25 @@ def preload_dataset(ids, pool_t5):
     if not t5_list:
         raise ValueError("Preload failed: all samples corrupt or missing")
         
-    logger.info(f"Stacking arrays in memory... (this may take a moment)")
-    t5_arr = np.stack(t5_list)
-    lda_arr = np.stack(lda_list)
-    raw_arr = np.stack(raw_list)
+    # Convert lists to a large empty array and populate it directly to avoid the
+    # massive 2x memory spike of np.stack(list_of_arrays).
+    logger.info(f"Allocating contiguous RAM buffers...")
+    n_samples = len(t5_list)
+    t5_arr = np.empty((n_samples,) + t5_list[0].shape, dtype=np.float16)
+    lda_arr = np.empty((n_samples, 64), dtype=np.float32)
+    raw_arr = np.empty((n_samples, 512), dtype=np.float32)
+    
+    logger.info(f"Copying arrays into contiguous memory...")
+    for i in range(n_samples):
+        t5_arr[i] = t5_list[i]
+        lda_arr[i] = lda_list[i]
+        raw_arr[i] = raw_list[i]
+        
+    # Free the lists explicitly before returning
+    del t5_list, lda_list, raw_list
     
     mb = (t5_arr.nbytes + lda_arr.nbytes + raw_arr.nbytes) / (1024 * 1024)
-    logger.info(f"Preload complete: {len(t5_list)} pairs, {mb:.1f} MB total RAM.")
+    logger.info(f"Preload complete: {n_samples} pairs, {mb:.1f} MB total RAM.")
     return t5_arr, lda_arr, raw_arr
 
 
