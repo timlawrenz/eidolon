@@ -13,12 +13,17 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
-* **[CONCLUDED — PASS] Phase 5a: Text-to-Identity Priors** (`exp/text-to-zg`)
-  * G1 (z_g, text→geometry): ratio 0.015, PASS (threshold 1.0)
-  * G2 (AuraFace-LDA, text→identity): cosine 0.564, PASS (threshold 0.3)
-  * 50-epoch training on 63k FFHQ, converged at ~20 epochs
-  * Architecture: separate Priors (AdaLN-ResNet + RFM) → [z_g | AuraFace-LDA] → DiT
-  * Pre-registration in ledger §Phase 5a; gate results saved 2026-06-28
+* **[CONCLUDED] Phase 5a: Text-to-Identity Priors** (`exp/text-to-zg`)
+  * G1 (text→z_g): FAIL — corrected ratio ~1.75, worse than predict-mean null.
+    z_g is NOT text-predictable; it is pose/expression, supplied at inference, not text.
+  * G2 (text→AuraFace-LDA): verif AUC **0.687** (peak @ epoch 35); attribute
+    consistency skin **0.889** / hair **0.712**. Text → coarse on-description
+    identity region works; ~0.69 is the information ceiling (text is many-to-one).
+  * Initial G1=0.015 / G2=0.564 "PASS" verdicts were REVOKED (metric bugs).
+  * PREMISE CORRECTION: the 50 z_g values are pose sliders, NOT identity sliders.
+    Identity sliders must come from the AuraFace-LDA space (ceiling AUC 0.9998).
+  * NOT tested: generalization to unseen *people* (needs multi-image Hegre);
+    persona-creator viability (verification is the wrong objective for it).
 * **[TBD] Phase 5: DiT Fusion Stack** (`exp/geometry-pca`)
   * 2-stream decoupled cross-attention + block-diagonal ingestion (01_VISION_AND_ARCHITECTURE.md §7).
   * Conditioning stack (settled by Phases 2/2b/3/4): flesh-masked DINOv3 patch

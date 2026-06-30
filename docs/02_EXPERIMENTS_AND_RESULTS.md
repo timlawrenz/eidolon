@@ -803,7 +803,11 @@ Status: `[ACTIVE]` — measurements in this session via `execute_code`; data on 
 
 ---
 
-## [CONCLUDED — PASS] Phase 5a: Text-to-Identity Priors (`exp/text-to-zg`)
+## [SUPERSEDED — see Phase 5a-exp1 below] Phase 5a: Text-to-Identity Priors (`exp/text-to-zg`)
+
+> NOTE: The `[CONCLUDED — PASS]` verdict in this section was REVOKED (defective
+> metrics — see the REOPENED block). The authoritative conclusion is the
+> `[CONCLUDED] Phase 5a-exp1` entry at the end of this file.
 
 **Date pre-registered:** 2026-06-27
 **Date concluded:** 2026-06-28
@@ -965,4 +969,57 @@ substantially raises held-out verification AUC over mean-pooling.
   Reframe: text = coarse identity region; fine identity from reference-image AuraFace.
 
 Status: `[PRE-REGISTERED]` — gates fixed; no code written yet.
+Branch: `exp/text-to-zg`.
+
+---
+
+## [CONCLUDED] Phase 5a-exp1: G2 Conditioning Fix — RESULTS (`exp/text-to-zg`)
+
+**Date concluded:** 2026-06-29
+**Verdict:** Experiment succeeded. Both hypotheses resolved with corrected metrics.
+
+### Final results (corrected metrics, raw-AuraFace verification AUC)
+
+3-arm run (30 epochs, full FFHQ 59,466 train / 10,494 held-out):
+| Arm | Conditioning | Model | Verif AUC |
+|---|---|---|---|
+| A | mean-pool T5 | FM | 0.5825 |
+| B | full-seq T5 cross-attn | FM | 0.6335 |
+| C | full-seq T5 cross-attn | deterministic regressor | 0.6835 |
+
+→ **B − A = +0.051** (full-seq conditioning beats mean-pool — hypothesis confirmed).
+→ **C − B = +0.050** (deterministic regressor beats Flow Matching on exact-match AUC).
+
+Arm C convergence run, stopped at **epoch 35** (the peak — see harness lesson below):
+| Metric | Value | Reading |
+|---|---|---|
+| **Verification AUC** | **0.687** | peak; identical to the 80-epoch peak → ~0.69 is the true ceiling, NOT undertraining |
+| pos cos / neg cos | 0.259 / 0.215 | margin 0.044 — weak raw separation, but AUC (rank-based) is the trustworthy number |
+| **skin_auc** | **0.889** | strong — text steers identity to the correct skin-tone region |
+| **hair_auc** | **0.712** | solid — hair direction real but weaker (AuraFace de-emphasizes hair) |
+
+### What this establishes (keepers — high confidence)
+1. **Text → coarse identity region works.** Verif AUC 0.687, well above chance, clean plateau.
+2. **The region is attribute-correct.** skin 0.889 / hair 0.712 — prediction matches the *described* traits. This is the metric that matters for a persona seed.
+3. **The ~0.69 ceiling is the information limit, not the model.** Both 35- and 80-epoch runs peak there. Text is many-to-one with identity → cannot pin the exact held-out person. For a persona creator, this is correct behaviour, not a failure.
+4. **Conditioning fix validated:** full-sequence T5 cross-attention + mask-aware pooling delivered the gain; mean-pool could not.
+5. **LDA-64 ceiling (from prior ceiling test) = 0.9998** — the representation is near-lossless; all loss was in the Prior's conditioning, now largely closed.
+
+### Harness lessons (logged for "ground it better next time")
+- **Save-best-not-last bug:** the script saves the final checkpoint, not the peak. The 80-epoch run peaked at epoch 35 (AUC 0.687) then *overfit* to AUC 0.662 by epoch 80 while train loss fell 0.0017→0.0003. The saved 80-epoch artifact is the overfit one.
+- **Attribute gate is epoch-sensitive:** at epoch 80 the negative cosines collapsed (0.15), distorting the margin-based attribute AUC down to skin 0.69 / hair 0.60. The epoch-35 numbers (0.889 / 0.712) are the trustworthy ones. Stop at the verification-AUC peak.
+- **Two prior metric bugs (revoked above):** G1 per-dim÷per-image units mismatch (~50× deflation); G2 wrong-space cosine (compressed-vs-compressed). Both are now in the `embedding-evaluation` skill (#13, #14) plus the ceiling-test discipline (#15).
+
+### PREMISE CORRECTION (the most important non-code conclusion of this session)
+The original Eidolon premise — that the **50 z_g values would be the identity sliders** — is **dead**. z_g is identity-blind (Fisher J ≈ 0.06); it sculpts pose / yaw / framing / coarse expression only. **Identity sliders, if they exist, must be carved out of the AuraFace-LDA space, not z_g.** The product vision ("Poser with a text seed → sculpt identity with sliders → render via vector-to-image") is unchanged, but the slider substrate moved from z_g to AuraFace-LDA.
+
+### NOT yet established (grounding gaps — drive the next experiment)
+1. **Identity generalization to unseen *people* is untested.** All gates ran on FFHQ (1 image/identity), so "held-out" = held-out person but we can never test "different photo, same person." Only the multi-image Hegre corpus can run a true held-out-*persona* (cross-shoot) gate.
+2. **Persona-creator viability untested.** Verification-against-exact-person is the wrong objective for the product (we want *a* valid on-description identity, not the exact held-out one). No metric yet measures "coherent, specific, on-description identity."
+3. **Trustworthy, disentangled identity-slider directions not yet extracted.** Attribute AUCs prove the directions *exist* (skin 0.889, hair 0.712); the actual semantic-vector extraction (GANSpace/InterFaceGAN-style) is future work.
+
+### Architecture implication for the persona creator
+For *generation* the product wants the **stochastic** path (Flow Matching, Arm B): each noise seed → a distinct specific identity within the text-described region. The deterministic regressor (Arm C) predicts the conditional-mean ("average blonde") — higher exact-match AUC but wrong for generating varied specific personas. Arm C's higher AUC is therefore not the selection criterion; it was the cleanest *probe* of where the attribute regions sit.
+
+Status: `[CONCLUDED]` — experiment succeeded; ceiling mapped; premise corrected (z_g≠identity sliders).
 Branch: `exp/text-to-zg`.
