@@ -1023,3 +1023,202 @@ For *generation* the product wants the **stochastic** path (Flow Matching, Arm B
 
 Status: `[CONCLUDED]` — experiment succeeded; ceiling mapped; premise corrected (z_g≠identity sliders).
 Branch: `exp/text-to-zg`.
+
+---
+
+## [PRE-REGISTERED] Phase 5b: Poser Retrieval Spike — text-pin → FFHQ kNN + Hegre cross-shoot gate (`exp/text-to-zg`)
+
+**Date pre-registered:** 2026-06-29
+**Branch:** `exp/text-to-zg` (current). May fork `exp/poser-retrieval` if it grows.
+
+### Motivation (closes grounding gaps #1 and #3 from Phase 5a-exp1)
+Phase 5a-exp1 concluded text→AuraFace-LDA lands the identity pin in the correct
+*attribute region* (skin AUC 0.889, hair 0.712) but left three gaps. Two are
+addressable **now, with zero new model training**, using only already-extracted
+vectors:
+- **Gap #1 (cross-shoot generalization, untested):** every gate to date ran on
+  FFHQ (1 image/identity), so "different photo, same person" has never been
+  tested. The Hegre corpus is the only substrate that can: live NAS `review.db`
+  (`…/eidolon/hegre-faces/v1/review.db`) holds **324 approved personas /
+  111,095 approved images**, median **209 imgs/persona**, 321 personas ≥10 imgs.
+- **Gap #3 (identity-slider directions not extracted):** attribute AUCs prove the
+  LDA directions *exist*; this spike is the cheapest place to extract and
+  eyeball them (as **retrieval** sliders) before committing any to the DiT.
+
+### Scope discipline (frozen — read before building)
+This is a **retrieval harness + interim UI, NOT the renderer.** "Render" here =
+kNN into real FFHQ/Hegre faces, not DiT synthesis. The generative renderer is
+Phase 5 (unbuilt). This spike exists to (a) ship a clickable Poser prototype and
+(b) de-risk the DiT by validating the pin and the slider directions on real
+vectors. Do not let a passing retrieval gate be read as "the generator works."
+
+### Substrate (verified on disk 2026-06-29 — cited, not assumed)
+- FFHQ AuraFace: **69,960** per-image `.npy` (`ffhq/auraface/`). 1 img/identity.
+- Hegre AuraFace: per-image under `…/hegre-faces/v1/auraface/faces/`; per-persona
+  centroids **323** (`averages/*.auraface.npy`) + z_g centroids **324**.
+- LDA basis: `experiments/geometry_pca/output/auraface_lda.npz` =
+  `lda_basis (512,64)`, `lda_eigenvalues (64,)`, `pooled_mean (512,)`.
+  AuraFace preproc = PC1 + yaw removed (`auraface_preprocessing.py`) BEFORE LDA.
+- Text→LDA Priors: `output/exp1_g2/exp1_arm_{A,B,C}.pt`. **Arm B (stochastic FM)
+  is the product path** (varied specific personas per seed); Arm C (deterministic
+  regressor, conditional-mean "average blonde") is a probe only, NOT the product.
+- **`hera` orphan MUST be dropped/repaired before indexing** — has a z_g centroid
+  but no AuraFace centroid (all frames failed detection).
+
+### Pre-registered gates (FIXED before any eval code; nulls + units explicit)
+
+> **Do-nothing null discipline (logged after 2 revoked verdicts this session):**
+> every gate below names its null and its units BEFORE compute. A PASS that does
+> not beat its named null is not a PASS.
+
+**G-A (PRIMARY) — Cross-shoot held-out-persona retrieval on Hegre.**
+The true generalization test FFHQ cannot give. Hold out K personas entirely
+(no images, no centroid in the index). For each held-out persona, take a text
+caption of ONE shoot → text→LDA pin → kNN against an index built from the
+held-out personas' *other-shoot* images (and/or per-persona centroids computed
+from held-out shots only). Metric: **Recall@k** that the nearest neighbour is the
+same held-out persona, retrieved from a DIFFERENT shoot.
+- **Units:** retrieval is over the SAME LDA-64 space the Prior predicts in;
+  compare predicted-pin vs index in that space (NOT raw 512-d, NOT reconstruction).
+- **Null (REQUIRED):** random-projection null — replace the trained Prior pin
+  with a random Gaussian 64-d vector (matched norm), same kNN. Per the Phase-3
+  lesson, ANY structured shadow can clear a naive bar; the Prior must beat the
+  random-projection Recall@k by a margin whose identity-bootstrap CI excludes 0.
+- **Second null:** caption-shuffle — pair each persona's pin with a *different*
+  persona's caption; Recall@k must collapse to the random-projection floor.
+- **PASS:** Recall@10 (Prior) > Recall@10 (random-projection null), CI excl. 0,
+  AND caption-shuffle ≈ null. (Absolute Recall@k reported but secondary — text is
+  many-to-one, so exact-person recall is expected to be modest; the *lift over null*
+  is the claim.)
+
+**G-B (SECONDARY) — Attribute-controllability of LDA retrieval sliders.**
+Tests Gap #3: does stepping ±σ along an interpretable LDA axis move the retrieved
+face's attribute, vs a null direction?
+- **Setup:** start from a pin, step +σ and −σ along LDA1 (visually = skin-tone /
+  ethnicity, confirmed Phase 5-prep), re-kNN. Score retrieved-face skin tone
+  (proxy: existing skin-tone attribute used in 5a-exp1 attribute gate).
+- **Units:** σ = the per-axis std of the LDA-64 *index population* (state which:
+  FFHQ vs Hegre — they differ; Hegre LDA spread ≈ FFHQ × ~1.9). Step in index units.
+- **Null (REQUIRED):** step the SAME magnitude along a RANDOM unit direction in
+  LDA-64; the attribute should NOT move monotonically. The LDA-axis Δattribute
+  must beat the random-direction Δattribute, CI excl. 0.
+- **PASS:** monotone Δ(skin attribute) along LDA1 with |Δ| significantly above the
+  random-direction null. (Report hair/LDA-k too; LDA1 is the registered primary.)
+
+### Eliminated / out-of-scope (do NOT pursue in this spike)
+- Predicting richer 512-d identity (LDA-64 ceilings at AUC 0.9998 — settled).
+- Swapping T5 / retraining the Prior (use existing `exp1_arm_B.pt`; Arm B is
+  product path). Retraining is a *different* experiment.
+- DiT synthesis / any generative rendering (Phase 5, unbuilt).
+- "Verification-against-exact-person" as a PASS criterion — it is the wrong
+  objective (5a-exp1 gap #2); G-A measures cross-shoot recall *lift over null*,
+  not exact-person verification grade.
+
+### Architecture under test (the corrected Poser substrate)
+| Poser control | Substrate | Source artifact |
+|---|---|---|
+| Pose / emotion sliders | z_g (50-d, identity-blind, J≈0.06) | `encoder_production.npz` |
+| Identity pin (text seed) | text→AuraFace-LDA-64, **Arm B stochastic** | `output/exp1_g2/exp1_arm_B.pt` |
+| Identity sliders | ±σ along LDA-64 axes (retrieval, this spike) | `auraface_lda.npz` |
+| Render (interim) | kNN into real FFHQ / Hegre faces | NAS auraface dirs |
+| Render (final, unbuilt) | DiT `prx-tg`, 2-stream cross-attn | Phase 5 |
+
+### Open decisions deferred to results (not gates)
+- K (held-out persona count) and the train/index split for G-A — set from the
+  324-persona distribution at build time; record the exact split in results.
+- Whether to index per-image or per-persona-centroid for Hegre (likely report both).
+- Skin-tone proxy provenance for G-B (reuse 5a-exp1 attribute scorer; cite it).
+
+Status: `[CONCLUDED — G-A FAIL (informative); GT-LDA ceiling PASS (cross-shoot validated)]`.
+Branch: `exp/text-to-zg`.
+
+
+### Verdict — G-A (cross-shoot Prior retrieval): `[FAIL — informative]`
+
+**Date concluded:** 2026-06-30
+
+Run on the corrected Hegre corpus: 2,999 query images (one held-out shoot each),
+30,000 index images, **242 personas** with ≥2 T5+AF sets. Prior Arm B (stochastic
+FM) with training-faithful T5 masking (t5_mask → valid tokens → cap 256 →
+zero-pad; see §Bug found below). Persona-level bootstrap, 2,000 resamples.
+
+| Query source | R@1 | R@5 | R@10 |
+|---|---|---|---|
+| Prior (masked) | 0.010 | 0.037 | 0.072 |
+| Random null | 0.006 | 0.030 | 0.053 |
+| Caption-shuffle | 0.008 | 0.033 | 0.056 |
+| **GT-LDA ceiling** | **0.842** | **0.922** | **0.941** |
+
+Chance R@10 ≈ 0.042 (242-index-persona kNN).
+
+**Bootstrap Δ(Prior − Null), persona-level:**
+
+| k | Δ | 95% CI | P(Δ ≤ 0) |
+|---|---|---|---|
+| 1 | −0.002 | [−0.009, +0.002] | 0.79 |
+| 5 | +0.003 | [−0.015, +0.021] | 0.38 |
+| 10 | +0.014 | [−0.004, +0.033] | 0.063 |
+
+**Verdict: FAIL.** The Prior's cross-shoot Recall@k lift over a random-projection
+null does not achieve statistical significance at the persona level. The 95% CI
+includes zero at all k; p=0.063 at k=10 is the closest approach (borderline but
+n.s. at α=0.05). The effect is directionally positive at k=5 and k=10 and grew
+after fixing a conditioning bug (see below), but the corpus (242 personas) is
+underpowered to resolve an effect this small. The Caption-Shuffle (0.056) does
+not fully collapse to the null (0.053) — inconsistent with the pre-registered
+expectation and another weak signal.
+
+**Honest interpretation.** Text→LDA does add *some* cross-shoot identity signal
+above random — the positive Δ at k=5 and k=10, the non-collapse of caption-shuffle,
+and the consistent improvement after masking fix all point in this direction. But
+the effect is too small to be practically useful: at R@10=0.072, a "blonde woman"
+pin narrows the search from 242 personas to ~17 plausible matches. That is
+*coarse narrowing*, not identity pinning — consistent with Phase 5a-exp1's
+information ceiling (verif AUC 0.687; attribute AUC 0.889).
+
+**The GT-LDA ceiling is the decisive positive finding.** When the query is a
+REAL held-out-shoot AuraFace vector (no Prior), cross-shoot retrieval hits
+R@1=0.842, R@10=0.941. This is the first empirical proof that **AuraFace-LDA is
+a genuine cross-shoot identity carrier** — a result no FFHQ gate could produce
+(1 image/identity). Tested across four metric/space variants (Euclidean, cosine,
+z-scored, reconstructed-512-cosine) — all statistically tied, all >0.83 R@1.
+**The retrieval space is sound. The gap is purely in the Prior**, not the
+plumbing.
+
+### 🔴 Bug found during review: T5 padding not masked in `predict_pin`
+
+**Date caught:** 2026-06-30. **Severity:** high — confounded every Prior-based
+G-A result computed before the fix.
+
+The Prior's training pipeline (`train_exp1_g2.py` lines 94–105) preprocesses T5:
+load `t5_mask.npy` → keep only valid (non-padding) tokens → cap to MAX_TOKENS=256
+→ zero-pad. The model (`SeqCrossAttnPool`) has **no internal key-padding mask**;
+it relies on the caller to zero-out padding rows before feeding them.
+
+The initial `predict_pin` fed the **raw 512-token T5 sequence** including ~347
+non-zero T5 padding embeddings the model never saw in training. The cross-attention
+pooling attended over garbage padding tokens, corrupting the conditioning signal.
+
+**Fix:** `predict_pin` now accepts a `mask` argument and replicates training
+preprocessing exactly (valid tokens via mask → cap 256 → zero-pad to 256).
+Verified by invariant test: `test_predict_pin_applies_mask` — padding with
+arbitrary garbage produces the identical pin as padding with zeros. All 8 unit
+tests pass. This fix is required for any downstream use of the Prior at inference.
+
+**Effect of the fix** (same corpus snapshot, before vs after):
+
+| | Unmasked | Masked (corrected) |
+|---|---|---|
+| Prior R@10 | 0.056 | 0.072 (+29%) |
+| Δ(Prior−Null) k=10 | +0.002 | +0.014 (7×) |
+| P(Δ ≤ 0) | 0.41 | 0.063 |
+
+The fix is real and measurable — signal exists but is small.
+
+### Hegre data coverage snapshot (2026-06-30)
+
+- **35,843 images** with both T5 and AuraFace across **238 personas** (30.6% of approved).
+- **217 personas** with ≥2 T5+AF sets — viable for cross-shoot. Highest: flora (2,933 in 77 sets).
+- Full NAS scan by `scripts/count_full_data_images.py` confirmed `stratum/faces/` is
+  the canonical T5 path (preserves the `faces/` DB prefix, matching AuraFace layout).
+- Corpus actively growing: query images grew from 2,986 → 2,999 between runs ~40 min apart.

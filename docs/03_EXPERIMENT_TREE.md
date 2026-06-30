@@ -13,6 +13,17 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
+* **[CONCLUDED] Phase 5b: Poser Retrieval Spike — G-A FAIL (informative); GT-LDA ceiling PASS** (`exp/text-to-zg`)
+  * **G-A: cross-shoot Prior Recall@k FAIL.** Text→LDA Prior does not beat random-projection
+    null at statistical significance (Δ=+0.014, CI[−0.004,+0.033], p=0.063 at k=10,
+    n=242 personas). Directionally positive but small — consistent with Phase 5a
+    info ceiling. **GT-LDA ceiling PASS:** real held-out-shoot AuraFace → LDA
+    hits R@1=0.842 cross-shoot. First proof AuraFace-LDA is a genuine cross-shoot
+    identity carrier. Retrieval space is sound; gap lives in the Prior.
+  * 🔴 Bug found + fixed: `predict_pin` was not masking T5 padding tokens.
+    Masking fix improved Prior R@10 +29% (0.056→0.072) and Δ +7× (0.002→0.014).
+  * Hegre coverage: 35,843 T5+AF images, 238 personas, 217 cross-shoot viable.
+    Corpus snapshot growing (2,986→2,999 query images between runs).
 * **[CONCLUDED] Phase 5a: Text-to-Identity Priors** (`exp/text-to-zg`)
   * G1 (text→z_g): FAIL — corrected ratio ~1.75, worse than predict-mean null.
     z_g is NOT text-predictable; it is pose/expression, supplied at inference, not text.
