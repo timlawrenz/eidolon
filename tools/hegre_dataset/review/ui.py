@@ -16,11 +16,47 @@ import io
 import sqlite3
 import subprocess
 import sys
+import threading
 import numpy as np
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template_string, request, send_file
 from PIL import Image, ImageDraw
+
+# ── Subprocess dedup: track active geometry compute jobs per persona ──
+_active_geometry_jobs: dict[int, subprocess.Popen] = {}
+_jobs_lock = threading.Lock()
+
+
+def _maybe_spawn_geometry_compute(
+    persona_id: int,
+    faces_root: Path,
+    encoder_path: Path,
+) -> subprocess.Popen | None:
+    """Spawn a geometry-compute subprocess unless one is already running.
+
+    Returns the Popen handle if spawned, None if skipped (already running).
+    """
+    with _jobs_lock:
+        # Clean up any completed jobs
+        for pid, proc in list(_active_geometry_jobs.items()):
+            if proc.poll() is not None:
+                del _active_geometry_jobs[pid]
+
+        # Skip if still running for this persona
+        if persona_id in _active_geometry_jobs:
+            return None
+
+        proc = subprocess.Popen([
+            sys.executable, "-m", "tools.hegre_dataset", "review", "compute-geometry",
+            "--dataset", str(faces_root),
+            "--encoder", str(encoder_path),
+            "--persona", str(persona_id),
+            "--metric", "both"
+        ], stdout=sys.stdout, stderr=sys.stderr)
+
+        _active_geometry_jobs[persona_id] = proc
+        return proc
 
 
 def get_db(db_path: Path) -> sqlite3.Connection:
@@ -317,15 +353,9 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         db.close()
         
         # Fire off a background process to recalculate the centroid for JUST this persona.
-        # This isolates the heavy PCA logic and SQLite lock from the Flask thread.
+        # Dedup: skip if one is already running for this persona.
         encoder_path = Path(__file__).parent.parent.parent.parent / "experiments/geometry_pca/output/encoder_production.npz"
-        subprocess.Popen([
-            sys.executable, "-m", "tools.hegre_dataset", "review", "compute-geometry",
-            "--dataset", str(faces_root),
-            "--encoder", str(encoder_path),
-            "--persona", str(pid),
-            "--metric", "both"
-        ], stdout=sys.stdout, stderr=sys.stderr)
+        _maybe_spawn_geometry_compute(int(pid), faces_root, encoder_path)
         
         return jsonify({"remaining": remaining, "mode": mode})
 

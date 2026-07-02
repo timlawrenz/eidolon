@@ -31,6 +31,45 @@ try:
 except ImportError:
     SmirkEncoder = None
 
+# ── Model singleton cache ──────────────────────────────────────────
+_smirk_model = None
+_smirk_checkpoint_path = None
+_smirk_device_str = None
+
+
+def get_smirk_model(checkpoint_path: Path, device: str | None = None):
+    """Return the cached SmirkEncoder, or create and cache a new one.
+
+    The model is cached by checkpoint path and device. Subsequent calls
+    with the same arguments return the identical model instance, avoiding
+    redundant backbone downloads and GPU memory allocations.
+    """
+    global _smirk_model, _smirk_checkpoint_path, _smirk_device_str
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # If the checkpoint or device changed, create a new model
+    if _smirk_model is not None and _smirk_checkpoint_path == str(checkpoint_path) and _smirk_device_str == device:
+        return _smirk_model
+
+    model = SmirkEncoder(n_shape=300).to(device)
+    model.eval()
+
+    if checkpoint_path.exists():
+        checkpoint = torch.load(str(checkpoint_path), map_location=device)
+        encoder_state_dict = {}
+        for k, v in checkpoint.items():
+            if k.startswith("smirk_encoder."):
+                encoder_state_dict[k.replace("smirk_encoder.", "")] = v
+        model.load_state_dict(encoder_state_dict)
+
+    _smirk_model = model
+    _smirk_checkpoint_path = str(checkpoint_path)
+    _smirk_device_str = device
+
+    return model
+
 def compute_uv_coordinates(vertices: np.ndarray, landmarks: np.ndarray, out_size: tuple[int, int] = (300, 300), target_iod_ratio=0.2) -> np.ndarray:
     """
     Map 3D vertices to 2D UV coordinates matching the Pixel Average projection.
@@ -142,32 +181,29 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
     print(f"  extract_canonical_shape: {len(rows)} approved images for '{persona_name}'")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SmirkEncoder(n_shape=300).to(device)
-    model.eval()
-    
-    # Note: We assume the checkpoint path is absolute or relative to project root
     checkpoint_path = dataset_root.parent.parent.parent / "experiments/flame_spike/smirk/pretrained_models/SMIRK_em1.pt"
-    if checkpoint_path.exists():
-        checkpoint = torch.load(str(checkpoint_path), map_location=device)
-        encoder_state_dict = {}
-        for k, v in checkpoint.items():
-            if k.startswith("smirk_encoder."):
-                encoder_state_dict[k.replace("smirk_encoder.", "")] = v
-        model.load_state_dict(encoder_state_dict)
+    model = get_smirk_model(checkpoint_path, str(device))
     
     shapes = []
     skipped = 0
     
     stratum_root = dataset_root / "stratum"
     base_pname = persona_name.split("_cluster_")[0]
+    persona_dir = stratum_root / base_pname
     
     with torch.no_grad():
         for row in rows:
             img_path = dataset_root / row["image_path"]
             img_stem = Path(row["image_path"]).stem
-            pose_path = stratum_root / base_pname / Path(row["image_path"]).parent.name / img_stem / "pose.npy"
             
-            if not img_path.exists() or not pose_path.exists():
+            # Use rglob to find pose.npy regardless of faces/ prefix variation
+            pose_path = None
+            if persona_dir.exists():
+                for pth in persona_dir.rglob(f"{img_stem}/pose.npy"):
+                    pose_path = pth
+                    break
+            
+            if not img_path.exists() or pose_path is None:
                 skipped += 1
                 continue
                 
