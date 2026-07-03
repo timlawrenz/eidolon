@@ -290,3 +290,50 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
         print(f"AuraFace extraction complete in {elapsed:.0f}s. Skipped {n_skip} images.")
     else:
         print(f"All {status_filter} images already have AuraFace data.")
+
+    # 2b. Check for missing AuraFace-LDA data (per-image: clean → project to LDA)
+    lda_dir = dataset_dir / "lda"
+    missing_lda = []
+    for p in paths:
+        rel_p = p.relative_to(faces_dir.absolute())
+        lda_file = lda_dir.absolute() / rel_p.with_suffix(".npy")
+        if not lda_file.exists():
+            af_file = auraface_out.absolute() / rel_p.with_suffix(".npy")
+            if af_file.exists():
+                missing_lda.append((p, af_file, lda_file))
+
+    if missing_lda:
+        print(f"Found {len(missing_lda)} {status_filter} images missing AuraFace-LDA. Projecting...")
+        try:
+            import sys as _sys
+            _geom_pca = Path(__file__).resolve().parent.parent.parent / "experiments" / "geometry_pca"
+            _sys.path.insert(0, str(_geom_pca))
+            from geometry_pca.auraface_preprocessing import clean_auraface, project_to_lda
+        except ImportError as e:
+            print(f"Error: Cannot import auraface_preprocessing: {e}")
+            print("Skipping AuraFace-LDA projection.")
+        else:
+            t0_lda = time.time()
+            n_lda = 0
+            n_lda_skip = 0
+            for i, (in_p, af_file, lda_file) in enumerate(missing_lda):
+                if i > 0 and i % 500 == 0:
+                    elapsed = time.time() - t0_lda
+                    rate = i / elapsed
+                    eta = (len(missing_lda) - i) / rate if rate > 0 else 0
+                    print(f"  [{i}/{len(missing_lda)}] {rate:.1f} img/s, ETA: {eta/60:.0f}m", flush=True)
+
+                try:
+                    v_raw = np.load(af_file)
+                    v_clean = clean_auraface(v_raw)
+                    lda_coords = project_to_lda(v_clean)
+                    lda_file.parent.mkdir(parents=True, exist_ok=True)
+                    np.save(lda_file, lda_coords)
+                    n_lda += 1
+                except Exception:
+                    n_lda_skip += 1
+
+            elapsed = time.time() - t0_lda
+            print(f"AuraFace-LDA projection complete in {elapsed:.0f}s. Extracted {n_lda}, skipped {n_lda_skip}.")
+    else:
+        print(f"All {status_filter} images already have AuraFace-LDA data.")
