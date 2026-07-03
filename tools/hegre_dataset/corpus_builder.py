@@ -115,7 +115,10 @@ def build_corpus(
     errors = 0
 
     for i, (pname, img_path) in enumerate(eligible):
-        sample_dir = output_dir / f"{i:05d}"
+        # Stable name: persona--image_stem (survives rebuilds when images are added/removed)
+        stem = Path(img_path).stem
+        dir_name = f"{pname}--{stem}"
+        sample_dir = output_dir / dir_name
         sample_dir.mkdir(parents=True, exist_ok=True)
 
         try:
