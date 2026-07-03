@@ -450,14 +450,6 @@ def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None =
     for p in personas:
         pid, pname = p["id"], p["name"]
 
-        # Skip contaminated personas
-        contaminated = db.execute(
-            "SELECT 1 FROM images WHERE persona_id = ? AND status = 'tainted:contamination' LIMIT 1",
-            (pid,)
-        ).fetchone()
-        if contaminated:
-            continue
-
         approved = db.execute(
             "SELECT image_path FROM images WHERE persona_id = ? AND status = 'approved'",
             (pid,)

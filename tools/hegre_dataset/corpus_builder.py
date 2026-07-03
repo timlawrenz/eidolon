@@ -50,10 +50,6 @@ def build_corpus(
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
-    # ── Contamination-free personas ───────────────────────────────────
-    c.execute("SELECT DISTINCT persona_id FROM images WHERE status='tainted:contamination'")
-    contaminated_pids = {r[0] for r in c.fetchall()}
-
     c.execute("SELECT id, name FROM personas ORDER BY name")
     all_personas = c.fetchall()
 
@@ -62,15 +58,10 @@ def build_corpus(
     skipped_missing_avg = 0
     skipped_missing_zg = 0
     skipped_too_few = 0
-    skipped_contaminated = 0
 
     for p in all_personas:
         pid = p["id"]
         pname = p["name"]
-
-        if pid in contaminated_pids:
-            skipped_contaminated += 1
-            continue
 
         # Check persona average LDA exists
         avg_lda_path = avg_dir / f"{pname}.lda.npy"
@@ -107,7 +98,6 @@ def build_corpus(
 
     print(f"Corpus build summary:")
     print(f"  Personas scanned:           {len(all_personas)}")
-    print(f"  Contaminated (skipped):     {skipped_contaminated}")
     print(f"  Missing LDA average:        {skipped_missing_avg}")
     print(f"  Too few images (<{min_images_per_persona}):  {skipped_too_few}")
     print(f"  Missing z_g (skipped):      {skipped_missing_zg}")
