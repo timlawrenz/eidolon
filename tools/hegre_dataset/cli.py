@@ -109,6 +109,30 @@ def cmd_review_compute_geometry(args):
 
     return rc
 
+
+def cmd_review_compute_lda(args):
+    """Compute AuraFace-LDA vectors and per-persona identity averages."""
+    from .review.geometry import compute_lda_vectors
+    dataset = Path(args.dataset)
+    db_path = dataset / "review.db"
+    persona = getattr(args, "persona", None)
+    return compute_lda_vectors(db_path, dataset, persona=persona)
+
+
+def cmd_build_corpus(args):
+    """Build stratum-style training corpus."""
+    from .corpus_builder import build_corpus
+    dataset = Path(args.dataset)
+    output = Path(args.output)
+    return build_corpus(
+        dataset_root=dataset,
+        output_dir=output,
+        min_images_per_persona=args.min_images,
+        max_images_per_persona=args.max_images,
+        resolution=args.resolution,
+        dry_run=args.dry_run,
+    )
+
 def main(args=None):
     parser = argparse.ArgumentParser(prog="hegre-dataset")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -150,7 +174,21 @@ def main(args=None):
     p_geom.add_argument("--metric", choices=["zg", "af", "both"], default="both",
                         help="Which distance metric to compute: zg (DWPose geometry), af (AuraFace identity), or both (default)")
     p_geom.set_defaults(func=cmd_review_compute_geometry)
-    
+
+    p_lda = rsub.add_parser("compute-lda", help="Compute AuraFace-LDA vectors (clean + project to identity basis)")
+    p_lda.add_argument("--dataset", required=True)
+    p_lda.add_argument("--persona", type=str, help="Optional persona name to limit computation")
+    p_lda.set_defaults(func=cmd_review_compute_lda)
+
+    p_corpus = sub.add_parser("build-corpus", help="Build stratum-style training corpus with pixel + identity + geometry")
+    p_corpus.add_argument("--dataset", required=True, help="Path to hegre-faces/v1 dataset")
+    p_corpus.add_argument("--output", required=True, help="Output directory for numbered sample dirs")
+    p_corpus.add_argument("--min-images", type=int, default=5, help="Min approved images per persona (default: 5)")
+    p_corpus.add_argument("--max-images", type=int, default=None, help="Max images per persona (default: no cap)")
+    p_corpus.add_argument("--resolution", type=int, default=1024, help="Target pixel resolution (default: 1024)")
+    p_corpus.add_argument("--dry-run", action="store_true", help="Count samples without writing files")
+    p_corpus.set_defaults(func=cmd_build_corpus)
+
     p_enrich = sub.add_parser("enrich")
     p_enrich.add_argument("--dataset", required=True)
     p_enrich.add_argument("--passes", default="pose,seg,depth,normal,caption,t5", help="Comma-separated passes for Stratum")

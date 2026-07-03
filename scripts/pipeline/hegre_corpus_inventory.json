@@ -1,0 +1,49 @@
+{
+  "total_personas_clean": 153,
+  "total_approved": 57217,
+  "tiers": {
+    "full": 150,
+    "enough": 2,
+    "some": 1
+  },
+  "tier_images": {
+    "full": 57185,
+    "enough": 30,
+    "some": 2
+  },
+  "file_existence_sample": {
+    "pixel": {
+      "found": 1522,
+      "checked": 1522,
+      "pct": 100.0
+    },
+    "z_g": {
+      "found": 1006,
+      "checked": 1522,
+      "pct": 66.1
+    },
+    "auraface_raw": {
+      "found": 1518,
+      "checked": 1522,
+      "pct": 99.7
+    },
+    "auraface_lda": {
+      "found": 0,
+      "checked": 1522,
+      "pct": 0.0
+    }
+  },
+  "averages": {
+    "zg": 153,
+    "auraface": 153,
+    "lda": 0
+  },
+  "data_root": "/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1",
+  "paths": {
+    "pixel": "faces/{persona}/{set}/{img}.jpg",
+    "z_g": "zg/faces/{persona}/{set}/{img}.npy",
+    "auraface_raw": "auraface/faces/{persona}/{set}/{img}.npy",
+    "auraface_lda": "lda/faces/{persona}/{set}/{img}.npy",
+    "average_lda": "averages/{persona}.lda.npy"
+  }
+}

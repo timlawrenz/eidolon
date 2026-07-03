@@ -66,8 +66,9 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
         print("Run 'enrich' first to extract AuraFace embeddings.")
         return 1
 
-    db = sqlite3.connect(str(db_path))
+    db = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL")
 
     # Ensure af_distance column exists
     try:
@@ -164,8 +165,9 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
 
 
 def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False, metric: str = "both", zg_max_distance: float = 100.0):
-    db = sqlite3.connect(str(db_path))
+    db = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL")
     
     # 1. Add zg_distance column if it doesn't exist
     try:
@@ -231,7 +233,9 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
         for img in images:
             # We know the specific subdirectory structure Stratum uses!
             # Instead of a slow rglob across the whole tree, we can just glob the persona dir directly.
-            # Stratum outputs: stratum_dir / persona_name / ... / img_stem / pose.npy
+            # Stratum outputs: stratum_dir / faces/ / persona_name / ... / img_stem / pose.npy
+            # (or stratum_dir / persona_name / ... in older Phase 5a tree)
+            # Using rglob to find regardless of prefix variation.
             pose_path = None
             persona_dir = stratum_dir / base_pname
             if persona_dir.exists():
@@ -379,4 +383,147 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             
     db.close()
     print(f"\nDone. Updated zg_distance for {total_updated} total images.")
+    return 0
+
+
+def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None = None) -> int:
+    """Compute AuraFace-LDA vectors and per-persona identity averages.
+
+    For each approved image from a contamination-free persona:
+      1. Load raw AuraFace .npy
+      2. clean_auraface() → remove PC1 + yaw nuisances
+      3. project_to_lda() → 64-d identity basis
+      4. Save as lda/{image_path}.npy
+
+    After per-image extraction, computes per-persona averages
+    of the LDA vectors → averages/{persona}.lda.npy.
+
+    Idempotent: skips images where the output file already exists.
+
+    Args:
+        db_path: Path to review.db.
+        dataset_root: Dataset root containing auraface/ and output targets.
+        persona: Optional persona name to limit computation.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    import time
+
+    auraface_dir = dataset_root / "auraface"
+    if not auraface_dir.exists():
+        print(f"AuraFace directory not found: {auraface_dir}")
+        print("Run 'enrich' first to extract AuraFace embeddings.")
+        return 1
+
+    db = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
+    db.row_factory = sqlite3.Row
+
+    # ── Import AuraFace preprocessing (geometry_pca dependency) ──────
+    try:
+        import sys, os
+        _geom_pca = Path(__file__).resolve().parent.parent.parent.parent / "experiments" / "geometry_pca"
+        sys.path.insert(0, str(_geom_pca))
+        from geometry_pca.auraface_preprocessing import clean_auraface, project_to_lda
+    except ImportError as e:
+        print(f"Error: Cannot import geometry_pca.auraface_preprocessing: {e}")
+        print("Ensure geometry_pca is at experiments/geometry_pca/")
+        return 1
+
+    # ── Load persona list ────────────────────────────────────────────
+    if persona is not None:
+        if str(persona).isdigit():
+            personas = db.execute("SELECT id, name FROM personas WHERE id = ?", (int(persona),)).fetchall()
+        else:
+            personas = db.execute("SELECT id, name FROM personas WHERE name = ?", (persona,)).fetchall()
+    else:
+        personas = db.execute("SELECT id, name FROM personas").fetchall()
+
+    total_extracted = 0
+    total_skipped = 0
+    avg_new = 0
+    avg_skipped = 0
+
+    print(f"Starting LDA extraction for {len(personas)} personas...")
+    t0 = time.time()
+
+    for p in personas:
+        pid, pname = p["id"], p["name"]
+
+        # Skip contaminated personas
+        contaminated = db.execute(
+            "SELECT 1 FROM images WHERE persona_id = ? AND status = 'tainted:contamination' LIMIT 1",
+            (pid,)
+        ).fetchone()
+        if contaminated:
+            continue
+
+        approved = db.execute(
+            "SELECT image_path FROM images WHERE persona_id = ? AND status = 'approved'",
+            (pid,)
+        ).fetchall()
+
+        if not approved:
+            continue
+
+        persona_extracted = 0
+        af_missing = 0
+
+        for img in approved:
+            img_path = img["image_path"]
+            lda_out = dataset_root / "lda" / img_path.replace('.jpg', '.npy')
+
+            if lda_out.exists():
+                total_skipped += 1
+                persona_extracted += 1  # count as present for averaging
+                continue
+
+            af_in = auraface_dir / img_path.replace('.jpg', '.npy')
+            if not af_in.exists():
+                af_missing += 1
+                continue
+
+            try:
+                v_raw = np.load(af_in)
+                v_clean = clean_auraface(v_raw)
+                lda_coords = project_to_lda(v_clean)
+
+                lda_out.parent.mkdir(parents=True, exist_ok=True)
+                np.save(lda_out, lda_coords)
+                total_extracted += 1
+                persona_extracted += 1
+            except Exception as e:
+                print(f"\n  Error on {pname}/{img_path}: {e}")
+
+        # ── Per-persona average ──────────────────────────────────────
+        avg_path = dataset_root / "averages" / f"{pname}.lda.npy"
+        if avg_path.exists():
+            avg_skipped += 1
+        elif persona_extracted > 0:
+            lda_vectors = []
+            for img in approved:
+                lda_p = dataset_root / "lda" / img["image_path"].replace('.jpg', '.npy')
+                if lda_p.exists():
+                    lda_vectors.append(np.load(lda_p))
+            if lda_vectors:
+                avg_vec = np.mean(np.stack(lda_vectors), axis=0)
+                avg_vec = avg_vec / (np.linalg.norm(avg_vec) + 1e-8)
+                avg_path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(avg_path, avg_vec)
+                avg_new += 1
+
+        if persona_extracted > 0 or af_missing > 0:
+            elapsed = time.time() - t0
+            rate = total_extracted / elapsed if elapsed > 0 else 0
+            print(f"  [{pname}] {persona_extracted} LDA vectors  "
+                  f"(missing AF: {af_missing})  "
+                  f"[{total_extracted} total, {rate:.1f}/s]")
+
+    db.close()
+    elapsed = time.time() - t0
+    print(f"\nLDA extraction complete in {elapsed/60:.1f}m")
+    print(f"  Per-image extracted: {total_extracted}")
+    print(f"  Per-image skipped:   {total_skipped}")
+    print(f"  New averages:        {avg_new}")
+    print(f"  Averages skipped:    {avg_skipped}")
     return 0
