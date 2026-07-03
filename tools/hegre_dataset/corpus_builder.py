@@ -129,14 +129,21 @@ def build_corpus(
         sample_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Pixels: JPEG → float16 numpy
-            jpg_path = faces_dir / img_path
-            img = Image.open(jpg_path).convert("RGB")
-            if img.size != (resolution, resolution):
-                img = img.resize((resolution, resolution), Image.LANCZOS)
-            pixel = np.array(img, dtype=np.float16) / 255.0  # (H, W, 3)
-            pixel = np.transpose(pixel, (2, 0, 1))  # (3, H, W)
-            np.save(sample_dir / "pixel.npy", pixel)
+            # Pixels: prefer stratum's pixel.npy if enrichment ran pixel pass
+            img_path_p = Path(img_path)
+            stratum_pixel = dataset_root / "stratum" / img_path_p.parent / img_path_p.stem / "pixel.npy"
+            if stratum_pixel.exists():
+                import shutil
+                shutil.copy2(stratum_pixel, sample_dir / "pixel.npy")
+            else:
+                # Fallback: JPEG → float16 numpy
+                jpg_path = faces_dir / img_path
+                img = Image.open(jpg_path).convert("RGB")
+                if img.size != (resolution, resolution):
+                    img = img.resize((resolution, resolution), Image.LANCZOS)
+                pixel = np.array(img, dtype=np.float16) / 255.0  # (H, W, 3)
+                pixel = np.transpose(pixel, (2, 0, 1))  # (3, H, W)
+                np.save(sample_dir / "pixel.npy", pixel)
 
             # AuraFace-LDA: persona average (same for all images of this persona)
             avg_lda = np.load(avg_dir / f"{pname}.lda.npy")

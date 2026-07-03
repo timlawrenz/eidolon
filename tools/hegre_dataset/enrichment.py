@@ -108,6 +108,8 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
                 is_missing = True
             elif "t5" in pass_list and not (base_dir / "t5_hidden.npy").exists():
                 is_missing = True
+            elif "pixel" in pass_list and not (base_dir / "pixel.npy").exists():
+                is_missing = True
                 
             if is_missing:
                 missing_stratum.append(str(p))
