@@ -132,6 +132,75 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
     else:
         print("Skipping Stratum enrichment (--skip-stratum).")
 
+    # 1b. Check for missing z_g data (after pose pass may have generated pose.npy)
+    zg_dir = dataset_dir / "zg"
+    missing_zg = []
+    for p in paths:
+        rel_p = p.relative_to(faces_dir.absolute())
+        zg_file = zg_dir.absolute() / rel_p.with_suffix(".npy")
+        if not zg_file.exists():
+            # Only extract if pose.npy exists (stratum pose pass ran)
+            pose_file = stratum_out.absolute() / rel_p.parent / rel_p.stem / "pose.npy"
+            if pose_file.exists():
+                missing_zg.append((p, zg_file))
+
+    if missing_zg:
+        print(f"Found {len(missing_zg)} {status_filter} images with pose but missing z_g. Extracting...")
+        try:
+            import sys as _sys, os as _os
+            _geom_pca = Path(__file__).resolve().parent.parent.parent / "experiments" / "geometry_pca"
+            _sys.path.insert(0, str(_geom_pca))
+            from geometry_pca.zg_inference import encode_zg
+            from geometry_pca.fit import load_encoder
+            from geometry_pca.constants import FACE_SLICE
+        except ImportError as e:
+            print(f"Error: Cannot import geometry_pca for z_g extraction: {e}")
+            print("Skipping z_g extraction.")
+        else:
+            # Resolve encoder path relative to project root (geometry.py's ancestor)
+            _proj_root = Path(__file__).resolve().parent.parent.parent  # eidolon/
+            encoder_path = _proj_root / "experiments" / "geometry_pca" / "output" / "encoder_production.npz"
+            if not encoder_path.exists():
+                print(f"Error: encoder_production.npz not found. Copy it to {encoder_path}")
+                print("Skipping z_g extraction.")
+            else:
+                encoder = load_encoder(str(encoder_path))
+                t0_zg = time.time()
+                n_zg = 0
+                n_zg_skip = 0
+                for i, (in_p, out_p) in enumerate(missing_zg):
+                    if i > 0 and i % 500 == 0:
+                        elapsed = time.time() - t0_zg
+                        rate = i / elapsed
+                        eta = (len(missing_zg) - i) / rate if rate > 0 else 0
+                        print(f"  [{i}/{len(missing_zg)}] {rate:.1f} img/s, ETA: {eta/60:.0f}m", flush=True)
+
+                    rel_p = in_p.relative_to(faces_dir.absolute())
+                    pose_path = stratum_out.absolute() / rel_p.parent / rel_p.stem / "pose.npy"
+                    try:
+                        pose = np.load(pose_path)
+                        if pose.shape == (133, 3):
+                            face_2d = pose[FACE_SLICE, :2]
+                        elif pose.shape == (68, 2):
+                            face_2d = pose
+                        else:
+                            n_zg_skip += 1
+                            continue
+                        if (face_2d == 0).all():
+                            n_zg_skip += 1
+                            continue
+                        z_g = encode_zg(face_2d.astype(np.float32), encoder)
+                        out_p.parent.mkdir(parents=True, exist_ok=True)
+                        np.save(out_p, z_g)
+                        n_zg += 1
+                    except Exception:
+                        n_zg_skip += 1
+
+                elapsed = time.time() - t0_zg
+                print(f"z_g extraction complete in {elapsed:.0f}s. Extracted {n_zg}, skipped {n_zg_skip}.")
+    else:
+        print(f"All {status_filter} images with pose already have z_g data.")
+
     # 2. Check for missing AuraFace data
     missing_auraface = []
     for p in paths:
