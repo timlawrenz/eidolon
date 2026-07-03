@@ -19,7 +19,10 @@ from geometry_pca.constants import FACE_SLICE
 FFHQ_ROOT = Path("/mnt/nas-ai-models/training-data/ffhq")
 HEGRE_ROOT = Path("/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1")
 
-PROD_ENCODER_PATH = Path("/home/tim/source/activity/eidolon/experiments/geometry_pca/output/encoder_production.npz")
+# Default encoder path: relative to project root if not overridden
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent.parent  # eidolon/
+PROD_ENCODER_PATH = _PROJECT_ROOT / "experiments" / "geometry_pca" / "output" / "encoder_production.npz"
 
 
 def load_production_encoder():
