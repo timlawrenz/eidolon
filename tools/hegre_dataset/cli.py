@@ -116,7 +116,30 @@ def cmd_review_compute_lda(args):
     dataset = Path(args.dataset)
     db_path = dataset / "review.db"
     persona = getattr(args, "persona", None)
-    return compute_lda_vectors(db_path, dataset, persona=persona)
+    overwrite = getattr(args, "overwrite", False)
+    return compute_lda_vectors(db_path, dataset, persona=persona, overwrite=overwrite)
+
+
+def cmd_review_fit_lda_basis(args):
+    """Fit auraface_preprocess.npz and auraface_lda.npz from FFHQ + Hegre."""
+    from .review.fit_lda_basis import fit_all
+    dataset = Path(args.dataset)
+    ffhq_root = Path(args.ffhq_root)
+    if args.output is None:
+        output = Path(__file__).resolve().parent.parent.parent / "experiments" / "geometry_pca" / "output"
+    else:
+        output = Path(args.output)
+    return fit_all(
+        ffhq_root=ffhq_root,
+        dataset_root=dataset,
+        output_dir=output,
+        n_components=args.n_components,
+        heldout_frac=args.heldout_frac,
+        seed=args.seed,
+        max_ffhq=args.max_ffhq,
+        max_hegre_per_persona=args.max_hegre_per_persona,
+        overwrite=args.overwrite,
+    )
 
 
 def cmd_build_corpus(args):
@@ -178,7 +201,23 @@ def main(args=None):
     p_lda = rsub.add_parser("compute-lda", help="Compute AuraFace-LDA vectors (clean + project to identity basis)")
     p_lda.add_argument("--dataset", required=True)
     p_lda.add_argument("--persona", type=str, help="Optional persona name to limit computation")
+    p_lda.add_argument("--overwrite", action="store_true", help="Recompute averages even if file exists")
     p_lda.set_defaults(func=cmd_review_compute_lda)
+
+    p_fit = rsub.add_parser("fit-lda-basis", help="Fit auraface_preprocess.npz + auraface_lda.npz from FFHQ + Hegre")
+    p_fit.add_argument("--dataset", required=True, help="Path to hegre-faces/v1 dataset")
+    p_fit.add_argument("--ffhq-root", default="/mnt/nas-ai-models/training-data/ffhq",
+                       help="FFHQ root directory (default: /mnt/nas-ai-models/training-data/ffhq)")
+    p_fit.add_argument("--output", default=None,
+                       help="Output directory for .npz files (default: experiments/geometry_pca/output/)")
+    p_fit.add_argument("--n-components", type=int, default=64, help="LDA output dimensions (default: 64)")
+    p_fit.add_argument("--heldout-frac", type=float, default=0.20, help="Fraction of personas held out (default: 0.20)")
+    p_fit.add_argument("--seed", type=int, default=42, help="Random seed for persona split (default: 42)")
+    p_fit.add_argument("--max-ffhq", type=int, default=None, help="Cap on FFHQ images (for testing)")
+    p_fit.add_argument("--max-hegre-per-persona", type=int, default=None,
+                       help="Cap on Hegre images per persona (for testing)")
+    p_fit.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
+    p_fit.set_defaults(func=cmd_review_fit_lda_basis)
 
     p_corpus = sub.add_parser("build-corpus", help="Build stratum-style training corpus with pixel + identity + geometry")
     p_corpus.add_argument("--dataset", required=True, help="Path to hegre-faces/v1 dataset")

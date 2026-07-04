@@ -386,7 +386,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
     return 0
 
 
-def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None = None) -> int:
+def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None = None, overwrite: bool = False) -> int:
     """Compute per-persona AuraFace-LDA identity averages.
 
     Loads per-image LDA vectors from lda/ (produced by enrich), computes
@@ -432,7 +432,7 @@ def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None =
         pid, pname = p["id"], p["name"]
 
         avg_path = avg_dir / f"{pname}.lda.npy"
-        if avg_path.exists():
+        if avg_path.exists() and not overwrite:
             avg_skipped += 1
             continue
 
