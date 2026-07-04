@@ -2,7 +2,7 @@
 import numpy as np
 from pathlib import Path
 
-from tools.hegre_dataset.dataset import Artifact
+from tools.hegre_dataset.dataset import Artifact, Persona
 
 
 class TestArtifact:
@@ -54,3 +54,25 @@ class TestArtifact:
         loaded = np.load(str(a.path))
         np.testing.assert_array_equal(loaded, data)
         assert not isinstance(loaded, Artifact)
+
+
+class TestPersona:
+    def test_persona_from_row(self):
+        """Persona constructed from DB row has id and name."""
+        p = Persona(id=7, name="anna-l")
+        assert p.id == 7
+        assert p.name == "anna-l"
+        assert repr(p) == "Persona(id=7, name='anna-l')"
+
+    def test_persona_equality(self):
+        """Two Personas with same id are equal."""
+        p1 = Persona(id=7, name="anna-l")
+        p2 = Persona(id=7, name="Anna")
+        assert p1 == p2
+
+    def test_persona_hash(self):
+        """Personas hash by id."""
+        p1 = Persona(id=7, name="anna-l")
+        p2 = Persona(id=7, name="other")
+        assert hash(p1) == hash(p2)
+        assert len({p1, p2}) == 1  # set dedup

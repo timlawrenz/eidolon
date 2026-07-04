@@ -24,3 +24,22 @@ class Artifact(np.ndarray):
         if obj is None:
             return
         self.path = getattr(obj, "path", None)
+
+
+class Persona:
+    """A persona (identity) in the Hegre dataset."""
+
+    def __init__(self, *, id: int, name: str):
+        self.id = id
+        self.name = name
+
+    def __repr__(self):
+        return f"Persona(id={self.id}, name={self.name!r})"
+
+    def __eq__(self, other):
+        if not isinstance(other, Persona):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self):
+        return hash(self.id)
