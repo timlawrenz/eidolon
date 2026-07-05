@@ -230,7 +230,7 @@ def main(args=None):
 
     p_enrich = sub.add_parser("enrich")
     p_enrich.add_argument("--dataset", required=True)
-    p_enrich.add_argument("--passes", default="pose,seg,depth,normal,caption,t5,pixel", help="Comma-separated passes for Stratum")
+    p_enrich.add_argument("--passes", default="pose,caption,t5,pixel", help="Comma-separated passes for Stratum")
     p_enrich.add_argument("--skip-stratum", action="store_true", help="Skip Stratum entirely, only extract missing AuraFace embeddings")
     p_enrich.add_argument("--status", choices=["approved", "unreviewed", "both"], default="both",
                           help="Which images to enrich: approved, unreviewed, or both (default: both)")
