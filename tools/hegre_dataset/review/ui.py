@@ -23,6 +23,8 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template_string, request, send_file
 from PIL import Image, ImageDraw
 
+from ..dataset import HegreDataset
+
 # ── Subprocess dedup: track active geometry compute jobs per persona ──
 _active_geometry_jobs: dict[int, subprocess.Popen] = {}
 _jobs_lock = threading.Lock()
@@ -59,15 +61,15 @@ def _maybe_spawn_geometry_compute(
         return proc
 
 
-def get_db(db_path: Path) -> sqlite3.Connection:
-    db = sqlite3.connect(str(db_path))
-    db.row_factory = sqlite3.Row
-    return db
-
-
 def create_app(db_path: Path, faces_root: Path) -> Flask:
-    """Create the Flask application."""
+    """Create the Flask application.
+
+    Args:
+        db_path: Path to review.db (unused — HegreDataset auto-discovers it from faces_root).
+        faces_root: Dataset root directory.
+    """
     faces_root = faces_root.resolve()
+    ds = HegreDataset(faces_root)
     app = Flask(__name__)
     
     _thumb_cache = {}
@@ -86,12 +88,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         
         if draw_skel:
             p = Path(image_path_rel)
-            
-            # Use the explicit persona_name from the DB to build the stratum path
-            # The persona_name might have a _cluster_ suffix from DBSCAN, which isn't in the image_path!
             base_pname = persona_name.split("_cluster_")[0]
-            
-            stratum_dir = faces_root / "stratum" / base_pname
+            stratum_dir = ds.stratum_dir / base_pname
             pose_path = None
             if stratum_dir.exists():
                 for pth in stratum_dir.rglob(f"{p.stem}/pose.npy"):
@@ -151,7 +149,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
     def api_pixel(persona_name):
         try:
             base_pname = persona_name.split("_cluster_")[0]
-            pixel_path = faces_root / "stratum" / base_pname / f"pixel_{persona_name}.jpg"
+            pixel_path = ds.stratum_dir / base_pname / f"pixel_{persona_name}.jpg"
             if pixel_path.exists():
                 return send_file(str(pixel_path), mimetype="image/jpeg")
             return "File not found at " + str(pixel_path), 404
@@ -164,7 +162,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
     def api_ghost(persona_name):
         try:
             base_pname = persona_name.split("_cluster_")[0]
-            ghost_path = faces_root / "stratum" / base_pname / f"ghost_{persona_name}.png"
+            ghost_path = ds.stratum_dir / base_pname / f"ghost_{persona_name}.png"
             if ghost_path.exists():
                 return send_file(str(ghost_path), mimetype="image/png")
             return "File not found at " + str(ghost_path), 404
@@ -177,7 +175,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
     def api_3d(persona_name):
         try:
             base_pname = persona_name.split("_cluster_")[0]
-            gif_path = faces_root / "stratum" / base_pname / f"3d_{persona_name}.gif"
+            gif_path = ds.stratum_dir / base_pname / f"3d_{persona_name}.gif"
             if gif_path.exists():
                 return send_file(str(gif_path), mimetype="image/gif")
             return "File not found at " + str(gif_path), 404
@@ -193,12 +191,9 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         cache_key = f"{image_id}_{draw_skel}"
         
         if cache_key not in _thumb_cache:
-            db = get_db(db_path)
-            row = db.execute(
+            row = ds.db.execute(
                 "SELECT i.image_path, p.name FROM images i JOIN personas p ON i.persona_id = p.id WHERE i.id = ?", (image_id,)
             ).fetchone()
-            db.close()
-            
             if not row:
                 return "", 404
             _thumb_cache[cache_key] = _load_thumb(row["image_path"], row["name"], draw_skel=draw_skel)
@@ -211,31 +206,27 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         mode = request.args.get("mode", "unreviewed")
         force_persona = request.args.get("persona", None)
         status_filter = "approved" if mode in ["review", "audit"] else "unreviewed"
-        db = get_db(db_path)
         
         if force_persona:
-            row = db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? AND p.name = ? GROUP BY p.id LIMIT 1", (status_filter, force_persona)).fetchone()
+            row = ds.db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? AND p.name = ? GROUP BY p.id LIMIT 1", (status_filter, force_persona)).fetchone()
         else:
-            row = db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? GROUP BY p.id ORDER BY RANDOM() LIMIT 1", (status_filter,)).fetchone()
+            row = ds.db.execute(f"SELECT p.id, p.name FROM personas p JOIN images i ON i.persona_id = p.id WHERE i.status = ? GROUP BY p.id ORDER BY RANDOM() LIMIT 1", (status_filter,)).fetchone()
         
         if not row:
             msg = "ALL REVIEWED" if mode in ["review", "audit"] else "ALL DONE"
-            db.close()
             return jsonify({"persona_id": None, "persona_name": msg, "image_ids": [], "mode": mode})
             
         pid, pname = row["id"], row["name"]
         
         # Check for reference images
-        # We only want references that exist, have a valid distance, and are NOT rejected
-        refs = db.execute("SELECT id, status FROM images WHERE persona_id = ? AND status IN ('unreviewed', 'approved') AND zg_distance IS NOT NULL ORDER BY CAST(zg_distance AS REAL) ASC LIMIT 3", (pid,)).fetchall()
+        refs = ds.db.execute("SELECT id, status FROM images WHERE persona_id = ? AND status IN ('unreviewed', 'approved') AND zg_distance IS NOT NULL ORDER BY CAST(zg_distance AS REAL) ASC LIMIT 3", (pid,)).fetchall()
         reference_ids = [r["id"] for r in refs]
         approved_ref_ids = set(r["id"] for r in refs if r["status"] == "approved")
         
-        total_for_persona = db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
+        total_for_persona = ds.db.execute("SELECT COUNT(*) FROM images WHERE persona_id = ? AND status = ?", (pid, status_filter)).fetchone()[0]
         
-        # Determine sorting strategy - prefer af_distance, fall back to zg_distance
-        has_af = db.execute("SELECT COUNT(af_distance) FROM images WHERE persona_id = ? AND af_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
-        has_zg = db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
+        has_af = ds.db.execute("SELECT COUNT(af_distance) FROM images WHERE persona_id = ? AND af_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
+        has_zg = ds.db.execute("SELECT COUNT(zg_distance) FROM images WHERE persona_id = ? AND zg_distance IS NOT NULL", (pid,)).fetchone()[0] > 0
 
         if mode == "audit":
             # Audit: pick approved images with the highest af distance
@@ -268,18 +259,16 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             else:
                 dist_col = None
 
-        all_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
+        all_imgs = ds.db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? {order_clause}", (pid, status_filter)).fetchall()
 
         # Mix in best images only if unreviewed (to prevent drift)
         if mode == "unreviewed":
             if dist_col:
-                best_imgs = db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY CAST({dist_col} AS REAL) ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
+                best_imgs = ds.db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY CAST({dist_col} AS REAL) ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
             else:
                 best_imgs = []
         else:
             best_imgs = []
-
-        db.close()
 
         combined_ids = []
         for r in best_imgs:
@@ -336,7 +325,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         tainted = data.get("tainted", {})
         mode = data.get("mode", "unreviewed")
         shown_ids = data.get("shown_ids", [])
-        db = get_db(db_path)
+        db = ds.db_writable
         
         for img_id_str, reason in tainted.items():
             db.execute("UPDATE images SET status = ?, reviewed_at = datetime('now') WHERE id = ?", (reason, int(img_id_str)))
@@ -350,9 +339,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         db.commit()
         status_filter = "approved" if mode in ["review", "audit"] else "unreviewed"
         remaining = db.execute("SELECT COUNT(*) FROM images WHERE status = ?", (status_filter,)).fetchone()[0]
-        db.close()
         
-        # Fire off a background process to recalculate the centroid for JUST this persona.
+        # Fire off a background process
         # Dedup: skip if one is already running for this persona.
         encoder_path = Path(__file__).parent.parent.parent.parent / "experiments/geometry_pca/output/encoder_production.npz"
         _maybe_spawn_geometry_compute(int(pid), faces_root, encoder_path)
