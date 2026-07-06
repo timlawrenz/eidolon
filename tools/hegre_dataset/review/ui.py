@@ -529,6 +529,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             else{
                 tainted[id]=brush;
                 el.className = 'image-card group relative aspect-square bg-zinc-900 border-2 rounded cursor-pointer overflow-hidden transition-colors focus:outline-none tainted-' + brush.replace('tainted:extraction_nonface','nonface').replace('tainted:','');
+            }
+        }
 
         async function donePersona(){
             const t=Object.keys(tainted).length;
