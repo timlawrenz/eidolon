@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from geometry_pca.zg_inference import encode_zg
 from geometry_pca.fit import load_encoder
+from ..dataset import HegreDataset, Photo
 try:
     from tools.hegre_dataset.review.procrustes import generate_pixel_average
     from tools.hegre_dataset.review.flame_projector import extract_canonical_shape, generate_textured_mesh, render_spin_gif
@@ -48,27 +49,25 @@ def normalize_face_geometry(face_2d):
 def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None = None) -> int:
     """Compute AuraFace cosine distances from the approved-image centroid for each persona.
 
-    Loads deterministic AuraFace .npy files from auraface/faces/<persona>/<set>/<img>.npy,
-    computes the centroid of all valid (unreviewed + approved) embeddings, and stores
-    the cosine distance (1 - cosine_similarity) as af_distance in the images table.
+    Loads AuraFace .npy files via HegreDataset.Photo, computes the centroid of
+    all approved embeddings, and stores cosine distance in the images table.
 
     Args:
-        db_path: Path to review.db.
+        db_path: Path to review.db (unused — HegreDataset auto-discovers from dataset_root).
         dataset_root: Dataset root containing auraface/ subdirectory.
         persona: Optional persona name or ID to limit computation.
 
     Returns:
         0 on success, 1 on error.
     """
+    ds = HegreDataset(dataset_root)
     auraface_dir = dataset_root / "auraface"
     if not auraface_dir.exists():
         print(f"AuraFace directory not found: {auraface_dir}")
         print("Run 'enrich' first to extract AuraFace embeddings.")
         return 1
 
-    db = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
+    db = ds.db_writable
 
     # Ensure af_distance column exists
     try:
@@ -108,11 +107,10 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
         # Approved embeddings → centroid
         approved_embeddings = []
         for img in approved_images:
-            rel_path = Path(img["image_path"])
-            af_path = auraface_dir / rel_path.with_suffix(".npy")
-            if af_path.exists():
+            photo = Photo(persona_name=pname, image_path=img["image_path"], dataset_root=dataset_root)
+            if photo.has_auraface:
                 try:
-                    emb = np.load(af_path)
+                    emb = photo.auraface
                     if emb.ndim == 1:
                         approved_embeddings.append(emb)
                 except Exception:
@@ -129,11 +127,10 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
         all_embeddings = []
         all_img_ids = []
         for img in all_images:
-            rel_path = Path(img["image_path"])
-            af_path = auraface_dir / rel_path.with_suffix(".npy")
-            if af_path.exists():
+            photo = Photo(persona_name=pname, image_path=img["image_path"], dataset_root=dataset_root)
+            if photo.has_auraface:
                 try:
-                    emb = np.load(af_path)
+                    emb = photo.auraface
                     if emb.ndim == 1:
                         all_embeddings.append(emb)
                         all_img_ids.append(img["id"])
@@ -159,15 +156,13 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
         else:
             print(f"[{pname}] Skipped (no valid AuraFace .npy files found)")
 
-    db.close()
     print(f"\nDone. Updated af_distance for {total_updated} total images.")
     return 0
 
 
 def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, persona: str | None = None, skip_3d: bool = False, metric: str = "both", zg_max_distance: float = 100.0):
-    db = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
+    ds = HegreDataset(stratum_dir.parent)
+    db = ds.db_writable
     
     # 1. Add zg_distance column if it doesn't exist
     try:
@@ -228,7 +223,6 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
         bad_geo_ids = []
         image_paths = []
         face_2ds = []
-        dataset_root = stratum_dir.parent
         
         for img in images:
             # We know the specific subdirectory structure Stratum uses!
@@ -259,7 +253,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                     
                     if img["status"] == "approved":
                         approved_vectors.append(zg)
-                        image_paths.append(dataset_root / img["image_path"])
+                        image_paths.append(ds.root / img["image_path"])
                         face_2ds.append(face_2d)
                         
                     total_images_processed += 1
@@ -340,7 +334,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                 print(f"  -> Generating 3D FLAME Mesh for {pname}...")
                 try:
                     # Phase 1: Extract mean skull geometry from DB via SMIRK
-                    avg_shape = extract_canonical_shape(db_path, dataset_root, pname)
+                    avg_shape = extract_canonical_shape(db_path, ds.root, pname)
                     
                     # Phase 2: Project Pixel Average onto 3D mesh
                     pixel_path = stratum_dir / base_pname / f"pixel_{pname}.jpg"
@@ -380,8 +374,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             print(f"Skipped {pname} (poses found but no approved images for centroid)")
         else:
             print(f"Skipped {pname} (No valid pose.npy files found)")
-            
-    db.close()
+
     print(f"\nDone. Updated zg_distance for {total_updated} total images.")
     return 0
 
@@ -407,19 +400,16 @@ def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None =
     """
     import time
 
-    lda_dir = dataset_root / "lda"
+    ds = HegreDataset(dataset_root)
     avg_dir = dataset_root / "averages"
-
-    db = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
-    db.row_factory = sqlite3.Row
 
     if persona is not None:
         if str(persona).isdigit():
-            personas = db.execute("SELECT id, name FROM personas WHERE id = ?", (int(persona),)).fetchall()
+            personas = ds.db.execute("SELECT id, name FROM personas WHERE id = ?", (int(persona),)).fetchall()
         else:
-            personas = db.execute("SELECT id, name FROM personas WHERE name = ?", (persona,)).fetchall()
+            personas = ds.db.execute("SELECT id, name FROM personas WHERE name = ?", (persona,)).fetchall()
     else:
-        personas = db.execute("SELECT id, name FROM personas").fetchall()
+        personas = ds.db.execute("SELECT id, name FROM personas").fetchall()
 
     avg_new = 0
     avg_skipped = 0
@@ -436,16 +426,16 @@ def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None =
             avg_skipped += 1
             continue
 
-        approved = db.execute(
+        approved = ds.db.execute(
             "SELECT image_path FROM images WHERE persona_id = ? AND status = 'approved'",
             (pid,)
         ).fetchall()
 
         lda_vectors = []
         for img in approved:
-            lda_p = lda_dir / img["image_path"].replace('.jpg', '.npy')
-            if lda_p.exists():
-                lda_vectors.append(np.load(lda_p))
+            photo = Photo(persona_name=pname, image_path=img["image_path"], dataset_root=dataset_root)
+            if photo.has_lda:
+                lda_vectors.append(photo.lda)
 
         if lda_vectors:
             avg_vec = np.mean(np.stack(lda_vectors), axis=0)
@@ -456,7 +446,6 @@ def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None =
         else:
             total_no_lda += 1
 
-    db.close()
     elapsed = time.time() - t0
     print(f"\nPer-persona averaging complete in {elapsed/60:.1f}m")
     print(f"  New averages:     {avg_new}")
