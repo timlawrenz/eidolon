@@ -373,7 +373,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
     </main>
 
     <script>
-        let personaId=null, brush='tainted:extraction_nonface', tainted={}, mode='unreviewed', shownIds=[], showSkel=false;
+let personaId=null, brush='tainted:extraction_nonface', tainted={}, mode='unreviewed', shownIds=[], showSkel=false;
         const urlParams = new URLSearchParams(window.location.search);
         const forcePersona = urlParams.get('persona');
 
@@ -386,6 +386,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 document.querySelectorAll('img').forEach(img => {
                     if(!img.src.includes('skel=1')) img.src = img.src + (img.src.includes('?') ? '&' : '?') + 'skel=1';
                 });
+            }
             if (e.key === '1') setBrush('tainted:extraction_nonface');
             if (e.key === '2') setBrush('tainted:contamination');
             if (e.key === '3') setBrush('tainted:unusable');
@@ -399,6 +400,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 document.querySelectorAll('img').forEach(img => {
                     img.src = img.src.replace(/[\\?&]skel=1/, '');
                 });
+            }
         });
 
         function toggleSkel() {
@@ -413,6 +415,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 document.querySelectorAll('img').forEach(img => {
                     img.src = img.src.replace(/[\\?&]skel=1/, '');
                 });
+            }
+        }
 
         function switchMode(m) {
             mode = m;
@@ -423,8 +427,11 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                         btn.className = "px-2 py-1 bg-zinc-700 rounded text-zinc-100 font-bold transition-colors";
                     } else {
                         btn.className = "px-2 py-1 bg-zinc-800 rounded hover:bg-zinc-700 text-zinc-300 transition-colors";
+                    }
+                }
             });
             loadPersona();
+        }
 
         function setBrush(b){
             brush=b;
@@ -433,6 +440,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             if(b==='tainted:contamination')document.getElementById('btn_contam').classList.add('brush-active');
             if(b==='tainted:unusable')document.getElementById('btn_unusable').classList.add('brush-active');
             if(b==='tainted:approved_bad_geometry')document.getElementById('btn_badgeom').classList.add('brush-active');
+        }
 
         let g_data = null;
         async function loadPersona(){
@@ -447,12 +455,14 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             let nameHtml = `<a href="/?persona=${encodeURIComponent(data.persona_name)}" class="hover:text-emerald-300 hover:underline transition-colors" title="Lock to this persona">${data.persona_name}</a>`;
             if (forcePersona) {
                 nameHtml += ` <a href="/" class="text-zinc-500 hover:text-rose-400 text-[10px] ml-2 no-underline" title="Unlock persona">[Unlock]</a>`;
+            }
             document.getElementById('persona_name').innerHTML = nameHtml;
             const n=data.unreviewed_ids.length;
             document.getElementById('status').innerText=`Mode: ${mode.toUpperCase()} | Total: ${data.total_for_persona} | Unreviewed: ${n}`;
             tainted={};
             renderReferences(data.reference_ids);
             renderGrid(data.image_ids,data.statuses,data.labels,data.distances);
+        }
 
         function renderReferences(ids) {
             const container = document.getElementById('reference-anchors');
@@ -512,6 +522,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 if (dist !== null && dist !== undefined) {
                     const metricLabel = (g_data && g_data.distance_metric === 'af_distance') ? 'af' : 'zg';
                     distHtml = `<span class="bg-zinc-950/80 backdrop-blur text-[10px] px-1.5 py-0.5 rounded border border-zinc-800 text-rose-300">${metricLabel}: ${parseFloat(dist).toFixed(4)}</span>`;
+                }
 
                 wrapper.innerHTML = `
                     <img src="/api/thumb/${id}${showSkel ? "?skel=1" : ""}" class="w-full h-full object-cover transition-opacity" loading="lazy" draggable="false" />
@@ -520,12 +531,15 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                     </div>
                 `;
                 grid.appendChild(wrapper);
+            }
+        }
 
         function toggleTaint(el,id, defaultStatus){
             if(tainted[id]){
                 delete tainted[id];
                 el.className = 'image-card group relative aspect-square bg-zinc-900 border-2 rounded cursor-pointer overflow-hidden transition-colors focus:outline-none ' + 
                                ((mode==='review'||mode==='audit') ? 'approved' : 'unreviewed');
+            }
             else{
                 tainted[id]=brush;
                 el.className = 'image-card group relative aspect-square bg-zinc-900 border-2 rounded cursor-pointer overflow-hidden transition-colors focus:outline-none tainted-' + brush.replace('tainted:extraction_nonface','nonface').replace('tainted:','');
@@ -538,6 +552,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             const data=await resp.json();
             document.getElementById('status').innerText='Saved. '+data.remaining+' remaining. Loading next...';
             setTimeout(loadPersona,400);
+        }
         loadPersona();
     </script>
 </body>
