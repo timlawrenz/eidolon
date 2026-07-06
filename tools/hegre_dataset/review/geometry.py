@@ -310,7 +310,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                 print(f"  -> Generating 3D FLAME Mesh for {pname}...")
                 try:
                     # Phase 1: Extract mean skull geometry from DB via SMIRK
-                    avg_shape = extract_canonical_shape(db_path, ds.root, pname)
+                    avg_shape = extract_canonical_shape(ds, pname)
                     
                     # Phase 2: Project Pixel Average onto 3D mesh
                     pixel_path = stratum_dir / base_pname / f"pixel_{pname}.jpg"

@@ -168,16 +168,14 @@ def test_extract_canonical_shape_reuses_cached_model(mock_db, tmp_path):
                            return_value=np.zeros((300, 300, 3), dtype=np.uint8)):
 
                     extract_canonical_shape(
-                        db_path=mock_db,
-                        dataset_root=tmp_path,
+                        ds=mock_ds,
                         persona_name="anna"
                     )
 
                     first_count = call_count["count"]
 
                     extract_canonical_shape(
-                        db_path=mock_db,
-                        dataset_root=tmp_path,
+                        ds=mock_ds,
                         persona_name="anna"
                     )
 
@@ -220,8 +218,7 @@ def test_extract_canonical_shape_averages_correctly(mock_db, tmp_path):
                            return_value=np.zeros((300, 300, 3), dtype=np.uint8)):
 
                     avg_shape = extract_canonical_shape(
-                        db_path=mock_db,
-                        dataset_root=tmp_path,
+                        ds=mock_ds,
                         persona_name="anna"
                     )
 

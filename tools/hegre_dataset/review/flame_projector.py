@@ -158,22 +158,17 @@ def crop_for_smirk(img: np.ndarray, face_2d: np.ndarray, target_size: int = 224)
     crop = np.transpose(crop, (2, 0, 1))
     return torch.from_numpy(crop).unsqueeze(0)
 
-def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str) -> np.ndarray:
+def extract_canonical_shape(ds: "HegreDataset", persona_name: str) -> np.ndarray:
     """
     Extracts the average 300-d FLAME shape (beta) parameter for a persona using SMIRK.
     """
-    db = sqlite3.connect(str(db_path))
-    db.row_factory = sqlite3.Row
-    c = db.cursor()
-    
-    c.execute('''
-        SELECT i.image_path, p.name 
-        FROM images i JOIN personas p ON i.persona_id = p.id
-        WHERE p.name = ? AND i.status = 'approved'
-    ''', (persona_name,))
-    
-    rows = c.fetchall()
-    db.close()
+    from ..dataset import HegreDataset
+    rows = ds.db.execute(
+        "SELECT i.image_path, p.name "
+        "FROM images i JOIN personas p ON i.persona_id = p.id "
+        "WHERE p.name = ? AND i.status = 'approved'",
+        (persona_name,)
+    ).fetchall()
     
     if not rows:
         raise ValueError(f"No approved images found for {persona_name}")
@@ -181,19 +176,19 @@ def extract_canonical_shape(db_path: Path, dataset_root: Path, persona_name: str
     print(f"  extract_canonical_shape: {len(rows)} approved images for '{persona_name}'")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    checkpoint_path = dataset_root.parent.parent.parent / "experiments/flame_spike/smirk/pretrained_models/SMIRK_em1.pt"
+    checkpoint_path = ds.root.parent.parent.parent / "experiments/flame_spike/smirk/pretrained_models/SMIRK_em1.pt"
     model = get_smirk_model(checkpoint_path, str(device))
     
     shapes = []
     skipped = 0
     
-    stratum_root = dataset_root / "stratum"
+    stratum_root = ds.root / "stratum"
     base_pname = persona_name.split("_cluster_")[0]
     persona_dir = stratum_root / base_pname
     
     with torch.no_grad():
         for row in rows:
-            img_path = dataset_root / row["image_path"]
+            img_path = ds.root / row["image_path"]
             img_stem = Path(row["image_path"]).stem
             
             # Use rglob to find pose.npy regardless of faces/ prefix variation
