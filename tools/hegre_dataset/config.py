@@ -66,4 +66,7 @@ def database_url(env: str | None = None) -> str:
         )
 
     db = cfg[env]
-    return f"postgresql+psycopg2://{db['user']}@{db['host']}/{db['dbname']}"
+    user = db["user"]
+    password = db.get("password", "")
+    auth = f"{user}:{password}@" if password else f"{user}@"
+    return f"postgresql+psycopg2://{auth}{db['host']}/{db['dbname']}"

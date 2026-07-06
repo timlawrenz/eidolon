@@ -5,8 +5,9 @@
 # Test environment uses a separate database to avoid clobbering live data.
 
 default: &default
-  host: localhost
+  host: 192.168.86.49
   user: tim
+  password: c5mpk9
   dbname: eidolon
   pool_size: 5
   max_overflow: 10
