@@ -36,19 +36,14 @@ def generate_image_list(dataset: HegreDataset, status_filter: str = "both",
 
     # Add zg_distance filter for approved images
     if zg_max_distance is not None:
-        # Check if zg_distance column exists
-        col_exists = db.execute(
-            "SELECT 1 FROM pragma_table_info('images') WHERE name = 'zg_distance'"
-        ).fetchone() is not None
-        if col_exists:
-            if status_filter == "approved":
-                where += " AND (zg_distance IS NULL OR zg_distance <= ?)"
-                params.append(zg_max_distance)
-            elif status_filter == "both":
-                where += (" AND (status = 'unreviewed' OR zg_distance IS NULL "
-                          "OR (status = 'approved' AND zg_distance <= ?))")
-                params.append(zg_max_distance)
-            # unreviewed: no filter
+        if status_filter == "approved":
+            where += " AND (zg_distance IS NULL OR zg_distance <= ?)"
+            params.append(zg_max_distance)
+        elif status_filter == "both":
+            where += (" AND (status = 'unreviewed' OR zg_distance IS NULL "
+                      "OR (status = 'approved' AND zg_distance <= ?))")
+            params.append(zg_max_distance)
+        # unreviewed: no filter
 
     # Build ORDER BY clause
     order = ""
