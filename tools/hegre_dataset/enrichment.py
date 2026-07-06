@@ -4,18 +4,16 @@ import time
 from pathlib import Path
 import cv2
 import numpy as np
-from .review.schema import get_db
 
-import sqlite3
+from .dataset import HegreDataset
 
-def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "both",
+def generate_image_list(dataset: HegreDataset, status_filter: str = "both",
                          zg_max_distance: float | None = None,
                          sort_by: str | None = None) -> list:
     """Query DB for images matching the status filter and return their absolute paths.
 
     Args:
-        db_path: Path to review.db.
-        faces_dir: Root directory for face images.
+        dataset: HegreDataset instance (provides DB connection and root path).
         status_filter: 'approved', 'unreviewed', or 'both' (default: 'both').
         zg_max_distance: If set, exclude approved images with zg_distance above this
             threshold. Images with NULL zg_distance (not yet computed) are always
@@ -24,8 +22,7 @@ def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "bo
             'zg' to sort by zg_distance ASC then af_distance ASC;
             None for no ordering (default).
     """
-    db = sqlite3.connect(f"file:{db_path}?mode=ro&nolock=1", uri=True)
-    db.row_factory = sqlite3.Row
+    db = dataset.db
 
     # Build WHERE clause
     if status_filter == "approved":
@@ -61,11 +58,10 @@ def generate_image_list(db_path: Path, faces_dir: Path, status_filter: str = "bo
         order = "ORDER BY zg_distance ASC NULLS LAST, af_distance ASC NULLS LAST"
 
     rows = db.execute(f"SELECT image_path FROM images {where} {order}", params).fetchall()
-    db.close()
 
     paths = []
     for row in rows:
-        img_path = (faces_dir / row["image_path"]).absolute()
+        img_path = (dataset.root / row["image_path"]).absolute()
         paths.append(img_path)
     return paths
 
@@ -81,11 +77,12 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
         zg_max_distance: Exclude approved images with zg_distance above this threshold.
         sort_by: 'af' or 'zg' to sort by distance ascending; None for no ordering.
     """
-    stratum_out = dataset_dir / "stratum"
+    ds = HegreDataset(dataset_dir)
+    stratum_out = ds.stratum_dir
     auraface_out = dataset_dir / "auraface"
     list_file = dataset_dir / "stratum_approved_list.txt"
 
-    paths = generate_image_list(db_path, faces_dir, status_filter=status_filter,
+    paths = generate_image_list(ds, status_filter=status_filter,
                                 zg_max_distance=zg_max_distance, sort_by=sort_by)
     if not paths:
         filter_desc = f"zg<={zg_max_distance} " if zg_max_distance else ""
@@ -98,7 +95,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
         pass_list = passes.split(',')
         
         for p in paths:
-            rel_p = p.relative_to(faces_dir.absolute())
+            rel_p = p.relative_to(ds.root)
             base_dir = stratum_out.absolute() / rel_p.parent / rel_p.stem
             
             is_missing = False
@@ -123,7 +120,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
                     for p in missing_stratum:
                         f.write(p + "\n")
                 cmd = [
-                    "stratum", "process", str(faces_dir.absolute()),
+                    "stratum", "process", str(ds.root),
                     "--output", str(stratum_out.absolute()), "--passes", passes, "--device", "cpu", "--image-list", str(list_file.absolute())
                 ]
                 subprocess.run(cmd, check=True)
@@ -136,7 +133,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
     zg_dir = dataset_dir / "zg"
     missing_zg = []
     for p in paths:
-        rel_p = p.relative_to(faces_dir.absolute())
+        rel_p = p.relative_to(ds.root)
         zg_file = zg_dir.absolute() / rel_p.with_suffix(".npy")
         if not zg_file.exists():
             # Only extract if pose.npy exists (stratum pose pass ran)
@@ -175,7 +172,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
                         eta = (len(missing_zg) - i) / rate if rate > 0 else 0
                         print(f"  [{i}/{len(missing_zg)}] {rate:.1f} img/s, ETA: {eta/60:.0f}m", flush=True)
 
-                    rel_p = in_p.relative_to(faces_dir.absolute())
+                    rel_p = in_p.relative_to(ds.root)
                     pose_path = stratum_out.absolute() / rel_p.parent / rel_p.stem / "pose.npy"
                     try:
                         pose = np.load(pose_path)
@@ -204,7 +201,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
     # 2. Check for missing AuraFace data
     missing_auraface = []
     for p in paths:
-        rel_p = p.relative_to(faces_dir.absolute())
+        rel_p = p.relative_to(ds.root)
         # Store deterministically, keeping folder names and filenames intact
         auraface_file = auraface_out.absolute() / rel_p.with_suffix(".npy")
         if not auraface_file.exists():
@@ -295,7 +292,7 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
     lda_dir = dataset_dir / "lda"
     missing_lda = []
     for p in paths:
-        rel_p = p.relative_to(faces_dir.absolute())
+        rel_p = p.relative_to(ds.root)
         lda_file = lda_dir.absolute() / rel_p.with_suffix(".npy")
         if not lda_file.exists():
             af_file = auraface_out.absolute() / rel_p.with_suffix(".npy")
