@@ -225,15 +225,22 @@ class _CursorWrapper:
     """Wraps SQLAlchemy CursorResult to quack like sqlite3.Cursor.
 
     Returns Row objects that support both integer (row[0]) and
-    name-based (row["column"]) access.
+    name-based (row["column"]) access.  Handles non-returning
+    statements (UPDATE, INSERT, DELETE) gracefully.
     """
 
     def __init__(self, result):
         self._result = result
-        self._keys = list(result.keys())
-        self._rows = None
+        if result.returns_rows:
+            self._keys: list[str] = list(result.keys())
+            self._rows: list | None = None
+        else:
+            self._keys = []
+            self._rows = []  # no rows to fetch
 
     def fetchone(self):
+        if self._rows is not None and not self._rows and self._result.returns_rows:
+            return None
         if self._rows is None:
             self._rows = [_RowAdapter(r, self._keys) for r in self._result.all()]
         if self._rows:
@@ -241,6 +248,8 @@ class _CursorWrapper:
         return None
 
     def fetchall(self):
+        if self._rows is not None and not self._rows and self._result.returns_rows:
+            return []
         if self._rows is None:
             self._rows = [_RowAdapter(r, self._keys) for r in self._result.all()]
         rows = self._rows
