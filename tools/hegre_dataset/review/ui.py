@@ -13,7 +13,9 @@ without updating the matching constants in flame_projector.py
 (generate_pixel_average) will silently misalign textures.
 """
 import io
+import os
 import sqlite3
+import subprocess
 import sys
 import threading
 import numpy as np
@@ -24,45 +26,41 @@ from PIL import Image, ImageDraw
 
 from ..dataset import HegreDataset
 
-# ── Geometry compute dedup: track active jobs per persona ──
-_active_geometry_jobs: dict[int, bool] = {}
+# ── Subprocess dedup: track active geometry compute jobs per persona ──
+_active_geometry_jobs: dict[int, subprocess.Popen] = {}
 _jobs_lock = threading.Lock()
 
 
-def _maybe_run_geometry_compute(
+def _maybe_spawn_geometry_compute(
     persona_id: int,
-    ds: "HegreDataset",  # type: ignore — forward ref from create_app scope
+    faces_root: Path,
     encoder_path: Path,
-) -> bool:
-    """Run compute-geometry in-process unless one is already running.
+) -> subprocess.Popen | None:
+    """Spawn a geometry-compute subprocess unless one is already running.
 
-    Uses the UI's existing HegreDataset connection (no subprocess).
-    Returns True if compute was started, False if skipped (already running).
+    Sets EIDOLON_SKIP_REVIEWDB_GUARD=1 so the subprocess skips the
+    review.db existence check (it uses PostgreSQL via config).
+    Returns the Popen handle if spawned, None if skipped.
     """
     with _jobs_lock:
+        for pid, proc in list(_active_geometry_jobs.items()):
+            if proc.poll() is not None:
+                del _active_geometry_jobs[pid]
         if persona_id in _active_geometry_jobs:
-            return False
-        _active_geometry_jobs[persona_id] = True
+            return None
 
-    try:
-        from .geometry import compute_zg_distances, compute_af_distances
-        compute_zg_distances(
-            db_path=None,  # unused
-            stratum_dir=ds.stratum_dir,
-            encoder_path=str(encoder_path),
-            persona=str(persona_id),
-            skip_3d=False,
-            metric="both",
-        )
-        compute_af_distances(
-            db_path=None,  # unused
-            dataset_root=ds.root,
-            persona=str(persona_id),
-        )
-    finally:
-        with _jobs_lock:
-            _active_geometry_jobs.pop(persona_id, None)
-    return True
+        env = os.environ.copy()
+        env["EIDOLON_SKIP_REVIEWDB_GUARD"] = "1"
+        proc = subprocess.Popen([
+            sys.executable, "-m", "tools.hegre_dataset", "review", "compute-geometry",
+            "--dataset", str(faces_root),
+            "--encoder", str(encoder_path),
+            "--persona", str(persona_id),
+            "--metric", "both"
+        ], stdout=sys.stdout, stderr=sys.stderr, env=env)
+
+        _active_geometry_jobs[persona_id] = proc
+        return proc
 
 
 def create_app(db_path: Path, faces_root: Path) -> Flask:
@@ -347,7 +345,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         # Fire off a background process
         # Dedup: skip if one is already running for this persona.
         encoder_path = Path(__file__).parent.parent.parent.parent / "experiments/geometry_pca/output/encoder_production.npz"
-        _maybe_run_geometry_compute(int(pid), ds, encoder_path)
+        _maybe_spawn_geometry_compute(int(pid), faces_root, encoder_path)
         
         return jsonify({"remaining": remaining, "mode": mode})
 

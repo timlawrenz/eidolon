@@ -6,6 +6,8 @@ from typing import Union
 
 import numpy as np
 
+import os  # for EIDOLON_SKIP_REVIEWDB_GUARD check
+
 try:
     from sqlalchemy import create_engine, text as _sa_text
     HAS_SQLALCHEMY = True
@@ -302,8 +304,11 @@ class HegreDataset:
         self._db: _DBConnection | None = None
         self._personas: dict[str, Persona] | None = None
 
-        # Loud-failure guard: old SQLite file must be renamed before switching
-        if (self.root / "review.db").exists():
+        # Loud-failure guard: old SQLite file must be renamed before switching.
+        # Background subprocesses (spawned by the UI) can skip this via env var.
+        if (self.root / "review.db").exists() and not os.environ.get(
+            "EIDOLON_SKIP_REVIEWDB_GUARD"
+        ):
             raise RuntimeError(
                 "review.db still exists at dataset root. "
                 "This project now uses PostgreSQL. Rename review.db to "
