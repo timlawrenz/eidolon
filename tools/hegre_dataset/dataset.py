@@ -196,14 +196,28 @@ class HegreDataset:
         """Read-only connection to review.db with WAL mode enabled."""
         if self._db is None:
             db_path = self.root / "review.db"
-            self._db = sqlite3.connect(
-                f"file:{db_path}?mode=ro", uri=True, check_same_thread=False
-            )
-            self._db.row_factory = sqlite3.Row
-            try:
-                self._db.execute("PRAGMA journal_mode=WAL")
-            except sqlite3.OperationalError:
-                pass  # already WAL (set by writer) or read-only
+            # Try nolock=1 first (needed when the DB is held by another
+            # process like the Flask UI on NAS). Fall back to plain mode=ro
+            # on older SQLite versions that don't support nolock.
+            for uri in (f"file:{db_path}?mode=ro&nolock=1",
+                        f"file:{db_path}?mode=ro"):
+                try:
+                    conn = sqlite3.connect(
+                        uri, uri=True, check_same_thread=False
+                    )
+                    conn.row_factory = sqlite3.Row
+                    # nolock=1 can produce half-broken connections where
+                    # trivial queries pass but real table access fails.
+                    # Validate against a real table.
+                    conn.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' LIMIT 1"
+                    ).fetchone()
+                    self._db = conn
+                    return self._db
+                except sqlite3.OperationalError:
+                    continue
+            raise RuntimeError(f"Cannot open review.db at {db_path}")
         return self._db
 
     @property
