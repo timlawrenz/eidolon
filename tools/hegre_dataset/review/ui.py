@@ -472,18 +472,9 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 <span class="text-[10px] text-zinc-500 leading-tight">These crops are closest to the zg center.</span>
             </div>`;
             
-            // Render Ghost Average & Pixel Average
-            if (g_data && g_data.persona_name) {
-                container.innerHTML += `
-                <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="Ghost Average (Inverse PCA)">
-                    <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Ghost</div>
-                </div>
                 <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="Pixel Average (Procrustes Warping)">
                     <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Pixel</div>
                 </div>
-                <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="3D Volume (FLAME + Pixel Average)">
-                    <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Volume</div>
-                </div>`;
             }
 
             if (!ids || ids.length === 0) {
