@@ -197,7 +197,7 @@ class HegreDataset:
         if self._db is None:
             db_path = self.root / "review.db"
             self._db = sqlite3.connect(
-                f"file:{db_path}?mode=ro", uri=True
+                f"file:{db_path}?mode=ro", uri=True, check_same_thread=False
             )
             self._db.row_factory = sqlite3.Row
             try:
@@ -210,7 +210,7 @@ class HegreDataset:
     def db_writable(self) -> sqlite3.Connection:
         """Writable connection to review.db (for mutations like approve/taint)."""
         db_path = self.root / "review.db"
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         return conn

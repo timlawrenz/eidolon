@@ -351,3 +351,23 @@ class TestHegreDataset:
         """HegreDataset.stratum_dir returns the stratum output directory."""
         ds = HegreDataset(root=tmp_path)
         assert ds.stratum_dir == tmp_path / "stratum"
+
+    def test_db_cross_thread_access(self, tmp_path):
+        """ds.db can be used from a background thread (Flask threading)."""
+        import threading
+        _seed_tmp_db(tmp_path / "review.db")
+        ds = HegreDataset(root=tmp_path)
+        conn = ds.db  # created on main thread
+        errors = []
+
+        def query_from_thread():
+            try:
+                row = conn.execute("SELECT COUNT(*) FROM personas").fetchone()
+                assert row[0] == 1
+            except Exception as e:
+                errors.append(e)
+
+        t = threading.Thread(target=query_from_thread)
+        t.start()
+        t.join()
+        assert not errors, f"Cross-thread access failed: {errors}"
