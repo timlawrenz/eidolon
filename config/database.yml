@@ -1,0 +1,19 @@
+# PostgreSQL connection configuration for Hegre dataset.
+# Reads by tools.hegre_dataset.config.database_url().
+#
+# Environment is controlled by EIDOLON_ENV (default: development).
+# Test environment uses a separate database to avoid clobbering live data.
+
+default: &default
+  host: 192.168.86.49
+  user: tim
+  dbname: eidolon
+  pool_size: 5
+  max_overflow: 10
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+  dbname: eidolon_test

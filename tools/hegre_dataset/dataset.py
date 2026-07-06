@@ -1,19 +1,26 @@
 """HegreDataset — unified dataset access layer for hegre face data."""
-import sqlite3
 import functools
+import re
 from pathlib import Path
 from typing import Union
 
 import numpy as np
 
+try:
+    from sqlalchemy import create_engine, text as _sa_text
+    HAS_SQLALCHEMY = True
+except ImportError:
+    HAS_SQLALCHEMY = False
+
+    def _sa_text(sql):
+        raise ImportError(
+            "SQLAlchemy is required for database access. "
+            "Install with: pip install sqlalchemy"
+        )
+
 
 class Artifact(np.ndarray):
-    """A numpy array that remembers its source file path.
-
-    Subclasses np.ndarray so all numpy operations (mean, dot, slice, etc.)
-    work transparently.  The .path attribute carries the file this array was
-    loaded from (or will be saved to).
-    """
+    """A numpy array that remembers its source file path."""
 
     def __new__(cls, data: np.ndarray, path: Path):
         obj = data.view(cls)
@@ -45,14 +52,10 @@ class Persona:
     def __hash__(self):
         return hash(self.id)
 
-    # ── per-persona aggregates ──
-
     def lda_average_path(self, dataset_root: Path) -> Path:
-        """Path to this persona's LDA identity average."""
         return Path(dataset_root) / "averages" / f"{self.name}.lda.npy"
 
     def lda_average(self, dataset_root: Path) -> "Artifact":
-        """Load this persona's LDA identity average from disk."""
         path = self.lda_average_path(dataset_root)
         if not path.exists():
             raise FileNotFoundError(f"LDA average not found: {path}")
@@ -60,7 +63,6 @@ class Persona:
 
     @functools.cached_property
     def photos(self) -> list["Photo"]:
-        """All approved photos for this persona."""
         if self._dataset is None:
             raise RuntimeError("Persona is not bound to a dataset")
         rows = self._dataset.db.execute(
@@ -70,17 +72,13 @@ class Persona:
             (self.id,),
         ).fetchall()
         return [
-            Photo(
-                persona_name=self.name,
-                image_path=r["image_path"],
-                dataset_root=self._dataset.root,
-            )
+            Photo(persona_name=self.name, image_path=r["image_path"],
+                  dataset_root=self._dataset.root)
             for r in rows
         ]
 
     @property
     def photo_count(self) -> int:
-        """Number of approved photos for this persona."""
         if self._dataset is None:
             raise RuntimeError("Persona is not bound to a dataset")
         row = self._dataset.db.execute(
@@ -92,7 +90,6 @@ class Persona:
 
     @functools.cached_property
     def z_g_centroid(self) -> np.ndarray | None:
-        """Approved-image centroid of z_g vectors, or None if no z_g available."""
         vectors = []
         for photo in self.photos:
             if photo.has_z_g:
@@ -103,7 +100,6 @@ class Persona:
 
     @functools.cached_property
     def auraface_centroid(self) -> np.ndarray | None:
-        """Approved-image centroid of AuraFace vectors, or None if no auraface."""
         vectors = []
         for photo in self.photos:
             if photo.has_auraface:
@@ -122,11 +118,6 @@ class Photo:
         self.dataset_root = Path(dataset_root)
 
     def _artifact_path(self, prefix: str) -> Path:
-        """Construct path to an eidolon artifact .npy file.
-
-        Converts self.image_path (e.g. 'faces/p/shoot/img.jpg') to
-        '{prefix}/faces/p/shoot/img.npy'.
-        """
         rel = Path(self.image_path).with_suffix(".npy")
         return self.dataset_root / prefix / rel
 
@@ -156,10 +147,7 @@ class Photo:
 
     @property
     def is_complete(self) -> bool:
-        """All expected eidolon artifacts exist."""
         return self.has_auraface and self.has_z_g and self.has_lda
-
-    # ── lazy artifact loading ──
 
     @functools.cached_property
     def auraface(self) -> Artifact:
@@ -183,58 +171,134 @@ class Photo:
         return Artifact(np.load(path), path)
 
 
-class HegreDataset:
-    """Unified read-only access to a Hegre face dataset (v1 directory layout)."""
+# ═══════════════════════════════════════════════════════════════════════
+# DB connection adapter — makes SQLAlchemy quack like sqlite3.Connection
+# ═══════════════════════════════════════════════════════════════════════
 
-    def __init__(self, root: Path):
+_QMARK_RE = re.compile(r"\?")
+
+
+def _adapt_sql(sql: str, params: tuple | None = None) -> tuple:
+    """Convert sqlite3-style ? placeholders to SQLAlchemy :pN named params.
+
+    Returns (adapted_sql, adapted_params_dict).
+    """
+    if params is None:
+        return sql, None
+
+    if not isinstance(params, tuple):
+        params = (params,)
+
+    # Replace ? with :p0, :p1, ...
+    counter = 0
+    def _replace(_match):
+        nonlocal counter
+        name = f"p{counter}"
+        counter += 1
+        return f":{name}"
+
+    adapted_sql = _QMARK_RE.sub(_replace, sql)
+    adapted_params = {f"p{i}": v for i, v in enumerate(params)}
+    return adapted_sql, adapted_params
+
+
+class _CursorWrapper:
+    """Wraps SQLAlchemy CursorResult to quack like sqlite3.Cursor."""
+
+    def __init__(self, result):
+        self._result = result
+        self._rows = None
+
+    def fetchone(self):
+        if self._rows is None:
+            self._rows = list(self._result.mappings().all())
+        if self._rows:
+            return self._rows.pop(0)
+        return None
+
+    def fetchall(self):
+        if self._rows is None:
+            self._rows = list(self._result.mappings().all())
+        rows = self._rows
+        self._rows = []
+        return rows
+
+
+class _DBConnection:
+    """Wraps a SQLAlchemy Connection to quack like sqlite3.Connection.
+
+    Supports: execute(sql, params), executemany(sql, seq), commit(), close().
+    Row results are dict-like (support row["column"] access).
+    """
+
+    def __init__(self, engine):
+        self._conn = engine.connect()
+        self.row_factory = None  # accepted but ignored — SA Row is already dict-like
+
+    def execute(self, sql: str, params=None):
+        sql, params = _adapt_sql(sql, params)
+        result = self._conn.execute(_sa_text(sql), params or {})
+        return _CursorWrapper(result)
+
+    def executemany(self, sql: str, seq):
+        """Execute parameterized SQL for each tuple in seq."""
+        for params in seq:
+            adapted_sql, adapted_params = _adapt_sql(sql, params)
+            self._conn.execute(_sa_text(adapted_sql), adapted_params or {})
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HegreDataset
+# ═══════════════════════════════════════════════════════════════════════
+
+class HegreDataset:
+    """Unified database access for a Hegre face dataset.
+
+    Backed by PostgreSQL (via SQLAlchemy). Set EIDOLON_DB_URL in environment
+    or configure config/database.yml with the connection string.
+    """
+
+    def __init__(self, root: Path, *, engine=None):
         self.root = Path(root).resolve()
-        self._db: sqlite3.Connection | None = None
         self._personas: dict[str, Persona] | None = None
 
-    @property
-    def db(self) -> sqlite3.Connection:
-        """Read-only connection to review.db with WAL mode enabled."""
-        if self._db is None:
-            db_path = self.root / "review.db"
-            # Try nolock=1 first (needed when the DB is held by another
-            # process like the Flask UI on NAS). Fall back to plain mode=ro
-            # on older SQLite versions that don't support nolock.
-            for uri in (f"file:{db_path}?mode=ro&nolock=1",
-                        f"file:{db_path}?mode=ro"):
-                try:
-                    conn = sqlite3.connect(
-                        uri, uri=True, check_same_thread=False
-                    )
-                    conn.row_factory = sqlite3.Row
-                    # nolock=1 can produce half-broken connections where
-                    # trivial queries pass but real table access fails.
-                    # Validate against a real table.
-                    conn.execute(
-                        "SELECT name FROM sqlite_master "
-                        "WHERE type='table' LIMIT 1"
-                    ).fetchone()
-                    self._db = conn
-                    return self._db
-                except sqlite3.OperationalError:
-                    continue
-            raise RuntimeError(f"Cannot open review.db at {db_path}")
-        return self._db
+        # Loud-failure guard: old SQLite file must be renamed before switching
+        if (self.root / "review.db").exists():
+            raise RuntimeError(
+                "review.db still exists at dataset root. "
+                "This project now uses PostgreSQL. Rename review.db to "
+                "review.db.old if you have verified the migration, then restart."
+            )
+
+        if engine is not None:
+            self._engine = engine
+        else:
+            if not HAS_SQLALCHEMY:
+                raise ImportError(
+                    "SQLAlchemy is required. Install with: pip install sqlalchemy"
+                )
+            from .config import database_url
+            url = database_url()
+            self._engine = create_engine(url, pool_size=5, max_overflow=10)
 
     @property
-    def db_writable(self) -> sqlite3.Connection:
-        """Writable connection to review.db (for mutations like approve/taint)."""
-        db_path = self.root / "review.db"
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-        except sqlite3.OperationalError:
-            pass  # already WAL (set at init) or stale lock from prior run
-        return conn
+    def db(self) -> _DBConnection:
+        """Database connection (reads and writes — PG handles concurrency)."""
+        return _DBConnection(self._engine)
+
+    @property
+    def db_writable(self) -> _DBConnection:
+        """Database connection for mutations. Same as db on PostgreSQL."""
+        return self.db
 
     @property
     def personas(self) -> dict[str, Persona]:
-        """All personas in the dataset, keyed by name."""
         if self._personas is None:
             rows = self.db.execute("SELECT id, name FROM personas").fetchall()
             self._personas = {
@@ -245,11 +309,9 @@ class HegreDataset:
 
     @property
     def stratum_dir(self) -> Path:
-        """Stratum output directory."""
         return self.root / "stratum"
 
     def persona(self, identifier: int | str) -> Persona:
-        """Look up a persona by name or database ID."""
         if isinstance(identifier, int):
             row = self.db.execute(
                 "SELECT id, name FROM personas WHERE id = ?", (identifier,)
@@ -266,11 +328,6 @@ class HegreDataset:
             return Persona(id=p.id, name=p.name, dataset=self)
 
     def photo(self, persona: str, image_path: str) -> Photo:
-        """Look up a single approved photo by persona name and relative image path.
-
-        Raises:
-            ValueError: if the image is not approved for this persona.
-        """
         row = self.db.execute(
             "SELECT status FROM images i "
             "JOIN personas p ON i.persona_id = p.id "
