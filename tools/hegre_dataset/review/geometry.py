@@ -1,5 +1,4 @@
 import numpy as np
-import sqlite3
 import sys
 import os
 from pathlib import Path
@@ -68,13 +67,6 @@ def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None 
         return 1
 
     db = ds.db_writable
-
-    # Ensure af_distance column exists
-    try:
-        db.execute("ALTER TABLE images ADD COLUMN af_distance REAL")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass
 
     if persona is not None:
         if str(persona).isdigit():
@@ -164,22 +156,6 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
     ds = HegreDataset(stratum_dir.parent)
     db = ds.db_writable
     
-    # 1. Add zg_distance column if it doesn't exist
-    try:
-        db.execute("ALTER TABLE images ADD COLUMN zg_distance REAL")
-        db.commit()
-        print("Added zg_distance column to images table.")
-    except sqlite3.OperationalError:
-        pass # Column already exists
-
-    # 1b. Add af_distance column if it doesn't exist
-    try:
-        db.execute("ALTER TABLE images ADD COLUMN af_distance REAL")
-        db.commit()
-        print("Added af_distance column to images table.")
-    except sqlite3.OperationalError:
-        pass # Column already exists
-        
     try:
         encoder = load_encoder(encoder_path)
     except FileNotFoundError:
