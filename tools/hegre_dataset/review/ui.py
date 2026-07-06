@@ -231,20 +231,20 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         if mode == "audit":
             # Audit: pick approved images with the highest af distance
             if has_af:
-                order_clause = "ORDER BY CAST(af_distance AS REAL) DESC NULLS LAST LIMIT 20"
+                order_clause = "ORDER BY CAST(af_distance AS REAL) DESC NULLS FIRST LIMIT 20"
                 dist_col = "af_distance"
             elif has_zg:
-                order_clause = "ORDER BY CAST(zg_distance AS REAL) DESC NULLS LAST LIMIT 20"
+                order_clause = "ORDER BY CAST(zg_distance AS REAL) DESC NULLS FIRST LIMIT 20"
                 dist_col = "zg_distance"
             else:
                 order_clause = "ORDER BY RANDOM() LIMIT 20"
                 dist_col = None
         elif mode == "unreviewed":
             if has_af:
-                order_clause = "ORDER BY CAST(af_distance AS REAL) DESC NULLS LAST LIMIT 20"
+                order_clause = "ORDER BY CAST(af_distance AS REAL) DESC NULLS FIRST LIMIT 20"
                 dist_col = "af_distance"
             elif has_zg:
-                order_clause = "ORDER BY CAST(zg_distance AS REAL) DESC NULLS LAST LIMIT 20"
+                order_clause = "ORDER BY CAST(zg_distance AS REAL) DESC NULLS FIRST LIMIT 20"
                 dist_col = "zg_distance"
             else:
                 order_clause = "ORDER BY RANDOM() LIMIT 20"
@@ -264,7 +264,7 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         # Mix in best images only if unreviewed (to prevent drift)
         if mode == "unreviewed":
             if dist_col:
-                best_imgs = ds.db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY CAST({dist_col} AS REAL) ASC NULLS LAST LIMIT 5", (pid, status_filter)).fetchall()
+                best_imgs = ds.db.execute(f"SELECT id, status, face_index, image_path, zg_distance, af_distance FROM images WHERE persona_id = ? AND status = ? ORDER BY CAST({dist_col} AS REAL) ASC NULLS FIRST LIMIT 5", (pid, status_filter)).fetchall()
             else:
                 best_imgs = []
         else:
