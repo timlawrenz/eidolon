@@ -11,8 +11,12 @@ if config.config_file_name is not None:
 
 # Import models so Alembic can detect them
 from tools.hegre_dataset.models import Base  # noqa: E402
+from tools.hegre_dataset.config import database_url  # noqa: E402
 
 target_metadata = Base.metadata
+
+# Override alembic.ini's sqlalchemy.url with config/database.yml
+config.set_main_option("sqlalchemy.url", database_url())
 
 
 def run_migrations_offline() -> None:

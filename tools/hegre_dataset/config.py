@@ -26,7 +26,7 @@ def _load_config() -> dict:
             "pyyaml is required to load config/database.yml. "
             "Install with: pip install pyyaml"
         )
-    config_path = Path(__file__).resolve().parent.parent / "config" / "database.yml"
+    config_path = Path(__file__).resolve().parent.parent.parent / "config" / "database.yml"
     if not config_path.exists():
         raise FileNotFoundError(
             f"Database config not found at {config_path}. "

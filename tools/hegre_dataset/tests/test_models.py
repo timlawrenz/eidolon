@@ -70,8 +70,7 @@ class TestModelDefinitions:
         column_sets = [set(uq["column_names"]) for uq in uqs]
         assert {"persona_id", "set_id", "source_image", "face_index"} in column_sets
 
-    def test_default_values(self, engine):
-        """face_index defaults to 1, status defaults to 'unreviewed'."""
-        cols = {c["name"]: c for c in inspect(engine).get_columns("images")}
-        assert cols["face_index"]["default"] == "1"
-        assert cols["status"]["default"] == "'unreviewed'"
+    def test_default_values(self):
+        """face_index default is 1, status default is 'unreviewed' (ORM-level defaults)."""
+        assert Image.face_index.default.arg == 1
+        assert Image.status.default.arg == "unreviewed"
