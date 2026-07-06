@@ -229,11 +229,12 @@ class _DBConnection:
 
     Supports: execute(sql, params), executemany(sql, seq), commit(), close().
     Row results are dict-like (support row["column"] access).
+    Close must be called to release the connection back to the pool.
     """
 
     def __init__(self, engine):
         self._conn = engine.connect()
-        self.row_factory = None  # accepted but ignored — SA Row is already dict-like
+        self.row_factory = None
 
     def execute(self, sql: str, params=None):
         sql, params = _adapt_sql(sql, params)
@@ -241,7 +242,6 @@ class _DBConnection:
         return _CursorWrapper(result)
 
     def executemany(self, sql: str, seq):
-        """Execute parameterized SQL for each tuple in seq."""
         for params in seq:
             adapted_sql, adapted_params = _adapt_sql(sql, params)
             self._conn.execute(_sa_text(adapted_sql), adapted_params or {})
@@ -266,6 +266,7 @@ class HegreDataset:
 
     def __init__(self, root: Path, *, engine=None):
         self.root = Path(root).resolve()
+        self._db: _DBConnection | None = None
         self._personas: dict[str, Persona] | None = None
 
         # Loud-failure guard: old SQLite file must be renamed before switching
@@ -289,8 +290,14 @@ class HegreDataset:
 
     @property
     def db(self) -> _DBConnection:
-        """Database connection (reads and writes — PG handles concurrency)."""
-        return _DBConnection(self._engine)
+        """Database connection (reads and writes — PG handles concurrency).
+
+        Connection is cached per HegreDataset instance. Call close() to
+        release back to the pool, or let it live for the instance lifetime.
+        """
+        if self._db is None:
+            self._db = _DBConnection(self._engine)
+        return self._db
 
     @property
     def db_writable(self) -> _DBConnection:
