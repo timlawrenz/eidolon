@@ -9,6 +9,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from geometry_pca.zg_inference import encode_zg
 from geometry_pca.fit import load_encoder
 from ..dataset import HegreDataset, Photo
+try:
+    from tools.hegre_dataset.review.procrustes import generate_pixel_average
+except ImportError:
+    generate_pixel_average = None
 
 
 def compute_af_distances(db_path: Path, dataset_root: Path, persona: str | None = None) -> int:
@@ -140,6 +144,8 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
         img_ids = []
         approved_vectors = []
         bad_geo_ids = []
+        image_paths = []   # for pixel average anchors
+        face_2ds = []       # for pixel average anchors
 
         for img in images:
             # We know the specific subdirectory structure Stratum uses!
@@ -175,6 +181,8 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
 
                 if img["status"] == "approved":
                     approved_vectors.append(zg)
+                    image_paths.append(ds.root / img["image_path"])
+                    face_2ds.append(face_2d)
 
                 total_images_processed = len(img_ids)
             except Exception:
@@ -193,6 +201,42 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
         # Compute distances for ALL images from the approved centroid
         vectors = np.array(vectors)
         distances = np.linalg.norm(vectors - centroid, axis=1)
+
+        # Pixel Average (Procrustes Warping) — only from tight approved images
+        if generate_pixel_average is not None and len(approved_vectors) > 0:
+            approved_dists = np.linalg.norm(np.array(approved_vectors) - centroid, axis=1)
+            anchor_mask = approved_dists < 20.0
+            anchor_paths = [image_paths[i] for i in range(len(image_paths)) if anchor_mask[i]]
+            anchor_marks = [face_2ds[i] for i in range(len(face_2ds)) if anchor_mask[i]]
+
+            n_filtered = len(image_paths) - len(anchor_paths)
+            if n_filtered > 0:
+                print(f"  -> Excluded {n_filtered} approved images (zg >= 20) from pixel average")
+
+            if len(anchor_paths) > 0:
+                pixel_path = stratum_dir / base_pname / f"pixel_{pname}.jpg"
+                try:
+                    from geometry_pca.zg_inference import decode_zg
+
+                    face_2d_centroid = decode_zg(centroid, encoder)
+
+                    # Rotate so eyes are horizontal
+                    left_eye = np.mean(face_2d_centroid[36:42], axis=0)
+                    right_eye = np.mean(face_2d_centroid[42:48], axis=0)
+                    angle = np.arctan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0])
+                    cos_a, sin_a = np.cos(-angle), np.sin(-angle)
+                    rot_mat = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
+                    nose_tip = face_2d_centroid[30]
+                    shifted = face_2d_centroid - nose_tip
+                    rotated_face = shifted @ rot_mat.T
+                    rotated_face += nose_tip
+
+                    pixel_img = generate_pixel_average(anchor_paths, anchor_marks, rotated_face)
+                    if pixel_img is not None:
+                        import cv2
+                        cv2.imwrite(str(pixel_path), pixel_img)
+                except Exception as e:
+                    print(f"  -> Error generating pixel average for {pname}: {e}")
 
         dist_updates = []
         nonface_ids = []

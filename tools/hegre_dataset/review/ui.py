@@ -147,9 +147,6 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         placeholder.save(buf, format="JPEG", quality=75)
         return buf.getvalue()
     
-    @app.route("/api/pixel/<persona_name>")
-    @app.route("/api/ghost/<persona_name>")
-    @app.route("/api/3d/<persona_name>")
     @app.route("/api/thumb/<int:image_id>")
     def api_thumb(image_id):
         draw_skel = request.args.get("skel", "0") == "1"
@@ -167,6 +164,19 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
                 _thumb_cache.pop(next(iter(_thumb_cache)))
         return send_file(io.BytesIO(_thumb_cache[cache_key]), mimetype="image/jpeg")
     
+    @app.route("/api/pixel/<persona_name>")
+    def api_pixel(persona_name):
+        try:
+            base_pname = persona_name.split("_cluster_")[0]
+            pixel_path = ds.stratum_dir / base_pname / f"pixel_{persona_name}.jpg"
+            if pixel_path.exists():
+                return send_file(str(pixel_path), mimetype="image/jpeg")
+            return "File not found at " + str(pixel_path), 404
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": "Internal server error"}), 500
+
     @app.route("/api/random_persona")
     def api_random_persona():
         mode = request.args.get("mode", "unreviewed")
@@ -466,15 +476,12 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
             if (g_data && g_data.persona_name) {
                 container.innerHTML += `
                 <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="Ghost Average (Inverse PCA)">
-                    <img src="/api/ghost/${g_data.persona_name}?t=${Date.now()}" class="w-full h-full object-cover rounded opacity-90" onerror="this.parentElement.style.display='none'" />
                     <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Ghost</div>
                 </div>
                 <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="Pixel Average (Procrustes Warping)">
-                    <img src="/api/pixel/${g_data.persona_name}?t=${Date.now()}" class="w-full h-full object-cover rounded opacity-90" onerror="this.parentElement.style.display='none'" />
                     <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Pixel</div>
                 </div>
                 <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="3D Volume (FLAME + Pixel Average)">
-                    <img src="/api/3d/${g_data.persona_name}?t=${Date.now()}" class="w-full h-full object-cover rounded opacity-90" onerror="this.parentElement.style.display='none'" />
                     <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Volume</div>
                 </div>`;
             }
