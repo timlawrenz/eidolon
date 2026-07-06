@@ -328,13 +328,13 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         db = ds.db_writable
         
         for img_id_str, reason in tainted.items():
-            db.execute("UPDATE images SET status = ?, reviewed_at = datetime('now') WHERE id = ?", (reason, int(img_id_str)))
+            db.execute("UPDATE images SET status = ?, reviewed_at = NOW() WHERE id = ?", (reason, int(img_id_str)))
             
         if mode == "unreviewed":
             approved_ids = [int(i) for i in shown_ids if str(i) not in tainted]
             if approved_ids:
                 placeholders = ",".join("?" * len(approved_ids))
-                db.execute(f"UPDATE images SET status = 'approved', reviewed_at = datetime('now') WHERE id IN ({placeholders})", approved_ids)
+                db.execute(f"UPDATE images SET status = 'approved', reviewed_at = NOW() WHERE id IN ({placeholders})", approved_ids)
                 
         db.commit()
         status_filter = "approved" if mode in ["review", "audit"] else "unreviewed"

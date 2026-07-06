@@ -262,7 +262,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
         
         # Auto-label bad geometry so they don't skew the centroid
         if bad_geo_ids:
-            db.executemany("UPDATE images SET status = 'tainted:approved_bad_geometry', reviewed_at = datetime('now') WHERE id = ?", bad_geo_ids)
+            db.executemany("UPDATE images SET status = 'tainted:approved_bad_geometry', reviewed_at = NOW() WHERE id = ?", bad_geo_ids)
             db.commit()
             print(f"  -> Auto-labeled {len(bad_geo_ids)} DWPose failures as 'Bad Geometry'")
         
@@ -363,7 +363,7 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
             db.executemany("UPDATE images SET zg_distance = ? WHERE id = ?", dist_updates)
             
             if nonface_ids:
-                db.executemany("UPDATE images SET status = 'tainted:extraction_nonface', reviewed_at = datetime('now') WHERE id = ?", nonface_ids)
+                db.executemany("UPDATE images SET status = 'tainted:extraction_nonface', reviewed_at = NOW() WHERE id = ?", nonface_ids)
                 print(f"  -> Auto-labeled {len(nonface_ids)} extreme outliers (dist > {zg_max_distance}) as 'Non-face'")
                 
             db.commit()
