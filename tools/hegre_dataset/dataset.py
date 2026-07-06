@@ -202,23 +202,47 @@ def _adapt_sql(sql: str, params: tuple | None = None) -> tuple:
     return adapted_sql, adapted_params
 
 
+class _RowAdapter:
+    """Wraps SQLAlchemy Row to support both dict-like (row["col"])
+    and integer-index (row[0]) access, matching sqlite3.Row behavior."""
+
+    __slots__ = ("_row", "_keys")
+
+    def __init__(self, row, keys: list[str]):
+        self._row = row
+        self._keys = keys
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._row[key]
+        return self._row[self._keys.index(key)]
+
+    def __repr__(self):
+        return repr(dict(zip(self._keys, self._row)))
+
+
 class _CursorWrapper:
-    """Wraps SQLAlchemy CursorResult to quack like sqlite3.Cursor."""
+    """Wraps SQLAlchemy CursorResult to quack like sqlite3.Cursor.
+
+    Returns Row objects that support both integer (row[0]) and
+    name-based (row["column"]) access.
+    """
 
     def __init__(self, result):
         self._result = result
+        self._keys = list(result.keys())
         self._rows = None
 
     def fetchone(self):
         if self._rows is None:
-            self._rows = list(self._result.mappings().all())
+            self._rows = [_RowAdapter(r, self._keys) for r in self._result.all()]
         if self._rows:
             return self._rows.pop(0)
         return None
 
     def fetchall(self):
         if self._rows is None:
-            self._rows = list(self._result.mappings().all())
+            self._rows = [_RowAdapter(r, self._keys) for r in self._result.all()]
         rows = self._rows
         self._rows = []
         return rows

@@ -86,13 +86,10 @@ class TestMockedHegreDataset:
     @pytest.mark.skipif(not HAS_SQLALCHEMY, reason="SQLAlchemy not installed")
     def test_personas_queries_engine(self, ds, mock_engine):
         """ds.personas executes SELECT against the adapter."""
-        # Set up mock cursor result
+        # Set up mock cursor result — _CursorWrapper uses .all(), not .mappings()
         mock_result = MagicMock()
-        mock_mappings = MagicMock()
-        mock_mappings.all.return_value = [
-            {"id": 1, "name": "anna-l"},
-        ]
-        mock_result.mappings.return_value = mock_mappings
+        mock_result.keys.return_value = ["id", "name"]
+        mock_result.all.return_value = [(1, "anna-l")]
         ds.db._conn.execute.return_value = mock_result
 
         personas = ds.personas
