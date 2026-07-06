@@ -148,44 +148,8 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         return buf.getvalue()
     
     @app.route("/api/pixel/<persona_name>")
-    def api_pixel(persona_name):
-        try:
-            base_pname = persona_name.split("_cluster_")[0]
-            pixel_path = ds.stratum_dir / base_pname / f"pixel_{persona_name}.jpg"
-            if pixel_path.exists():
-                return send_file(str(pixel_path), mimetype="image/jpeg")
-            return "File not found at " + str(pixel_path), 404
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": "Internal server error"}), 500
-
     @app.route("/api/ghost/<persona_name>")
-    def api_ghost(persona_name):
-        try:
-            base_pname = persona_name.split("_cluster_")[0]
-            ghost_path = ds.stratum_dir / base_pname / f"ghost_{persona_name}.png"
-            if ghost_path.exists():
-                return send_file(str(ghost_path), mimetype="image/png")
-            return "File not found at " + str(ghost_path), 404
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": "Internal server error"}), 500
-
     @app.route("/api/3d/<persona_name>")
-    def api_3d(persona_name):
-        try:
-            base_pname = persona_name.split("_cluster_")[0]
-            gif_path = ds.stratum_dir / base_pname / f"3d_{persona_name}.gif"
-            if gif_path.exists():
-                return send_file(str(gif_path), mimetype="image/gif")
-            return "File not found at " + str(gif_path), 404
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": "Internal server error"}), 500
-
     @app.route("/api/thumb/<int:image_id>")
     def api_thumb(image_id):
         draw_skel = request.args.get("skel", "0") == "1"
