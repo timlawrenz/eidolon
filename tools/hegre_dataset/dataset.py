@@ -226,7 +226,10 @@ class HegreDataset:
         db_path = self.root / "review.db"
         conn = sqlite3.connect(str(db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass  # already WAL (set at init) or stale lock from prior run
         return conn
 
     @property
