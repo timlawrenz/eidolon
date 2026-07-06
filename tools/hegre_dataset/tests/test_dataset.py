@@ -333,3 +333,21 @@ class TestHegreDataset:
         ds = HegreDataset(root=tmp_path)
         centroid = ds.persona("anna-l").auraface_centroid
         np.testing.assert_array_equal(centroid, af1)
+
+    def test_db_writable_can_insert(self, tmp_path):
+        """HegreDataset.db_writable returns a connection that can write."""
+        _seed_tmp_db(tmp_path / "review.db")
+        ds = HegreDataset(root=tmp_path)
+        conn = ds.db_writable
+        conn.execute(
+            "INSERT INTO images (persona_id, image_path, status) "
+            "VALUES (1, 'faces/anna-l/new.jpg', 'approved')"
+        )
+        conn.commit()
+        row = ds.db.execute("SELECT COUNT(*) FROM images").fetchone()
+        assert row[0] == 2  # original + new
+
+    def test_stratum_dir(self, tmp_path):
+        """HegreDataset.stratum_dir returns the stratum output directory."""
+        ds = HegreDataset(root=tmp_path)
+        assert ds.stratum_dir == tmp_path / "stratum"

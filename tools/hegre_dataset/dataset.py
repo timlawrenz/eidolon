@@ -207,6 +207,15 @@ class HegreDataset:
         return self._db
 
     @property
+    def db_writable(self) -> sqlite3.Connection:
+        """Writable connection to review.db (for mutations like approve/taint)."""
+        db_path = self.root / "review.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    @property
     def personas(self) -> dict[str, Persona]:
         """All personas in the dataset, keyed by name."""
         if self._personas is None:
@@ -216,6 +225,11 @@ class HegreDataset:
                 for r in rows
             }
         return self._personas
+
+    @property
+    def stratum_dir(self) -> Path:
+        """Stratum output directory."""
+        return self.root / "stratum"
 
     def persona(self, identifier: int | str) -> Persona:
         """Look up a persona by name or database ID."""
