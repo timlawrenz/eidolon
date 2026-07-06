@@ -186,7 +186,7 @@ def _adapt_sql(sql: str, params: tuple | None = None) -> tuple:
     if params is None:
         return sql, None
 
-    if not isinstance(params, tuple):
+    if not isinstance(params, (tuple, list)):
         params = (params,)
 
     # Replace ? with :p0, :p1, ...

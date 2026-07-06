@@ -33,7 +33,13 @@ class TestAdaptSql:
         assert sql == "INSERT INTO t (a, b) VALUES (:p0, :p1)"
         assert params == {"p0": "hello", "p1": 42}
 
-    def test_scalar_param_wrapped_in_tuple(self):
+    def test_list_params_work(self):
+        """A list of IDs (not tuple) is handled correctly for IN clauses."""
+        sql, params = _adapt_sql(
+            "UPDATE t SET x = 1 WHERE id IN (?, ?, ?)", [10, 20, 30]
+        )
+        assert sql == "UPDATE t SET x = 1 WHERE id IN (:p0, :p1, :p2)"
+        assert params == {"p0": 10, "p1": 20, "p2": 30}
         sql, params = _adapt_sql("SELECT * FROM t WHERE id = ?", 7)
         assert sql == "SELECT * FROM t WHERE id = :p0"
         assert params == {"p0": 7}
