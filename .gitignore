@@ -196,6 +196,9 @@ cython_debug/
 
 # Project-specific ignores
 data/
+
+# Sapiens2 keypoints study — regenerable feature caches (keep JSON results + manifest)
+experiments/sapiens2_keypoints/output/*.npz
 output/
 
 # Phase 1: geometry_pca

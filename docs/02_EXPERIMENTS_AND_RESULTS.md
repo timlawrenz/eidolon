@@ -1222,3 +1222,48 @@ The fix is real and measurable — signal exists but is small.
 - Full NAS scan by `scripts/count_full_data_images.py` confirmed `stratum/faces/` is
   the canonical T5 path (preserves the `faces/` DB prefix, matching AuraFace layout).
 - Corpus actively growing: query images grew from 2,986 → 2,999 between runs ~40 min apart.
+
+---
+
+## [CONCLUDED] Sapiens2 Keypoints Study — faithfulness + identity carrier (`exp/sapiens2-keypoints-study`)
+
+**Date:** 2026-07-07. **Question:** Are Sapiens2 pose keypoints (a) faithful (measure, not hallucinate like DWPose) and (b) a stronger identity carrier than the 68-pt DWPose landmarks `z_g` is built from? Motivated by the Sapiens2 3D tangent (single-view pointmaps + pose registration were excellent; pose keypoints looked far better than DWPose).
+
+**Cohort:** 25 personas × 15 cross-shoot images = 375 (4–15 shoots/persona). All with image + DWPose (`pose.npy`) + AuraFace (`.npy`). Full code + results: `experiments/sapiens2_keypoints/`.
+
+**Instrument validation (trust the ruler):** DWPose 2D shape reproduces the documented **0.688** ≈ z_g's 0.69 baseline; label-shuffle chance = **0.49**. (Note: random-projection null is NOT a valid floor for a raw geometric feature — Johnson-Lindenstrauss preserves cosine, so projection ≈ feature. Use label-shuffle.)
+
+### Arm A — Faithfulness: Sapiens2 wins decisively
+| Test | Sapiens2 | DWPose |
+|------|----------|--------|
+| Per-keypoint confidence (seen vs unseen kp) | 0.901 vs 0.275 | no confidence |
+| Withholds occluded points | ~22%/img (33% on profiles) | 0% — all 68 always |
+| Within-person config scatter (lower=faithful) | **0.0076** | 0.0243 (3× noisier) |
+
+Confirms Tim's intuition: DWPose prioritizes completeness over correctness (plants all 68 regardless of visibility); Sapiens2 expresses genuine per-keypoint uncertainty and its kept points are 3× more stable within-person.
+
+### Arm B — Identity discrimination (cross-shoot verification AUC, 3-seed)
+| Feature | AUC |
+|---------|-----|
+| Label-shuffle chance | 0.49 |
+| DWPose 68-kp, 2D shape | 0.688 (=documented z_g) |
+| **Sapiens2 kp, 2D shape** | **0.766** (G1 PASS, +0.077) |
+| z_g / DWPose 3D-frontalized (documented) | 0.67–0.69 |
+| **Sapiens2 kp, 3D-frontalized (measured-GPA)** | **0.734** (G2 PASS) |
+| Sapiens2 kp, 3D-frontalized (template-lift, z_g recipe) | 0.736 |
+| AuraFace-LDA (ceiling) | 0.998 |
+
+### Confound resolved (method vs density)
+Sapiens2 keypoints through z_g's **exact template-lift** recipe = 0.736 vs measured-GPA 0.734 (Δ=−0.002). So the 0.69→0.734 gain over z_g is **100% keypoint-source** (dense faithful landmarks), NOT the frontalization method. Measured 3D depth adds ~0 identity beyond the 2D configuration — echoes the dead z_d path (monocular depth is identity-poor).
+
+### Conclusions
+1. **Sapiens2 keypoints > DWPose for identity, method-independent** (+0.077 in 2D, +0.04 in 3D pose-removed). z_g conclusion **refined, not overturned**: landmark shape is a *weak* identity discriminator (0.73 ≪ 0.998); density buys ~+0.04.
+2. **NOT an AuraFace replacement** — geometry loses the who-is-this race decisively (consistent with FLAME β=0.585, z_d/z_a dead paths). Identity lives in appearance, not landmark geometry.
+3. **Product-relevant reframe:** Sapiens2 dense landmarks/pointmap are a candidate **editable-morphology / sculpting substrate** for the Poser (anatomical sliders + angle control) — a complementary control stream, not the identity carrier. AuraFace-LDA keeps identity.
+
+### Recommendation (actionable)
+**Replace DWPose with Sapiens2 pose wherever z_g-style geometry is computed** — same pipeline, +0.04 identity, 3× more stable, honest per-point uncertainty. A z_g rebuilt on Sapiens2 keypoints is strictly better input.
+
+### Caveats / next
+- 25 personas; widen to ~100 + persona-level bootstrap CI for a production number.
+- Study runs on the standalone Sapiens2 backbone + local 1B checkpoints (see script headers); not yet wired into `tools.hegre_dataset`.

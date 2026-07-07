@@ -101,3 +101,20 @@ Link directly to the `exp/*` branch where the work lives.
     the multi-partition E vector. Contamination near-miss documented as a warning.
 * **[SUPERSEDED] Phase 1: Geometry PCA Encoder**
   * 2D GPA left yaw/pitch in C1/C2 (pose-entangled). Superseded by Phase 1-R.
+
+* **[CONCLUDED] Sapiens2 Keypoints Study** (`exp/sapiens2-keypoints-study`)
+  * Re-asks the z_g/DWPose identity question with Sapiens2's dense, confidence-scored
+    keypoints (vs DWPose 68). Cohort: 25 personas × 15 cross-shoot imgs.
+  * **Faithfulness:** Sapiens2 has real per-keypoint confidence (0.90 seen / 0.28 unseen),
+    withholds ~22% on occluded/profile faces (DWPose returns all 68 always), 3× more
+    stable within-person (0.0076 vs 0.0243). DWPose hallucinates for completeness; Sapiens2 measures.
+  * **Identity (cross-shoot verification AUC):** Sapiens2 2D 0.766 vs DWPose 0.688 (+0.077);
+    Sapiens2 3D-frontalized 0.734 vs documented z_g 0.67–0.69. Ceiling AuraFace 0.998.
+    Instrument validated: DWPose reproduces 0.688 baseline, chance 0.49.
+  * **Confound resolved:** template-lift (z_g recipe) on Sapiens2 kp = 0.736 ≈ measured-GPA 0.734
+    → gain is 100% keypoint-source, not method. Measured depth adds ~0 identity (echoes dead z_d).
+  * **Verdict:** z_g conclusion refined not overturned — landmark shape is a *weak* identity
+    carrier (0.73 ≪ 0.998); density buys +0.04. NOT an AuraFace replacement. Candidate role:
+    editable-morphology substrate for the Poser (sliders + angle), complementary to AuraFace identity.
+  * **Action:** replace DWPose→Sapiens2 pose wherever z_g geometry is computed (strictly better input).
+  * **Next:** widen to ~100 personas + persona-level bootstrap CI for a production number.
