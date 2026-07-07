@@ -1267,3 +1267,16 @@ Sapiens2 keypoints through z_g's **exact template-lift** recipe = 0.736 vs measu
 ### Caveats / next
 - 25 personas; widen to ~100 + persona-level bootstrap CI for a production number.
 - Study runs on the standalone Sapiens2 backbone + local 1B checkpoints (see script headers); not yet wired into `tools.hegre_dataset`.
+
+### Widened to 100 personas + persona-level bootstrap CI (2026-07-07)
+
+Production-grade re-run: 100 personas × 15 cross-shoot imgs = 1500. Both gates from 2D keypoints (step-3 proved template-lift ≡ measured-GPA). Bootstrap resamples **personas** (correct for clustered observations), 200 resamples.
+
+| Feature | AUC | 95% CI |
+|---------|-----|--------|
+| Sapiens2 2D shape | 0.745 | [0.725, 0.763] |
+| DWPose 2D shape | 0.650 | [0.633, 0.667] |
+| AuraFace-LDA | 0.995 | — |
+| **Δ(Sapiens2 − DWPose)** | **+0.096** | **[+0.079, +0.113]** |
+
+**P(Δ≤0) = 0.000** — Sapiens2 reliably beats DWPose. At 4× the cohort the gap *widened* (+0.096 vs +0.077 at n=25). Absolute AUCs are lower than the 25-persona run (harder 100-way task; DWPose 0.650 < documented 0.69 on this low-zg 100-persona set) but the **relative delta is the robust, production number**. Conclusion unchanged and now statistically bankable: replace DWPose→Sapiens2 for z_g input.
