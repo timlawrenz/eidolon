@@ -32,10 +32,13 @@
 | Sapiens2 kp, 3D-frontalized (template-lift, z_g recipe) | 0.736 |
 | AuraFace-LDA (ceiling) | 0.998 |
 
-## Recommendation
-1. **Replace DWPose with Sapiens2 pose wherever z_g-style geometry is computed** — same pipeline, +0.04 identity, 3× more stable, honest per-point uncertainty. A z_g rebuilt on Sapiens2 keypoints is strictly better input.
+## Recommendation (CORRECTED — see split addendum below)
+1. **z_g STAYS on DWPose.** Fisher-J split (mixed-zg cohort) showed Sapiens2 shape has NO identity-blind transient block (0 axes J<0.05) — its fidelity forecloses identity-blindness, so it canNOT be a drop-in z_g replacement without breaking disentanglement. (The earlier "replace DWPose→Sapiens2 for z_g" is superseded.)
 2. **Do NOT** pursue Sapiens2 geometry as an AuraFace *identity* replacement (0.73 ≪ 0.998; monocular geometry is identity-poor, consistent with FLAME β=0.585).
-3. **Do** consider Sapiens2 dense landmarks/pointmap as the **editable-morphology / sculpting substrate** for the Poser product (anatomical sliders + angle control) — a complementary control stream, not the identity carrier. Identity stays with AuraFace-LDA.
+3. **Do** adopt Sapiens2 dense landmarks/pointmap as a **NEW complementary shape/morphology stream** for the Poser (anatomical sliders + angle control). It's linearly AuraFace-orthogonal (shape→AuraFace R²=−0.11) — complementary to AuraFace appearance-identity, not redundant, not a z_g upgrade. Guard non-linear leakage with CFG dropout.
+
+## Split addendum (the decisive follow-up)
+Sapiens2 keypoints are a *stronger geometry identity carrier* than DWPose (+0.096 AUC) — but that very fidelity means z_g rebuilt on them would NOT be identity-blind. Fisher-J split on a mixed-zg cohort (100 personas): 42 morphology axes (J>0.15), **0 transient axes (J<0.05)**, min J≈0.10; DWPose mean J 0.136 (toward documented 0.06) with only 10 morphology axes. No identity-blind block to carve → z_g cannot move to Sapiens2. But Sapiens2 shape→AuraFace R²=−0.11 (linearly orthogonal). Two opposed roles, one representation can't serve both: DWPose=identity-blind pose control; Sapiens2=complementary shape-morphology stream. Scripts: `fisher_split_sapiens2.py` (low-zg, confounded), `fisher_split_mixed.py` (corrected).
 
 ## Caveats / open
 - Cohort 25 personas; widen to ~100 + persona-level bootstrap CI for a production number (see experiment tree next step).

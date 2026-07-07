@@ -1280,3 +1280,27 @@ Production-grade re-run: 100 personas × 15 cross-shoot imgs = 1500. Both gates 
 | **Δ(Sapiens2 − DWPose)** | **+0.096** | **[+0.079, +0.113]** |
 
 **P(Δ≤0) = 0.000** — Sapiens2 reliably beats DWPose. At 4× the cohort the gap *widened* (+0.096 vs +0.077 at n=25). Absolute AUCs are lower than the 25-persona run (harder 100-way task; DWPose 0.650 < documented 0.69 on this low-zg 100-persona set) but the **relative delta is the robust, production number**. Conclusion unchanged and now statistically bankable: replace DWPose→Sapiens2 for z_g input.
+
+### ⚠️ CORRECTION — Fisher-J transient/morphology split: z_g STAYS on DWPose (2026-07-07)
+
+The earlier "replace DWPose→Sapiens2 for z_g" recommendation is **superseded**. Tim raised the key objection: the fidelity that makes Sapiens2 a better identity carrier also breaks z_g's *identity-blindness* (the property disentanglement relies on). Tested via Fisher-J axis split.
+
+**Confound caught first:** initial split on the low-zg cohort gave inflated J (DWPose 0.322 vs documented 0.06 — the tell) because sorting on zg suppresses within-person variance (denominator of J). Re-ran on a mixed-zg cohort (100 personas, zg span ~8.0, capped <15 to exclude DWPose-failure tail).
+
+**Mixed-cohort result:**
+| | Sapiens2 | DWPose |
+|---|---|---|
+| Mean Fisher J | 0.331 | 0.136 (→ documented 0.06) |
+| Morphology axes (J>0.15) | 42 | 10 |
+| Transient axes (J<0.05) | **0** | **0** |
+| min axis J | 0.099 | — |
+
+**No identity-blind transient block exists in Sapiens2 shape** — even with natural pose/expression variance, every axis is person-discriminative (dense keypoints capture identity so well that *how a face moves is itself identity*). You cannot carve an identity-blind z_g out of Sapiens2 by axis selection.
+
+**But** full Sapiens2 shape → AuraFace ridge R² = **−0.11** (more orthogonal than z_g's −0.03). Sapiens2 shape-identity is linearly independent of AuraFace appearance-identity.
+
+**Corrected architecture conclusion (two opposed roles, one representation can't serve both):**
+- **z_g = identity-blind pose control → KEEP DWPose.** Its coarseness IS the identity-blindness (J→0.06); load-bearing. Do NOT drop-in replace with Sapiens2.
+- **Sapiens2 = NEW complementary shape/morphology stream** (AuraFace-orthogonal, editable sliders + angle) — a third conditioning axis alongside DWPose→z_g (pose) and AuraFace-LDA (appearance), NOT a z_g upgrade. Guard non-linear leakage with CFG dropout.
+
+Net: the Poser gains three orthogonal-ish handles (pose / appearance-identity / shape-morphology) — the substrate the "pick identity + sculpt nose/eyes + change angle" product needs.

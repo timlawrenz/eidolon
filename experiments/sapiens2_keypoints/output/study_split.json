@@ -1,0 +1,11 @@
+{
+  "sapiens2_meanJ": 0.5389303269982338,
+  "n_morph": 49,
+  "n_trans": 0,
+  "auc_full": 0.9021594958333333,
+  "auc_morph": 0.90252504,
+  "auc_trans": NaN,
+  "ortho_transient_r2": null,
+  "ortho_full_r2": -0.009749361115890235,
+  "dwpose_meanJ": 0.3216020227968693
+}

@@ -118,3 +118,11 @@ Link directly to the `exp/*` branch where the work lives.
     editable-morphology substrate for the Poser (sliders + angle), complementary to AuraFace identity.
   * **Action:** replace DWPose→Sapiens2 pose wherever z_g geometry is computed (strictly better input).
   * **Next:** widen to ~100 personas + persona-level bootstrap CI for a production number.
+
+  * **[CORRECTION 2026-07-07] z_g stays on DWPose.** Fisher-J split (mixed-zg cohort)
+    showed Sapiens2 shape has NO identity-blind transient block (0 axes J<0.05; min J≈0.10)
+    — its fidelity forecloses identity-blindness, so it CANNOT be a drop-in z_g replacement
+    (would break disentanglement). But it's linearly AuraFace-orthogonal (R²=−0.11), so
+    Sapiens2 = a NEW complementary shape/morphology stream, NOT a z_g upgrade. Three handles:
+    DWPose→z_g (pose), AuraFace-LDA (appearance), Sapiens2 (shape-morphology). Supersedes the
+    "replace DWPose→Sapiens2 for z_g" action above.
