@@ -1,0 +1,37 @@
+# dino-bridge — DINOv3 → Slider Bridge (Phase 3)
+#
+# Canonical parameters. This arm is KILLed — both directions dead.
+
+# Input
+input:
+  semantic_model: DINOv3 ViT-L/14
+  token: cls           # 1024-d classification token
+  face_crop: true      # hegre_faces_stratum for transfer test
+
+# Target (sliders to predict)
+target:
+  z_g: {source: zg-posenorm, dim: 50}
+  z_a: {source: za-normals, variant: xy, dim: 50}
+
+# Regression
+regression:
+  model: RidgeCV
+  cv_folds: 5
+  mlp_probe: {hidden: [256], activation: ReLU}  # Only if 0.25 ≤ R² < 0.5
+
+# Phase 3 — Premise gate (FFHQ)
+premise:
+  fit_data: FFHQ  # ~70k images
+  metric: variance_weighted_R2
+  threshold_R2: 0.5        # Global
+  threshold_C1_C10: 0.6    # Per-component for coarse structure
+
+# Phase 3b — Transfer gate (hegre)
+transfer:
+  test_data: hegre_faces_stratum  # Editorial photos, domain shift
+  metric: verification_AUC
+  threshold_AUC: 0.51     # chance + 4σ_seed
+  null_control: random_50d_gaussian_projections  # AUC 0.712±0.007
+
+# Output
+# (no frozen artifacts — bridge is KILLed, not shipped)

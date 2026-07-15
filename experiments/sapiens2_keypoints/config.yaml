@@ -1,0 +1,67 @@
+# sapiens2-keypoints — Sapiens2 Faithfulness + Identity Study
+#
+# Canonical parameters. This arm is CONCLUDED (mixed verdict — see provenance).
+
+# Data
+data:
+  persona_count: [25, 100]       # Initial spike → widened production run
+  images_per_persona: 15          # cross-shoot
+  shoots_per_persona: [4, 15]    # range
+  total_images: [375, 1500]
+  manifest: output/study_manifest.json  # (25-p), output/study_manifest_wide.json (100-p)
+
+# Keypoint sources
+keypoints:
+  sapiens2:
+    backbone: "0.4B standalone (not tools.hegre_dataset)"
+    head: "1B pose checkpoint"
+    landmark_count: 308           # 2D keypoints with per-point confidence
+    confidence_threshold: null    # study uses raw confidence; withholds ~22%/img
+  dwpose:
+    landmark_count: 68            # iBUG/COCO-WholeBody
+    confidence: false             # no per-point confidence — returns all 68 always
+
+# Gates
+gates:
+  G1_faithfulness:
+    metric: [per_keypoint_confidence, within_person_config_scatter]
+    sapiens2_expected: "higher seen-vs-unseen confidence ratio, lower config scatter"
+  G2_identity_2d:
+    metric: cross_shoot_verification_AUC
+    threshold: "Sapiens2 > DWPose"
+    seeds: 3
+  G3_identity_3d:
+    metric: cross_shoot_verification_AUC
+    method: [measured_GPA, template_lift_zg_recipe]
+    threshold: "Sapiens2 > documented z_g (0.67-0.69)"
+
+# Fisher-J split (identity-blindness test)
+fisher_split:
+  cohort: mixed_zg  # Not low-zg (suppresses within-person variance — confound)
+  persona_count: 100
+  zg_span: ~8.0
+  threshold_morphology: 0.15   # J > this = morphology (identity-carrying)
+  threshold_transient: 0.05    # J < this = identity-blind (load-bearing for z_g)
+  dwpose_transient_axes: 0     # (at documented J→0.06, would be ~10)
+  sapiens2_transient_axes: 0   # CRITICAL: zero identity-blind axes → cannot replace z_g
+
+# Ceiling
+ceiling:
+  model: AuraFace-LDA
+  AUC_25p: 0.998
+  AUC_100p: 0.995
+
+# CI
+bootstrap:
+  resamples: 200
+  level: 0.95
+  unit: persona  # Correct for clustered observations (NOT image-level)
+
+# Output
+output:
+  features: output/study_features.npz
+  kp3d: output/study_kp3d.npz
+  results_2d: output/study_results_2d.json
+  results_3d: output/study_results_3d.json
+  results_wide: output/study_results_wide.json
+  split_mixed: output/study_split_mixed.json

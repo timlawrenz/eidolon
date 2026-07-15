@@ -1,0 +1,38 @@
+# dino-patches — Masked Patch Token Identity Carrier (Phase 4)
+#
+# Canonical parameters. This arm PASSED and is the SHIPPED identity stream.
+
+# Input
+input:
+  semantic_model: DINOv3 ViT-L/14
+  tokens: patch          # 257 tokens × 1024-d (1 cls + 256 patches)
+  cls_index: 0           # cls token at position 0
+  patch_indices: [1..256] # 16×16 spatial grid
+
+# Segmentation mask
+segmentation:
+  source: Sapiens-2B
+  classes: [flesh]       # Face tissue only (excludes hair, clothing, background)
+  filter: fg_pct_ge_30   # Drop crops where seg collapses (< 30% foreground)
+  note: "flesh+hair statistically tied (+0.002). Hair is a shoot-styled confound — flesh-only selected."
+
+# Pooling
+pooling:
+  method: mean            # Mean pool over masked patch tokens
+  dimension: 1024         # Matches DINOv3 token dimension
+
+# Evaluation
+evaluation:
+  metric: verification_AUC
+  pair_strategy: cross_shoot_only  # Same-person pairs restricted to DIFFERENT shoots
+  baseline: dinov3_cls_token       # AUC 0.769
+  baseline_decomposition:
+    patch_pooling_delta: 0.014      # cls→patch gain
+    flesh_scoping_delta: 0.015      # full→flesh-only gain
+  alignment:
+    method: row_major_from_idx_5
+    mismatches: "0/1,577"
+    visual_proof: patch_pca
+
+# Verdict
+verdict: GO  # Settled. Shipped as the identity conditioning stream for Phase 5 DiT.

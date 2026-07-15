@@ -1,0 +1,49 @@
+arm: dino-patches
+hypothesis: >
+  Seg-masked (flesh-only) mean-pooled DINOv3 patch tokens carry MORE identity
+  signal than the cls token. Two sub-hypotheses: (1) patch-pooling beats
+  cls-token pooling, (2) flesh-scoping (masking out hair, background, clothing)
+  adds signal by removing shoot-styled confounds. Both tested via cross-shoot
+  verification AUC on the hegre dataset.
+falsified_if: >
+  AUC(flesh-masked patches) ≤ AUC(cls token baseline = 0.769).
+  Or: the lift is entirely driven by same-shoot leakage rather than genuine
+  cross-shoot identity signal.
+pre_registered_gate: >
+  "PASS if flesh-masked patch-pooled AUC > cls baseline 0.769, AND the lift
+  survives cross-shoot-only evaluation (same-person pairs restricted to
+  different shoots)."
+  Note: this gate was implicit — the experiment was comparative, not
+  threshold-gated. The key evidence is the bootstrap CI on the delta.
+differs_from: dino-bridge
+diff_summary: |
+  - Uses DINOv3 PATCH tokens (not cls) — spatial information preserved
+  - Flesh segmentation mask (Sapiens seg) restricts pooling to face tissue only
+  - NO bridge/regression — DINO patches are the DIRECT identity carrier
+  - Cross-shoot verification AUC (not R²) as the metric
+git_commit: PLACEHOLDER
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_epochs: null
+data_snapshot: "Hegre face crops (hegre_faces_stratum) with Sapiens seg masks. Flesh-only (fg≥30% filter). Cross-shoot-only pairs restricted to different shoots for same persona. Alignment audit: row-major from idx 5, 0/1,577 mismatches, visual patch-PCA proof."
+backbone: "DINOv3 ViT-L/14 → patch tokens (257 tokens, 1024-d each) → seg-masked mean pooling (flesh-only) → cosine similarity for verification AUC. Seg source: Sapiens-2B."
+notes: |
+  PASS. AUC 0.797 vs cls baseline 0.769. Bootstrap Δ +0.027, 95% CI
+  [+0.014, +0.045]. Decomposition: patch-pooling +0.014, flesh-scoping +0.015.
+  Flesh+hair statistically tied (+0.002) — flesh-only selected because hair
+  is a shoot-styled confound.
+
+  Cross-shoot-only AUC reproduces the ordering within 0.001 → the lift is
+  PURE cross-shoot identity signal, not same-shoot leakage. This is the
+  critical evidence.
+
+  This arm SETTLED the identity conditioning path. DINOv3 masked patch tokens
+  are the canonical identity carrier for the Phase 5 DiT fusion stack.
+
+  GO — this is the shipped identity conditioning stream. No further identity
+  encoder exploration needed (AuraFace-LDA is the ceiling, but DINO patches
+  carry rich spatial identity signal directly into the DiT).
+
+  Scripts: 35_build_hegre_face_dataset.py, 36_zd_facecrop_seg_control.py,
+  37_dino_patch_face_pooling.py.

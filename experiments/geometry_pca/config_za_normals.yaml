@@ -1,0 +1,40 @@
+# za-normals — Surface Normals Encoder z_a (Phase 2b)
+#
+# Canonical parameters. This arm is KILLed (PASS overturned).
+
+# Data pipeline
+data:
+  normal_source: Sapiens-2B  # Monocular surface normal estimation
+  pixel_pooling: mean         # Per-patch mean over seg-masked face crop
+  de_rotation: false           # head-pose Rᵀ de-rotation (injects global pose bias — see rot paradox)
+
+# Representation variants
+variants:
+  raw:  {channels: [nx, ny, nz], dimension: 12288}
+  xy:   {channels: [nx, ny],     dimension: 8192}   # nz redundant for camera-facing surfaces
+  rot:  {channels: [nx, ny, nz], dimension: 12288, de_rotated: true}
+  rot_xy: {channels: [nx, ny],   dimension: 8192,  de_rotated: true}
+  selected: xy  # CLEAN of pose nuisance, but still FAIL (ΔAUC −0.039)
+
+# PCA encoder
+pca:
+  n_components: 50
+  fit_data: FFHQ
+  whitened: true
+  note: "Pooled vectors NOT renormalized — sub-unit magnitude after pooling IS local curvature signal."
+
+# Gate
+gate:
+  metric: verification_AUC
+  baseline: zg-posenorm      # z_g alone (AUC 0.688 on face crops)
+  epsilon: 0.01               # 4× seed noise
+  seeds: [0, 1, 2]
+  pair_count: 40000           # balanced same/different pairs
+  identity_set: review_db_approved  # 102 identities, 1,665 images
+
+# Output
+encoders:
+  raw: output/encoder_za_raw.npz
+  xy: output/encoder_za_xy.npz
+  rot: output/encoder_za_rot.npz
+  rot_xy: output/encoder_za_rot_xy.npz

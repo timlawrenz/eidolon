@@ -1,0 +1,32 @@
+# zd-depth — Volumetric Depth Encoder z_d (Phase 2)
+#
+# Canonical parameters. This arm is KILLed — config exists as a permanent
+# record of what was tried, not as a runnable recipe.
+
+# Data pipeline
+data:
+  depth_source: Sapiens-2B  # Monocular depth estimation
+  resolution: [64, 64]      # Seg-masked face crop → canonical resample
+  normalization:
+    mode_A: re_standardize   # Per-channel μ/σ from FFHQ fit
+    mode_A_prime: per_sample_re_standardize  # μ/σ from sample, then FFHQ μ/σ
+    mode_C: min_max           # [0,1] per channel
+    selected: A_prime         # Best-performing in gate (but still FAIL)
+
+# PCA encoder
+pca:
+  n_components: 50           # Partition size — consistent with z_g
+  fit_data: FFHQ
+  whitened: true
+
+# Gate
+gate:
+  metric: verification_AUC   # Originally trace-J (bug — see provenance)
+  baseline: zg-posenorm      # z_g alone (J ≈ 0.09, AUC ≈ 0.67–0.69)
+  threshold: 1.15x            # J([z_g|z_d]) must exceed J(z_g) × 1.15
+  identity_set: review_db_approved  # 102 identities, 1,665 images
+
+# Output
+output:
+  cache: data/depth_cache/ffhq_depth_{A,A_prime,C}.npy
+  encoder: output/encoder_zd_{A,A_prime,C}.npz

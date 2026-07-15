@@ -1,0 +1,56 @@
+arm: dino-bridge
+hypothesis: >
+  A DINOv3 cls token (1024-d, ViT-L/14) can be linearly regressed (Ridge) to
+  predict the whitened physical sliders z_g and z_a. If true, DINO semantics
+  can BRIDGE to interpretable geometry — enabling text/image → slider control
+  without training a generator. Two gates: Phase 3 (premise — FFHQ fit) and
+  Phase 3b (transfer — hegre editorial photos under domain shift).
+falsified_if: >
+  Phase 3: variance-weighted held-out R² < 0.5, OR per-component R² < 0.6 for
+  C1–C10 (coarse structure). Phase 3b: transfer AUC(Ŷ) ≤ 0.51 (chance + 4σ_seed).
+pre_registered_gate: >
+  Phase 3: "PASS if R² ≥ 0.5 AND C1–C10 per-component R² ≥ 0.6. Diagnostic
+  band 0.25–0.5: run MLP probe for nonlinearity."
+  Phase 3b: "PASS if AUC(Ŷ) > 0.5 + 4σ_seed (≈0.51)."
+differs_from: za-normals
+diff_summary: |
+  - Replaces PCA encoder with DINOv3 cls → slider Ridge regression
+  - Two-phase gate: FFHQ premise → hegre transfer (domain shift)
+  - Tests whether semantic embeddings encode the same structure as explicit geometry
+git_commit: PLACEHOLDER
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_epochs: null
+data_snapshot: "FFHQ fit: ~70k images with z_g and z_a labels. Hegre transfer: face-crop dinov3_cls on hegre_faces_stratum. Random-projection null control: AUC 0.712±0.007 for 50-d Gaussian projections of DINO."
+backbone: "DINOv3 ViT-L/14 cls token (1024-d) → Ridge regression (5-fold CV) → ŷ_g, ŷ_a (50-d each). MLP probe for nonlinearity diagnostic."
+notes: |
+  Phase 3 (The Premise — FFHQ): FAIL. z_g R²=0.690 — passed the ≥0.5 bar but
+  FAILED C1–C10 criterion (C6=0.023, C11=0.017). Caveat: C6 Fisher J=0.098
+  on hegre — at the median — so C6 is plausibly detector noise, not
+  identity-critical structure DINO "missed." The C1–C10 criterion presumed
+  all top-10 components are semantically meaningful; that was partly wrong.
+  z_a R²=0.385 — genuine FAIL (MLP probe only gets to 0.48). DINO cls does
+  not retain fine surface curvature.
+
+  Phase 3b (The Transfer — hegre): gate technically passed (0.704 > 0.51),
+  but PASS is UNINFORMATIVE. The control kills the story:
+  - raw dinov3_cls face crop AUC = 0.766
+  - random Gaussian 50-d DINO projections = 0.712 ± 0.007
+  - bridge ŷ_g = 0.704
+  The bridge is WORSE than a random projection of its own input. It DEGRADES
+  identity signal rather than preserving it.
+
+  Missing control caught in systematic review (script 32): the original gate
+  lacked a random-projection null. Any DINO shadow passes. Lesson: EVERY
+  transfer gate needs a random-projection null.
+
+  Original script-30 "permutation null" shuffled Y AFTER prediction
+  (analytically = −R², vacuous) — fixed in review.
+
+  KILL — neither direction (semantic→geometry, geometry→semantic) works.
+  DINO is the identity carrier directly (see dino-patches arm), not through
+  a bridge to explicit geometry.
+
+  Scripts: 29_build_bridge_dataset.py, 30_fit_dinov3_bridge.py,
+  31_evaluate_dinov3_transfer.py, 32_phase3_systematic_review.py.

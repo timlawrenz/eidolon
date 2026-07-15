@@ -1,0 +1,41 @@
+arm: zg-posenorm
+hypothesis: >
+  3D frontalized geometry encoder (EPnP pose estimation → canonical 3D template →
+  rotate to frontal → reproject → PCA) produces a pose-INVARIANT geometry latent
+  (z_g) that separates identities better than flat 2D GPA, while preserving the
+  PCA orthogonality guarantee (k=50, whitened).
+falsified_if: >
+  3D frontalization (z_scale=1.0) does NOT reduce within-identity scatter (S_W)
+  vs flat 2D GPA (z_scale=0.0) on a real-image hegre identity gate. Specifically,
+  if J(z_scale=1.0) ≤ J(z_scale=0.0) on the reviewed hegre identity set, the
+  3D frontalization step is bloat.
+pre_registered_gate: "PASS if 3D (z_scale=1.0) aggregate J beats flat (z_scale=0.0) on the verified hegre identity gate (10 identities, 136 images). Threshold ×1.05 (looser than the Phase 2 ×1.15 bar — this is about beating the 2D baseline, not proving complementarity)."
+differs_from: null
+diff_summary: "This is the baseline geometry arm. Replaces Phase 1 (raw 2D GPA) which was found to encode yaw/pitch in C1/C2 — pose-entangled, not pose-invariant."
+git_commit: PLACEHOLDER
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_epochs: null
+data_snapshot: "69,851 FFHQ faces (stratum-ffhq), 68 iBUG keypoints via DWPose, mean-confidence prefilter ≥ 0.5. Canonical 3D template: 300W 68-point mean face (z_scale=1.0). Hegre gate: 10 verified identities, 136 images, reviewed for contamination (suffix-aware, couple-set excluded)."
+backbone: "DWPose 68-pt → EPnP rotation → 300W template frontalization → 2D GPA → PCA (k=50, whitened)"
+notes: |
+  z_scale=1.0 shipped (anatomical mandate). 0.5 underperforms; 2.0 extrapolates
+  depth beyond anatomy for negligible J gain. The clean-C1 narrative died at
+  n=10 — aggregate S_W reduction is the real signal. Phase 1 (2D GPA) is
+  SUPERSEDED and should never be re-run.
+
+  CRITICAL: never trust a synthetic probe that reverses its own math — the
+  initial "4.9× pose-invariance win" was circular. Always use a real-image
+  identity gate.
+
+  The contamination near-miss (4 of 5 identities had name collisions or
+  couple-shoot contamination) is a permanent warning. Always visually verify
+  identity sets before trusting a gate.
+
+  Production artifact: experiments/geometry_pca/output/encoder_production.npz
+  (components (50,136), canonical_template (68,3), pca_mean, whiten_mu/sigma,
+  gpa_mean). Frozen — never retrain without a new arm.
+
+  Scripts: 04_spike_posenorm.py, 05_fit_production.py, 06_extract_hegre_gate.py,
+  07_gate_sweep.py, 08_identity_collage.py, 10_verify_gate.py.

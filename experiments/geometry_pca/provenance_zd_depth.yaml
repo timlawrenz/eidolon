@@ -1,0 +1,42 @@
+arm: zd-depth
+hypothesis: >
+  A depth partition z_d (64×64 seg-masked Sapiens depth, PCA k=50, FFHQ-fit)
+  carries COMPLEMENTARY identity signal beyond 2D geometry (z_g). If true,
+  concatenating z_d onto z_g should lift the Fisher discriminant ratio.
+falsified_if: >
+  J([z_g | z_d]) ≤ J(z_g) × 1.15 on the reviewed hegre identity gate.
+  The ×1.15 bar is stricter than Phase 1's ×1.05 — depth must EARN its place
+  in the E vector, not just not-hurt.
+pre_registered_gate: "PASS if J([z_g | z_d]) > J(z_g) × 1.15 on hegre verification (102 clean identities, 1,665 approved images). Metric: trace-J (later corrected to verification AUC after the trace-J complementarity bug was found — see notes)."
+differs_from: zg-posenorm
+diff_summary: |
+  - Adds depth partition z_d (64×64 seg-masked, k=50, FFHQ-fit)
+  - Tests J([z_g | z_d]) vs J(z_g) — incremental information, not absolute separability
+  - 3 normalization modes gated (A / A_prime / C)
+git_commit: PLACEHOLDER
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_epochs: null
+data_snapshot: "102 clean identities, 1,665 approved images from review.db. FG≥30% filter for seg-collapse detection. Face-crop re-run: hegre_faces_stratum, 24× facial depth resolution."
+backbone: "Sapiens-2B depth → seg-mask → canonical 64×64 resample → PCA k=50 (FFHQ-fit). Normalization modes: A (re-std), A_prime (re-std + per-sample), C (min-max)."
+notes: |
+  FAIL on all metrics. trace-J ×1.02 (far short of ×1.15). Face-crop re-run
+  (eliminating domain-shift excuse): ΔAUC −0.023 to −0.034 (depth SUBTRACTS
+  identity signal). Resolution and distribution are exhausted as excuses.
+
+  Metric bug caught: trace-J = tr(S_B)/tr(S_W) is a weighted average for
+  concatenated vectors → mathematically blind to complementarity. Gate
+  instrument switched to verification AUC. Cross-examined across 4 metrics.
+
+  Seg-collapse: Sapiens seg fails on ~10% of tight face crops → empty
+  masked depth vectors. Controlled via fg≥30% filter.
+
+  Root cause: monocular depth estimation hallucinates plausible, generic
+  human geometry — it does not encode identity-specific micro-curvature.
+  This is a structural limitation, not a resolution or normalization issue.
+  KILL — do not re-attempt monocular depth as an identity partition.
+
+  Scripts: 18_fit_zd_encoders.py, 19_build_depth_cache_singlepass.py,
+  20_extract_zd_gate.py, 21_zd_gate.py, 22_zd_complementarity_diagnostic.py,
+  23_zd_verification_auc.py. Face-crop re-run: 36_zd_facecrop_seg_control.py.

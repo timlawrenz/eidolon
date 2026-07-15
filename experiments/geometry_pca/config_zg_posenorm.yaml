@@ -1,0 +1,32 @@
+# zg-posenorm — Pose-Invariant Geometry Encoder (Phase 1-R)
+#
+# Canonical parameters. This is a SPECIFICATION, not a runnable config
+# (the scripts hardcode most of these). It records the key decisions so
+# the experiment can be understood and approximately reproduced.
+
+# Data pipeline
+data:
+  source: stratum-ffhq
+  keypoint_source: DWPose  # 68 iBUG facial landmarks via COCO-WholeBody
+  confidence_prefilter: 0.5  # Drop faces where mean DWPose confidence < this
+  train_samples: 69851  # Full FFHQ — not a subset
+
+# Alignment
+alignment:
+  type: generalized_procrustes_analysis  # 2D translation + scale + in-plane rotation
+  frontalization: true
+  solver: orthographic_pnp  # EPnP rotation estimate from 68 kp vs canonical template
+  canonical_template: 300W_68pt  # Canonical 3D mean face template
+  z_scale: 1.0  # Anatomical mandate — uses template depth at face value
+  # 0.0 = flat (2D GPA only). 0.5 < 1.0. 2.0 extrapolates beyond anatomy.
+
+# PCA encoder
+pca:
+  n_components: 50  # Partition size — consistent across E vector
+  whitened: true
+  variance_retained: 0.99987  # 99.987%
+
+# Output
+output:
+  artifact: output/encoder_production.npz
+  contents: [components (50,136), canonical_template (68,3), pca_mean, whiten_mu, whiten_sigma, gpa_mean]

@@ -1,0 +1,45 @@
+arm: za-normals
+hypothesis: >
+  Surface normals z_a (Sapiens normal maps → PCA k=50, FFHQ-fit) carry
+  complementary identity signal beyond 2D geometry, where depth (z_d) failed.
+  Normals describe surface ANGLE, not absolute distance, so they natively
+  resist affine-scale ambiguity. Unit vectors by construction — no normalization
+  sweep needed. De-rotation by estimated head pose puts them in a canonical
+  frame.
+falsified_if: >
+  Mean AUC([z_g | z_a]) over seeds {0,1,2} ≤ AUC(z_g) + 0.01 on the hegre
+  cross-shoot verification test. ε=0.01 ≈ 4× measured seed noise.
+pre_registered_gate: "PASS if mean AUC([z_g | z_a]) > AUC(z_g) + 0.01 over 3 seeds. Variant selection by highest AUC delta among passing variants. Secondary: z_a-ALONE AUC (normals alone vs geometry alone). Nuisance audit: correlate top-5 z_a components vs estimated yaw/pitch BEFORE accepting PASS."
+differs_from: zd-depth
+diff_summary: |
+  - Normal maps instead of depth maps
+  - No affine-scale ambiguity (unit vectors by construction)
+  - 4 representation variants: raw (3ch), xy (2ch), rot (3ch de-rotated), rot_xy (2ch de-rotated)
+  - Canonical gate instrument: verification AUC (trace-J already banned from Phase 2)
+git_commit: PLACEHOLDER
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_epochs: null
+data_snapshot: "102 clean identities, 1,665 approved images from review.db (same as z_d). Face-crop re-run: hegre_faces_stratum with fg≥30% seg-clean filter."
+backbone: "Sapiens-2B normals → (nx,ny) or (nx,ny,nz) pooled vectors, k=50 PCA (FFHQ-fit). Optional: Rᵀ head-pose de-rotation from Phase 1-R estimate_rotation()."
+notes: |
+  Initial PASS (2026-06-10): ΔAUC +0.024, cleared ε=0.01 ×2.4. OVERTURNED
+  (2026-06-11) when the low-resolution z_g baseline (0.540 editorial keypoints)
+  was discovered. Face-crop re-run at proper resolution (z_g 0.688): z_a
+  SUBTRACTS identity (ΔAUC −0.039). The initial PASS was a resolution artifact.
+
+  VISUAL inspection confirmed Sapiens normals are stunningly high-resolution
+  and topologically accurate on these crops. But mathematically, they add ZERO
+  biological identity — monocular models hallucinate GENERIC, PLAUSIBLE
+  human geometry, not identity-specific micro-curvature. Same root cause as z_d.
+
+  rot paradox: de-rotation removes pose from texture but INJECTS pose into
+  the global mean direction (camera-facing mean → rotated). xy variant was
+  CLEAN of pose nuisance but still failed the gate.
+
+  KILL — do not re-attempt monocular surface normals as an identity partition.
+  The monocular hallucination lesson spans both depth and normals.
+
+  Scripts: 24_build_normal_cache_singlepass.py, 25_fit_za_encoders.py,
+  26_extract_za_gate.py, 27_za_gate.py, 28_za_systematic_review.py.

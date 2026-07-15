@@ -1,0 +1,63 @@
+arm: sapiens2-keypoints
+hypothesis: >
+  Sapiens2's dense, confidence-scored pose keypoints (308 2D landmarks + per-point
+  confidence, 1B checkpoint) are (a) more FAITHFUL than DWPose — they measure
+  rather than hallucinate — and (b) a stronger identity carrier in cross-shoot
+  verification than the 68-pt DWPose landmarks that z_g is built from.
+falsified_if: >
+  Sapiens2 2D shape AUC ≤ DWPose 2D shape AUC in cross-shoot verification.
+  Or: Sapiens2 within-person config scatter ≥ DWPose (if it's not actually
+  more stable).
+pre_registered_gate: >
+  G1 (Faithfulness): "PASS if Sapiens2 per-keypoint confidence discriminates
+  seen vs unseen landmarks, AND within-person config scatter < DWPose."
+  G2 (Identity 2D): "PASS if Sapiens2 2D shape AUC > DWPose 2D shape AUC."
+  G3 (Identity 3D): "PASS if Sapiens2 3D-frontalized shape carries complementary
+  or stronger identity signal vs documented z_g (0.67–0.69)."
+  Secondary: Fisher-J axis split to test whether Sapiens2 shape has an
+  identity-blind transient block (required for z_g replacement).
+differs_from: zg-posenorm
+diff_summary: |
+  - DWPose 68-pt landmarks → Sapiens2 308-pt landmarks (dense, confidence-scored)
+  - Tests faithfulness (seen vs unseen confidence, config scatter) AND identity
+  - 3D frontalization tested both via measured-GPA and z_g template-lift (confound control)
+  - Fisher-J split on mixed-zg cohort to test identity-blindness
+git_commit: PLACEHOLDER
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_epochs: null
+data_snapshot: "Cohort: 25 personas × 15 cross-shoot images = 375 (4–15 shoots/persona). Widened: 100 personas × 15 = 1,500. All with image + DWPose pose.npy + AuraFace .npy. Sapiens2 1B checkpoint via standalone backbone at /tmp/sapiens2. AuraFace-LDA ceiling: AUC 0.998 (25-p) / 0.995 (100-p)."
+backbone: "Sapiens2 0.4B (backbone) + 1B (pose head) standalone — NOT via tools.hegre_dataset. 308 2D keypoints with per-point confidence scores. DWPose baseline: 68 iBUG landmarks (no confidence)."
+notes: |
+  MIXED VERDICT — two findings that pull in opposite directions:
+
+  1. IDENTITY CARRIER: SAPIENS2 PASS. At 100 personas: Δ(DWPose) = +0.096,
+     95% CI [+0.079, +0.113], P(Δ≤0)=0.000. Sapiens2 keypoints are a
+     decisively stronger identity carrier than DWPose, method-independent
+     (the gain is 100% keypoint-source, not frontalization method).
+     Faithfulness: real per-keypoint confidence (0.90 seen / 0.28 unseen),
+     3× more stable within-person (0.0076 vs 0.0243).
+
+  2. z_g REPLACEMENT: FAIL. Fisher-J split on mixed-zg cohort shows Sapiens2
+     shape has NO identity-blind transient block (0 axes J<0.05; min J≈0.10).
+     DWPose mean J=0.136→0.06 with only 10 morphology axes. Sapiens2's fidelity
+     forecloses identity-blindness — you CANNOT carve an identity-blind z_g
+     out of Sapiens2. z_g MUST stay on DWPose.
+
+  RESOLUTION: Sapiens2 = NEW complementary shape/morphology stream (linearly
+  AuraFace-orthogonal, R²=−0.11), NOT a z_g upgrade. Three handles for the
+  Poser: DWPose→z_g (identity-blind pose), AuraFace-LDA (appearance-identity),
+  Sapiens2 (shape-morphology). Guard non-linear leakage with CFG dropout.
+
+  Instrument validation: DWPose 2D shape reproduces documented 0.688 baseline;
+  label-shuffle chance = 0.49. NOT random-projection null (J-L preserves cosine
+  → projection ≈ feature for raw geometric features).
+
+  The earlier "replace DWPose→Sapiens2 for z_g" recommendation (2026-07-07)
+  is SUPERSEDED. Do NOT drop-in replace. See CORRECTION in ledger for the
+  decisive Fisher-J split.
+
+  Scripts: extract_study_features.py, extract_kp3d.py, identity_gate_2d.py,
+  identity_gate_3d.py, step3_method_control.py, identity_gate_wide.py,
+  fisher_split_sapiens2.py (confounded), fisher_split_mixed.py (corrected).
