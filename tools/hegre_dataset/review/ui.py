@@ -4,6 +4,9 @@ Interactive review UI for hegre face datasets.
 Shows actual MTCNN face crops for visual verification.
 Brush-to-taint, DONE-to-approve. Port-configurable Flask server.
 
+Design system: Lawrenz Admin Dark (DESIGN.md)
+Tokens defined as CSS custom properties; no framework dependency.
+
 COORDINATE SYSTEM COUPLING: The @300px convention
 ==================================================
 THUMB_SIZE (300, 300), the pixel average generation, UV mapping, and 3D
@@ -323,57 +326,420 @@ def create_app(db_path: Path, faces_root: Path) -> Flask:
         
         return jsonify({"remaining": remaining, "mode": mode})
 
+    @app.route("/api/unreview_random", methods=["POST"])
+    def api_unreview_random():
+        """Pick a random persona, find up to 10 tainted (non-approved) images, reset them to unreviewed."""
+        db = ds.db_writable
+
+        # Find a random persona that has tainted images
+        row = db.execute(
+            "SELECT p.id, p.name FROM personas p "
+            "JOIN images i ON i.persona_id = p.id "
+            "WHERE i.status LIKE 'tainted:%' "
+            "GROUP BY p.id "
+            "ORDER BY RANDOM() LIMIT 1"
+        ).fetchone()
+
+        if not row:
+            return jsonify({"reset": 0, "persona_name": None, "message": "No tainted images found"})
+
+        pid, pname = row["id"], row["name"]
+
+        # Pick up to 10 random tainted images for this persona
+        tainted = db.execute(
+            "SELECT id FROM images "
+            "WHERE persona_id = ? AND status LIKE 'tainted:%' "
+            "ORDER BY RANDOM() LIMIT 10",
+            (pid,)
+        ).fetchall()
+
+        count = len(tainted)
+        if count > 0:
+            ids = [r["id"] for r in tainted]
+            placeholders = ",".join("?" * len(ids))
+            db.execute(
+                f"UPDATE images SET status = 'unreviewed', reviewed_at = NULL WHERE id IN ({placeholders})",
+                ids
+            )
+            db.commit()
+
+        return jsonify({
+            "reset": count,
+            "persona_name": pname,
+            "persona_id": pid,
+            "message": f"Reset {count} images for {pname} back to unreviewed"
+        })
+
     HTML = """<!DOCTYPE html>
-<html lang="en" class="dark bg-zinc-950 text-zinc-300">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eidolon | Hegre Face Review</title>
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;600&display=swap');
-        body { font-family: 'Geist Mono', monospace; }
-        .skel-layer { opacity: 0; transition: opacity 0.1s; pointer-events: none; }
-        .show-xray .skel-layer { opacity: 1; }
-        .image-card:focus-within { outline: 2px solid #a1a1aa; outline-offset: 2px; }
-        .tainted-nonface { border-color: #f43f5e !important; opacity: 0.3; filter: grayscale(80%); }
-        .tainted-contamination { border-color: #f59e0b !important; opacity: 0.3; filter: grayscale(80%); }
-        .tainted-unusable { border-color: #52525b !important; opacity: 0.3; filter: grayscale(80%); }
-        .tainted-approved_bad_geometry { border-color: #60a5fa !important; opacity: 0.4; filter: grayscale(80%); }
-        .approved { border-color: #10b981 !important; opacity: 1.0; }
-        .unreviewed { border-color: #3f3f46; opacity: 1.0; }
-        .brush-active { outline: 2px solid white; outline-offset: 2px; }
-        .image-card img { -webkit-user-drag: none; user-select: none; }
+        /* ═══════════════════════════════════════════════════════════════
+           Lawrenz Admin Dark — DESIGN.md tokens as CSS custom properties
+           ═══════════════════════════════════════════════════════════════ */
+        :root {
+            /* Colors */
+            --color-page: #0D1117;
+            --color-surface: #161B22;
+            --color-surface-elevated: #1C2128;
+            --color-hover: #1C2128;
+            --color-input: #0D1117;
+            --color-disabled: #21262D;
+            --color-overlay: #0D1117E6;
+            --color-border-default: #30363D;
+            --color-border-muted: #21262D;
+            --color-border-focus: #C9A85C;
+            --color-text-primary: #E6EDF3;
+            --color-text-secondary: #8B949E;
+            --color-text-tertiary: #6E7681;
+            --color-text-on-accent: #0D1117;
+            --color-accent: #C9A85C;
+            --color-accent-hover: #D4B56E;
+            --color-accent-muted: #2A2416;
+
+            /* Signal colors */
+            --color-red: #F85149;
+            --color-red-muted-bg: #490202;
+            --color-red-muted-text: #FF7B72;
+            --color-orange: #D29922;
+            --color-orange-muted-bg: #341A00;
+            --color-orange-muted-text: #E3B341;
+            --color-green: #3FB950;
+            --color-green-muted-bg: #04260F;
+            --color-green-muted-text: #56D364;
+            --color-info: #58A6FF;
+            --color-info-muted: #0C2D6B;
+
+            /* Typography */
+            --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cousine', monospace;
+
+            /* Spacing (4px baseline) */
+            --space-xs: 4px;
+            --space-sm: 8px;
+            --space-md: 12px;
+            --space-lg: 16px;
+            --space-xl: 24px;
+            --space-2xl: 32px;
+            --space-3xl: 48px;
+            --touch-target: 44px;
+
+            /* Rounded */
+            --radius-sm: 4px;
+            --radius-md: 6px;
+            --radius-lg: 8px;
+            --radius-full: 9999px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Reset & base
+           ═══════════════════════════════════════════════════════════════ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { background: var(--color-page); color: var(--color-text-primary); font-family: var(--font-sans); font-size: 16px; line-height: 1.5; }
+        body { min-height: 100dvh; display: flex; flex-direction: column; }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Header
+           ═══════════════════════════════════════════════════════════════ */
+        .header {
+            position: sticky; top: 0; z-index: 50;
+            background: var(--color-page);
+            border-bottom: 1px solid var(--color-border-default);
+            padding: var(--space-lg);
+        }
+        .header-top {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: var(--space-lg);
+            flex-wrap: wrap; gap: var(--space-sm);
+        }
+        .header-info h1 {
+            font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--color-text-primary);
+        }
+        .header-info h1 .persona-name {
+            color: var(--color-green-muted-text);
+        }
+        .header-info .status-line {
+            font-size: 0.75rem; color: var(--color-text-secondary); margin-top: var(--space-xs);
+        }
+        .header-controls {
+            display: flex; align-items: center; gap: var(--space-md);
+            font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em;
+            text-transform: uppercase; color: var(--color-text-secondary);
+            flex-wrap: wrap;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Buttons
+           ═══════════════════════════════════════════════════════════════ */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            border: none; cursor: pointer; font-family: var(--font-sans);
+            font-weight: 500; font-size: 0.875rem; line-height: 1.5;
+            transition: background-color 150ms ease-out, color 150ms ease-out;
+            white-space: nowrap;
+            text-decoration: none;
+        }
+        .btn:disabled { cursor: not-allowed; }
+
+        /* Primary — the single high-emphasis action */
+        .btn-primary {
+            background: var(--color-accent); color: var(--color-text-on-accent);
+            border-radius: var(--radius-md); padding: var(--space-sm) var(--space-lg);
+            font-weight: 600; font-size: 0.8125rem;
+            min-height: var(--touch-target);
+        }
+        .btn-primary:hover { background: var(--color-accent-hover); }
+        .btn-primary:disabled { background: var(--color-disabled); color: var(--color-text-secondary); }
+
+        /* Secondary */
+        .btn-secondary {
+            background: var(--color-surface); color: var(--color-text-primary);
+            border: 1px solid var(--color-border-default);
+            border-radius: var(--radius-md); padding: var(--space-sm) var(--space-lg);
+            min-height: var(--touch-target);
+        }
+        .btn-secondary:hover { background: var(--color-hover); }
+
+        /* Ghost — toolbars, low-emphasis */
+        .btn-ghost {
+            background: transparent; color: var(--color-text-secondary);
+            border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md);
+            min-height: var(--touch-target);
+        }
+        .btn-ghost:hover { background: var(--color-hover); color: var(--color-text-primary); }
+
+        /* Danger */
+        .btn-danger {
+            background: var(--color-red-muted-bg); color: var(--color-red-muted-text);
+            border: 1px solid var(--color-red-muted-bg);
+            border-radius: var(--radius-md); padding: var(--space-sm) var(--space-lg);
+            min-height: var(--touch-target);
+        }
+        .btn-danger:hover { background: var(--color-red); color: var(--color-page); }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Tabs (mode selector)
+           ═══════════════════════════════════════════════════════════════ */
+        .tabs { display: flex; border-bottom: 1px solid var(--color-border-default); }
+        .tab {
+            background: transparent; border: none; cursor: pointer;
+            color: var(--color-text-tertiary);
+            font-family: var(--font-sans); font-size: 0.8125rem; font-weight: 500;
+            padding: var(--space-sm) var(--space-lg);
+            border-bottom: 2px solid transparent;
+            min-height: var(--touch-target);
+            display: inline-flex; align-items: center;
+            transition: color 150ms ease-out, border-color 150ms ease-out;
+        }
+        .tab:hover { color: var(--color-text-primary); }
+        .tab--active {
+            color: var(--color-text-primary);
+            border-bottom-color: var(--color-accent);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Divider
+           ═══════════════════════════════════════════════════════════════ */
+        .divider {
+            width: 1px; background: var(--color-border-muted);
+            align-self: stretch;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Brush indicators
+           ═══════════════════════════════════════════════════════════════ */
+        .brush-indicator {
+            display: inline-flex; align-items: center; gap: var(--space-xs);
+            font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .brush-indicator kbd {
+            font-family: var(--font-mono); font-size: 0.6875rem;
+            background: var(--color-surface); color: var(--color-text-primary);
+            border: 1px solid var(--color-border-default);
+            border-radius: var(--radius-sm); padding: 1px 5px;
+        }
+        .brush-active {
+            background: var(--color-accent-muted) !important;
+            color: var(--color-accent) !important;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Anchor bar (reference images + pixel average)
+           ═══════════════════════════════════════════════════════════════ */
+        .anchor-bar {
+            display: flex; gap: var(--space-md); height: 128px;
+        }
+        .anchor-bar-label {
+            display: flex; flex-direction: column; gap: var(--space-xs);
+            width: 128px; flex-shrink: 0; justify-content: center;
+            border-right: 1px solid var(--color-border-default);
+            padding-right: var(--space-lg);
+        }
+        .anchor-bar-label .title {
+            font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em;
+            text-transform: uppercase; color: var(--color-green-muted-text);
+        }
+        .anchor-bar-label .subtitle {
+            font-size: 0.6875rem; color: var(--color-text-tertiary);
+            line-height: 1.3;
+        }
+        .anchor-card {
+            position: relative; width: 128px; height: 128px; flex-shrink: 0;
+            background: var(--color-surface);
+            border: 2px solid var(--color-green);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+        .anchor-card img {
+            width: 100%; height: 100%; object-fit: cover;
+            border-radius: calc(var(--radius-lg) - 2px); opacity: 0.85;
+        }
+        .anchor-card .tag {
+            position: absolute; bottom: var(--space-xs); right: var(--space-xs);
+            background: rgba(13, 17, 23, 0.85);
+            font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 2px 6px; border-radius: var(--radius-sm);
+            color: var(--color-green-muted-text);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Image cards
+           ═══════════════════════════════════════════════════════════════ */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: var(--space-lg);
+            padding: var(--space-lg);
+        }
+        .card {
+            position: relative; aspect-ratio: 1;
+            background: var(--color-surface);
+            border: 2px solid var(--color-border-muted);
+            border-radius: var(--radius-lg);
+            overflow: hidden; cursor: pointer;
+            transition: border-color 150ms ease-out, opacity 150ms ease-out;
+        }
+        .card:focus-visible {
+            outline: 2px solid var(--color-accent);
+            outline-offset: 2px;
+        }
+        .card img {
+            width: 100%; height: 100%; object-fit: cover;
+            user-select: none; -webkit-user-drag: none;
+            transition: opacity 150ms ease-out;
+        }
+        .card .dist-chip {
+            position: absolute; top: var(--space-sm); left: var(--space-sm);
+            display: flex; gap: var(--space-xs);
+        }
+        .card .dist-chip span {
+            font-family: var(--font-mono); font-size: 0.6875rem;
+            background: rgba(13, 17, 23, 0.85);
+            padding: 2px 6px; border-radius: var(--radius-sm);
+        }
+
+        /* Taint states — using signal colors per DESIGN.md */
+        .card.unreviewed     { border-color: var(--color-border-default); opacity: 1; }
+        .card.approved       { border-color: var(--color-green); opacity: 1; }
+
+        /* extraction_nonface → red (error: quality failure) */
+        .card.tainted-nonface {
+            border-color: var(--color-red) !important;
+            opacity: 0.35; filter: grayscale(80%);
+        }
+        /* contamination → orange (warning: data quality) */
+        .card.tainted-contamination {
+            border-color: var(--color-orange) !important;
+            opacity: 0.35; filter: grayscale(80%);
+        }
+        /* unusable → muted (neutral bad) */
+        .card.tainted-unusable {
+            border-color: var(--color-text-tertiary) !important;
+            opacity: 0.35; filter: grayscale(80%);
+        }
+        /* approved_bad_geometry → info blue (informational) */
+        .card.tainted-approved_bad_geometry {
+            border-color: var(--color-info) !important;
+            opacity: 0.45; filter: grayscale(80%);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           X-ray skeleton overlay
+           ═══════════════════════════════════════════════════════════════ */
+        .show-xray .card img { /* skeleton is drawn server-side when ?skel=1 is appended */ }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Empty state
+           ═══════════════════════════════════════════════════════════════ */
+        .empty-state {
+            display: flex; align-items: center; justify-content: center;
+            padding: var(--space-3xl); min-height: 40vh;
+        }
+        .empty-state p {
+            font-size: 1.375rem; font-weight: 600;
+            color: var(--color-green-muted-text);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Utility
+           ═══════════════════════════════════════════════════════════════ */
+        .flex-1 { flex: 1; }
+        .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+        .persona-link { color: var(--color-green-muted-text); text-decoration: none; }
+        .persona-link:hover { color: var(--color-green); text-decoration: underline; }
+        .unlock-link { color: var(--color-text-tertiary); text-decoration: none; font-size: 0.6875rem; margin-left: var(--space-sm); }
+        .unlock-link:hover { color: var(--color-red-muted-text); }
     </style>
 </head>
-<body class="min-h-[100dvh] flex flex-col antialiased selection:bg-zinc-800">
-    <header class="sticky top-0 z-50 bg-zinc-950/90 backdrop-blur border-b border-zinc-800 p-4 shrink-0">
-        <div class="flex items-center justify-between mb-4">
-            <div>
-                <h1 class="text-sm tracking-widest uppercase text-zinc-100">Persona: <span class="text-emerald-400" id="persona_name">loading...</span></h1>
-                <p class="text-xs text-zinc-500 mt-1" id="status"></p>
+<body>
+    <header class="header">
+        <div class="header-top">
+            <div class="header-info">
+                <h1>Persona: <span class="persona-name" id="persona_name">loading&hellip;</span></h1>
+                <p class="status-line" id="status"></p>
             </div>
-            <div class="flex gap-4 text-[10px] text-zinc-500 uppercase tracking-wider items-center">
-                <button class="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded hover:bg-emerald-500/40" onclick="donePersona()">[ENTER] DONE</button>
-                <div class="h-4 w-px bg-zinc-800"></div>
-                <span class="cursor-pointer" onclick="toggleSkel()"><kbd class="border border-zinc-700 px-1 rounded text-zinc-300">Hold X</kbd> X-Ray</span>
-                <span id="btn_nonface" class="brush-indicator cursor-pointer" onclick="setBrush('tainted:extraction_nonface')"><kbd class="border border-zinc-700 px-1 rounded text-zinc-300">1</kbd> Non-Face</span>
-                <span id="btn_contam" class="brush-indicator cursor-pointer" onclick="setBrush('tainted:contamination')"><kbd class="border border-zinc-700 px-1 rounded text-zinc-300">2</kbd> Contam</span>
-                <span id="btn_unusable" class="brush-indicator cursor-pointer" onclick="setBrush('tainted:unusable')"><kbd class="border border-zinc-700 px-1 rounded text-zinc-300">3</kbd> Unusable</span>
-                <span id="btn_badgeom" class="brush-indicator cursor-pointer" onclick="setBrush('tainted:approved_bad_geometry')"><kbd class="border border-zinc-700 px-1 rounded text-zinc-300">4</kbd> Bad Geo</span>
-                <div class="h-4 w-px bg-zinc-800"></div>
-                <button id="btn_unreviewed" class="px-2 py-1 bg-zinc-700 rounded text-zinc-100 font-bold" onclick="switchMode('unreviewed')">First Pass</button>
-                <button id="btn_review" class="px-2 py-1 bg-zinc-800 rounded hover:bg-zinc-700 text-zinc-300" onclick="switchMode('review')">Review</button>
-                <button id="btn_audit" class="px-2 py-1 bg-zinc-800 rounded hover:bg-zinc-700 text-zinc-300" onclick="switchMode('audit')">Audit</button>
+            <div class="header-controls">
+                <button class="btn btn-primary" onclick="donePersona()" title="Submit (Enter)">DONE</button>
+                <div class="divider"></div>
+                <div class="tabs" id="mode-tabs">
+                    <button id="btn_unreviewed" class="tab tab--active" onclick="switchMode('unreviewed')">First Pass</button>
+                    <button id="btn_review" class="tab" onclick="switchMode('review')">Review</button>
+                    <button id="btn_audit" class="tab" onclick="switchMode('audit')">Audit</button>
+                </div>
+                <div class="divider"></div>
+                <span class="btn-ghost brush-indicator" id="btn_nonface" onclick="setBrush('tainted:extraction_nonface')">
+                    <kbd>1</kbd> Non-Face
+                </span>
+                <span class="btn-ghost brush-indicator" id="btn_contam" onclick="setBrush('tainted:contamination')">
+                    <kbd>2</kbd> Contam
+                </span>
+                <span class="btn-ghost brush-indicator" id="btn_unusable" onclick="setBrush('tainted:unusable')">
+                    <kbd>3</kbd> Unusable
+                </span>
+                <span class="btn-ghost brush-indicator" id="btn_badgeom" onclick="setBrush('tainted:approved_bad_geometry')">
+                    <kbd>4</kbd> Bad Geo
+                </span>
+                <span class="btn-ghost brush-indicator" id="btn_skel" onclick="toggleSkel()">
+                    <kbd>X</kbd> X-Ray
+                </span>
+                <div class="divider"></div>
+                <button class="btn btn-secondary" onclick="unreviewRandom()" title="Pick random persona, reset 10 tainted images to unreviewed" style="font-size:0.75rem;">Unreview</button>
             </div>
         </div>
-        <div class="flex gap-4 h-32" id="reference-anchors" style="display:none;"></div>
+        <div class="anchor-bar" id="reference-anchors" style="display:none;"></div>
     </header>
-    <main class="flex-1 p-4">
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4" id="grid"></div>
+    <main class="flex-1">
+        <div class="grid" id="grid"></div>
     </main>
 
     <script>
-let personaId=null, brush='tainted:extraction_nonface', tainted={}, mode='unreviewed', shownIds=[], showSkel=false;
+        let personaId = null, brush = 'tainted:extraction_nonface', tainted = {}, mode = 'unreviewed', shownIds = [], showSkel = false;
         const urlParams = new URLSearchParams(window.location.search);
         const forcePersona = urlParams.get('persona');
 
@@ -381,10 +747,9 @@ let personaId=null, brush='tainted:extraction_nonface', tainted={}, mode='unrevi
 
         document.addEventListener('keydown', (e) => {
             if (e.key.toLowerCase() === 'x' && !e.repeat) {
-                document.body.classList.add('show-xray');
                 showSkel = true;
-                document.querySelectorAll('img').forEach(img => {
-                    if(!img.src.includes('skel=1')) img.src = img.src + (img.src.includes('?') ? '&' : '?') + 'skel=1';
+                document.querySelectorAll('.card img').forEach(img => {
+                    if (!img.src.includes('skel=1')) img.src = img.src + (img.src.includes('?') ? '&' : '?') + 'skel=1';
                 });
             }
             if (e.key === '1') setBrush('tainted:extraction_nonface');
@@ -395,27 +760,22 @@ let personaId=null, brush='tainted:extraction_nonface', tainted={}, mode='unrevi
         });
         document.addEventListener('keyup', (e) => {
             if (e.key.toLowerCase() === 'x') {
-                document.body.classList.remove('show-xray');
                 showSkel = false;
-                document.querySelectorAll('img').forEach(img => {
-                    img.src = img.src.replace(/[\\?&]skel=1/, '');
+                document.querySelectorAll('.card img').forEach(img => {
+                    img.src = img.src.replace(/[?&]skel=1/, '');
                 });
             }
         });
 
         function toggleSkel() {
             showSkel = !showSkel;
-            if(showSkel) {
-                document.body.classList.add('show-xray');
-                document.querySelectorAll('img').forEach(img => {
-                    if(!img.src.includes('skel=1')) img.src = img.src + (img.src.includes('?') ? '&' : '?') + 'skel=1';
-                });
-            } else {
-                document.body.classList.remove('show-xray');
-                document.querySelectorAll('img').forEach(img => {
-                    img.src = img.src.replace(/[\\?&]skel=1/, '');
-                });
-            }
+            document.querySelectorAll('.card img').forEach(img => {
+                if (showSkel) {
+                    if (!img.src.includes('skel=1')) img.src = img.src + (img.src.includes('?') ? '&' : '?') + 'skel=1';
+                } else {
+                    img.src = img.src.replace(/[?&]skel=1/, '');
+                }
+            });
         }
 
         function switchMode(m) {
@@ -423,135 +783,147 @@ let personaId=null, brush='tainted:extraction_nonface', tainted={}, mode='unrevi
             ['unreviewed', 'review', 'audit'].forEach(mod => {
                 const btn = document.getElementById('btn_' + mod);
                 if (btn) {
-                    if (mod === m) {
-                        btn.className = "px-2 py-1 bg-zinc-700 rounded text-zinc-100 font-bold transition-colors";
-                    } else {
-                        btn.className = "px-2 py-1 bg-zinc-800 rounded hover:bg-zinc-700 text-zinc-300 transition-colors";
-                    }
+                    btn.className = (mod === m) ? 'tab tab--active' : 'tab';
                 }
             });
             loadPersona();
         }
 
-        function setBrush(b){
-            brush=b;
-            document.querySelectorAll('.brush-indicator').forEach(e=>e.classList.remove('brush-active'));
-            if(b==='tainted:extraction_nonface')document.getElementById('btn_nonface').classList.add('brush-active');
-            if(b==='tainted:contamination')document.getElementById('btn_contam').classList.add('brush-active');
-            if(b==='tainted:unusable')document.getElementById('btn_unusable').classList.add('brush-active');
-            if(b==='tainted:approved_bad_geometry')document.getElementById('btn_badgeom').classList.add('brush-active');
+        function setBrush(b) {
+            brush = b;
+            document.querySelectorAll('.brush-indicator').forEach(e => e.classList.remove('brush-active'));
+            if (b === 'tainted:extraction_nonface') document.getElementById('btn_nonface').classList.add('brush-active');
+            if (b === 'tainted:contamination') document.getElementById('btn_contam').classList.add('brush-active');
+            if (b === 'tainted:unusable') document.getElementById('btn_unusable').classList.add('brush-active');
+            if (b === 'tainted:approved_bad_geometry') document.getElementById('btn_badgeom').classList.add('brush-active');
         }
 
         let g_data = null;
-        async function loadPersona(){
+        async function loadPersona() {
             let url = '/api/random_persona?mode=' + mode;
             if (forcePersona) url += '&persona=' + encodeURIComponent(forcePersona);
-            const resp=await fetch(url);
-            const data=await resp.json();
+            const resp = await fetch(url);
+            const data = await resp.json();
             g_data = data;
-            if(!data.persona_id){document.getElementById('grid').innerHTML='<p class="text-2xl text-emerald-400 p-4">'+data.persona_name+'!</p>';return;}
-            personaId=data.persona_id;
-            shownIds=data.image_ids;
-            let nameHtml = `<a href="/?persona=${encodeURIComponent(data.persona_name)}" class="hover:text-emerald-300 hover:underline transition-colors" title="Lock to this persona">${data.persona_name}</a>`;
+            if (!data.persona_id) {
+                const grid = document.getElementById('grid');
+                grid.innerHTML = '<div class="empty-state"><p>' + data.persona_name + '!</p></div>';
+                return;
+            }
+            personaId = data.persona_id;
+            shownIds = data.image_ids;
+
+            let nameHtml = '<a href="/?persona=' + encodeURIComponent(data.persona_name) + '" class="persona-link" title="Lock to this persona">' + data.persona_name + '</a>';
             if (forcePersona) {
-                nameHtml += ` <a href="/" class="text-zinc-500 hover:text-rose-400 text-[10px] ml-2 no-underline" title="Unlock persona">[Unlock]</a>`;
+                nameHtml += ' <a href="/" class="unlock-link" title="Unlock persona">[Unlock]</a>';
             }
             document.getElementById('persona_name').innerHTML = nameHtml;
-            const n=data.unreviewed_ids.length;
-            document.getElementById('status').innerText=`Mode: ${mode.toUpperCase()} | Total: ${data.total_for_persona} | Unreviewed: ${n}`;
-            tainted={};
+            const n = data.unreviewed_ids.length;
+            document.getElementById('status').innerText = 'Mode: ' + mode.toUpperCase() + ' | Total: ' + data.total_for_persona + ' | Unreviewed: ' + n;
+            tainted = {};
             renderReferences(data.reference_ids);
-            renderGrid(data.image_ids,data.statuses,data.labels,data.distances);
+            renderGrid(data.image_ids, data.statuses, data.labels, data.distances);
         }
 
         function renderReferences(ids) {
             const container = document.getElementById('reference-anchors');
-            container.innerHTML = `
-            <div class="flex flex-col gap-1 w-32 border-r border-zinc-800 pr-4 justify-center shrink-0">
-                <span class="text-[10px] text-emerald-400 tracking-widest uppercase">Centroid Anchors</span>
-                <span class="text-[10px] text-zinc-500 leading-tight">These crops are closest to the zg center.</span>
-            </div>`;
+            container.innerHTML = '';
+            container.style.display = 'flex';
+
+            const label = document.createElement('div');
+            label.className = 'anchor-bar-label';
+            label.innerHTML = '<span class="title">Centroid Anchors</span><span class="subtitle">Closest to z<sub>g</sub> center.</span>';
+            container.appendChild(label);
 
             // Pixel Average (Procrustes Warping)
             if (g_data && g_data.persona_name) {
-                container.innerHTML += `
-                <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0" title="Pixel Average (Procrustes Warping)">
-                    <img src="/api/pixel/${g_data.persona_name}?t=${Date.now()}" class="w-full h-full object-cover rounded opacity-90" onerror="this.parentElement.style.display='none'" />
-                    <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Pixel</div>
-                </div>`;
+                const pix = document.createElement('div');
+                pix.className = 'anchor-card';
+                pix.title = 'Pixel Average (Procrustes Warping)';
+                pix.innerHTML = '<img src="/api/pixel/' + g_data.persona_name + '?t=' + Date.now() + '" onerror="this.parentElement.style.display=\\'none\\'" /><div class="tag">Pixel</div>';
+                container.appendChild(pix);
             }
 
             if (!ids || ids.length === 0) {
                 if (!g_data || !g_data.persona_name) {
                     container.style.display = 'none';
-                } else {
-                    container.style.display = 'flex';
                 }
                 return;
             }
-            container.style.display = 'flex';
-            for(const id of ids) {
-                container.innerHTML += `
-                <div class="relative w-32 h-32 bg-zinc-900 border-2 border-emerald-500 rounded shrink-0">
-                    <img src="/api/thumb/${id}${showSkel ? "?skel=1" : ""}" class="w-full h-full object-cover rounded opacity-80" />
-                    <div class="absolute bottom-1 right-1 bg-zinc-950/80 text-[9px] px-1 rounded backdrop-blur text-emerald-400">Ref</div>
-                </div>`;
+
+            for (const id of ids) {
+                const card = document.createElement('div');
+                card.className = 'anchor-card';
+                card.innerHTML = '<img src="/api/thumb/' + id + (showSkel ? '?skel=1' : '') + '" /><div class="tag">Ref</div>';
+                container.appendChild(card);
             }
         }
 
-        function renderGrid(ids,statuses,labels,distances){
-            const grid=document.getElementById('grid');grid.innerHTML='';
-            for(const id of ids){
-                const s=statuses[id]||'unreviewed';
-                let lbl=labels[id]||'';
-                const dist=distances[id];
-                
-                if(mode==='unreviewed' && s!=='unreviewed') continue;
-                if(mode==='audit' && s!=='approved' && !s.startsWith('tainted:approved_')) continue;
-                
-                const wrapper=document.createElement('div');
+        function renderGrid(ids, statuses, labels, distances) {
+            const grid = document.getElementById('grid'); grid.innerHTML = '';
+            for (const id of ids) {
+                const s = statuses[id] || 'unreviewed';
+                const dist = distances[id];
+
+                if (mode === 'unreviewed' && s !== 'unreviewed') continue;
+                if (mode === 'audit' && s !== 'approved' && !s.startsWith('tainted:approved_')) continue;
+
+                const wrapper = document.createElement('div');
                 wrapper.tabIndex = 0;
-                wrapper.className = 'image-card group relative aspect-square bg-zinc-900 border-2 border-zinc-800 rounded cursor-pointer overflow-hidden transition-colors focus:outline-none';
-                if(s.startsWith('tainted:')) wrapper.classList.add('tainted-'+s.replace('tainted:extraction_nonface','nonface').replace('tainted:',''));
-                else if(s==='approved') wrapper.classList.add('approved');
+                wrapper.className = 'card';
+                if (s.startsWith('tainted:')) wrapper.classList.add('tainted-' + s.replace('tainted:extraction_nonface', 'nonface').replace('tainted:', ''));
+                else if (s === 'approved') wrapper.classList.add('approved');
                 else wrapper.classList.add('unreviewed');
-                
+
                 wrapper.onclick = () => toggleTaint(wrapper, id, s);
 
                 let distHtml = '';
                 if (dist !== null && dist !== undefined) {
                     const metricLabel = (g_data && g_data.distance_metric === 'af_distance') ? 'af' : 'zg';
-                    distHtml = `<span class="bg-zinc-950/80 backdrop-blur text-[10px] px-1.5 py-0.5 rounded border border-zinc-800 text-rose-300">${metricLabel}: ${parseFloat(dist).toFixed(4)}</span>`;
+                    distHtml = '<span class="dist-chip"><span style="color:var(--color-red-muted-text);border:1px solid var(--color-red-muted-bg);">' + metricLabel + ': ' + parseFloat(dist).toFixed(4) + '</span></span>';
                 }
 
-                wrapper.innerHTML = `
-                    <img src="/api/thumb/${id}${showSkel ? "?skel=1" : ""}" class="w-full h-full object-cover transition-opacity" loading="lazy" draggable="false" />
-                    <div class="absolute top-2 left-2 flex flex-col gap-1">
-                        ${distHtml}
-                    </div>
-                `;
+                wrapper.innerHTML = '<img src="/api/thumb/' + id + (showSkel ? '?skel=1' : '') + '" loading="lazy" draggable="false" />' + distHtml;
                 grid.appendChild(wrapper);
             }
         }
 
-        function toggleTaint(el,id, defaultStatus){
-            if(tainted[id]){
+        function toggleTaint(el, id, defaultStatus) {
+            if (tainted[id]) {
                 delete tainted[id];
-                el.className = 'image-card group relative aspect-square bg-zinc-900 border-2 rounded cursor-pointer overflow-hidden transition-colors focus:outline-none ' + 
-                               ((mode==='review'||mode==='audit') ? 'approved' : 'unreviewed');
-            }
-            else{
-                tainted[id]=brush;
-                el.className = 'image-card group relative aspect-square bg-zinc-900 border-2 rounded cursor-pointer overflow-hidden transition-colors focus:outline-none tainted-' + brush.replace('tainted:extraction_nonface','nonface').replace('tainted:','');
+                el.className = 'card ' + ((mode === 'review' || mode === 'audit') ? 'approved' : 'unreviewed');
+            } else {
+                tainted[id] = brush;
+                el.className = 'card tainted-' + brush.replace('tainted:extraction_nonface', 'nonface').replace('tainted:', '');
             }
         }
 
-        async function donePersona(){
-            const t=Object.keys(tainted).length;
-            const resp=await fetch('/api/done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({persona_id:personaId,tainted:tainted,mode:mode,shown_ids:shownIds})});
-            const data=await resp.json();
-            document.getElementById('status').innerText='Saved. '+data.remaining+' remaining. Loading next...';
-            setTimeout(loadPersona,400);
+        async function donePersona() {
+            const t = Object.keys(tainted).length;
+            const resp = await fetch('/api/done', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ persona_id: personaId, tainted: tainted, mode: mode, shown_ids: shownIds }) });
+            const data = await resp.json();
+            document.getElementById('status').innerText = 'Saved. ' + data.remaining + ' remaining. Loading next...';
+            setTimeout(loadPersona, 400);
+        }
+
+        async function unreviewRandom() {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                const resp = await fetch('/api/unreview_random', { method: 'POST' });
+                const data = await resp.json();
+                document.getElementById('status').innerText = data.message;
+                if (data.reset > 0) {
+                    if (personaId === data.persona_id) {
+                        loadPersona();
+                    }
+                }
+            } catch (e) {
+                document.getElementById('status').innerText = 'Unreview failed: ' + e;
+            }
+            btn.disabled = false;
+            btn.textContent = 'Unreview';
         }
         loadPersona();
     </script>
