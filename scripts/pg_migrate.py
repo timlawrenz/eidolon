@@ -46,22 +46,24 @@ def main(dry_run: bool = False) -> int:
     # 2. Import
     print("2/4 Importing to PostgreSQL...")
     import psycopg2
-    import os
+    import re
 
     db_url = database_url()
-    # Parse psycopg2 DSN from SQLAlchemy URL
-    # postgresql+psycopg2://user@host/dbname
-    parts = db_url.replace("postgresql+psycopg2://", "").split("/")
-    user_host = parts[0].split("@")
-    user = user_host[0]
-    host = user_host[1] if len(user_host) > 1 else "localhost"
-    dbname = parts[1]
+    match = re.match(r"postgresql(?:\+psycopg2)?://([^:]+):([^@]+)@([^/]+)/(.+)", db_url)
+    if not match:
+        print(f"ERROR: Could not parse database URL: {db_url}", file=sys.stderr)
+        return 1
+    user, password, host, dbname = match.groups()
 
-    pg = psycopg2.connect(host=host, user=user, dbname=dbname)
+    pg = psycopg2.connect(host=host, user=user, password=password, dbname=dbname)
     pg.autocommit = True
     cur = pg.cursor()
 
-    # Execute the SQL file
+    # Tables already created by alembic. Just truncate and insert.
+    print("   Truncating existing tables...")
+    cur.execute("TRUNCATE TABLE images, sets, personas RESTART IDENTITY CASCADE;")
+
+    # Execute the SQL file (which has INSERT statements)
     with open(EXPORT_PATH) as f:
         sql_content = f.read()
     cur.execute(sql_content)
@@ -70,7 +72,7 @@ def main(dry_run: bool = False) -> int:
 
     # 3. Reset sequence
     print("3/4 Resetting autoincrement sequences...")
-    pg = psycopg2.connect(host=host, user=user, dbname=dbname)
+    pg = psycopg2.connect(host=host, user=user, password=password, dbname=dbname)
     pg.autocommit = True
     cur = pg.cursor()
     for table in ["personas", "sets", "images"]:
@@ -83,7 +85,7 @@ def main(dry_run: bool = False) -> int:
     # 4. Verify
     print("4/4 Verifying row counts...")
     sl = sqlite3.connect(f"file:{SQLITE_PATH}?mode=ro", uri=True)
-    pg = psycopg2.connect(host=host, user=user, dbname=dbname)
+    pg = psycopg2.connect(host=host, user=user, password=password, dbname=dbname)
     pg.autocommit = True
 
     results = verify_row_counts(sl, pg.cursor())
@@ -99,9 +101,9 @@ def main(dry_run: bool = False) -> int:
 
     if all_match:
         print("\n✓ Migration verified. All row counts match.")
-        print(f"\nNext steps:")
+        print("\nNext steps:")
         print(f"  1. mv {SQLITE_PATH} {SQLITE_PATH}.old")
-        print(f"  2. python -m tools.hegre_dataset review ui --dataset data/hegre_datasets/hegre-faces/v1")
+        print("  2. python -m tools.hegre_dataset review ui --dataset data/hegre_datasets/hegre-faces/v1")
         return 0
     else:
         print("\n✗ VERIFICATION FAILED — do not rename SQLite file.", file=sys.stderr)

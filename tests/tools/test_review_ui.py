@@ -231,11 +231,14 @@ class TestZgMaxDistance:
         # Should fail because encoder doesn't exist, but should parse the flag
         assert "zg_max_distance" not in result.stderr.lower() or "unrecognized" not in result.stderr.lower()
 
-    def test_custom_threshold_applied_in_function(self, tmp_path):
+    def test_custom_threshold_applied_in_function(self, tmp_path, monkeypatch):
         """zg_max_distance parameter is honored: lower threshold catches more outliers."""
         from tools.hegre_dataset.review.geometry import compute_zg_distances
         from unittest.mock import patch, ANY
         import numpy as np
+
+        # Skip the review.db guard since we're using a temp SQLite DB
+        monkeypatch.setenv("EIDOLON_SKIP_REVIEWDB_GUARD", "1")
 
         db_path = tmp_path / "review.db"
         stratum_dir = tmp_path / "stratum"

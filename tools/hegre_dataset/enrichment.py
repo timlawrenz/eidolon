@@ -228,58 +228,56 @@ def run_stratum_enrichment(dataset_dir: Path, db_path: Path, faces_dir: Path,
                 
             from insightface.app import FaceAnalysis
         except ImportError:
-
             print("Error: insightface not installed. Skipping AuraFace extraction.")
-            return
+        else:
+            app = FaceAnalysis(name='auraface', root='/mnt/nas-ai-models', providers=['CPUExecutionProvider'])
+            # det_size in InsightFace forces the input image to be resized to that resolution before passing 
+            # to the SCRFD detector. The default det_size=(640,640) works, but setting it forces padding/scaling logic.
+            # But wait, why are we using SCRFD at all? 
+            # We ALREADY have a perfectly cropped face. SCRFD is failing because the face fills the frame, 
+            # lacking shoulder/background context.
+            # 
+            # If we remove det_size entirely, InsightFace defaults to (640, 640). 
+            # The true fix is padding the 512px MTCNN crop so SCRFD can 'see' the edges.
+            app.prepare(ctx_id=0)
 
-        app = FaceAnalysis(name='auraface', root='/mnt/nas-ai-models', providers=['CPUExecutionProvider'])
-        # det_size in InsightFace forces the input image to be resized to that resolution before passing 
-        # to the SCRFD detector. The default det_size=(640,640) works, but setting it forces padding/scaling logic.
-        # But wait, why are we using SCRFD at all? 
-        # We ALREADY have a perfectly cropped face. SCRFD is failing because the face fills the frame, 
-        # lacking shoulder/background context.
-        # 
-        # If we remove det_size entirely, InsightFace defaults to (640, 640). 
-        # The true fix is padding the 512px MTCNN crop so SCRFD can 'see' the edges.
-        app.prepare(ctx_id=0)
+            t0 = time.time()
+            n_skip = 0
+            P = len(missing_auraface)
+            for i, (in_p, out_p) in enumerate(missing_auraface):
+                if i > 0 and i % 100 == 0:
+                    elapsed = time.time() - t0
+                    rate = i / elapsed
+                    eta = (P - i) / rate
+                    print(f"  [{i}/{P}] {rate:.1f} img/s, ETA: {eta:.0f}s", flush=True)
 
-        t0 = time.time()
-        n_skip = 0
-        P = len(missing_auraface)
-        for i, (in_p, out_p) in enumerate(missing_auraface):
-            if i > 0 and i % 100 == 0:
-                elapsed = time.time() - t0
-                rate = i / elapsed
-                eta = (P - i) / rate
-                print(f"  [{i}/{P}] {rate:.1f} img/s, ETA: {eta:.0f}s", flush=True)
+                out_p.parent.mkdir(parents=True, exist_ok=True)
+                img = cv2.imread(str(in_p))
+                if img is None:
+                    n_skip += 1
+                    continue
+                    
+                faces = app.get(img)
+                if len(faces) == 0:
+                    # SCRFD often fails to detect faces when the image is already a tightly cropped 512px MTCNN box.
+                    # We can trick it by padding the image with a black border, running detection, and taking the result.
+                    # Pad by 20% on all sides
+                    h, w = img.shape[:2]
+                    pad_y = int(h * 0.2)
+                    pad_x = int(w * 0.2)
+                    padded_img = cv2.copyMakeBorder(img, pad_y, pad_y, pad_x, pad_x, cv2.BORDER_CONSTANT, value=[0,0,0])
+                    faces = app.get(padded_img)
+                    
+                if len(faces) == 0:
+                    # If it STILL fails after padding, we skip it
+                    n_skip += 1
+                    continue
+                    
+                emb = faces[0].normed_embedding
+                np.save(out_p, emb)
 
-            out_p.parent.mkdir(parents=True, exist_ok=True)
-            img = cv2.imread(str(in_p))
-            if img is None:
-                n_skip += 1
-                continue
-                
-            faces = app.get(img)
-            if len(faces) == 0:
-                # SCRFD often fails to detect faces when the image is already a tightly cropped 512px MTCNN box.
-                # We can trick it by padding the image with a black border, running detection, and taking the result.
-                # Pad by 20% on all sides
-                h, w = img.shape[:2]
-                pad_y = int(h * 0.2)
-                pad_x = int(w * 0.2)
-                padded_img = cv2.copyMakeBorder(img, pad_y, pad_y, pad_x, pad_x, cv2.BORDER_CONSTANT, value=[0,0,0])
-                faces = app.get(padded_img)
-                
-            if len(faces) == 0:
-                # If it STILL fails after padding, we skip it
-                n_skip += 1
-                continue
-                
-            emb = faces[0].normed_embedding
-            np.save(out_p, emb)
-
-        elapsed = time.time() - t0
-        print(f"AuraFace extraction complete in {elapsed:.0f}s. Skipped {n_skip} images.")
+            elapsed = time.time() - t0
+            print(f"AuraFace extraction complete in {elapsed:.0f}s. Skipped {n_skip} images.")
     else:
         print(f"All {status_filter} images already have AuraFace data.")
 

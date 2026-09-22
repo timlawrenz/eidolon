@@ -7,9 +7,7 @@ Each output directory contains:
     metadata.json    {"persona": ..., "set": ..., "image_id": ...}
 """
 
-import sqlite3
-import json
-import time
+import json, os, time
 from pathlib import Path
 from collections import defaultdict
 
@@ -38,20 +36,16 @@ def build_corpus(
     Returns:
         0 on success, 1 on error.
     """
-    db_path = dataset_root / "review.db"
-    if not db_path.exists():
-        print(f"Error: review.db not found at {db_path}")
-        return 1
-
+    from tools.hegre_dataset.dataset import HegreDataset
+    os.environ.setdefault('EIDOLON_SKIP_REVIEWDB_GUARD', '1')
+    
+    ds = HegreDataset(dataset_root)
+    
     avg_dir = dataset_root / "averages"
     faces_dir = dataset_root  # image_path is relative to dataset root
 
-    conn = sqlite3.connect(f"file:{db_path.resolve()}?nolock=1", uri=True)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-
-    c.execute("SELECT id, name FROM personas ORDER BY name")
-    all_personas = c.fetchall()
+    all_personas = [(p.id, p.name) for p in ds.personas.values()]
+    all_personas.sort(key=lambda x: x[1])
 
     # ── Gather eligible images ────────────────────────────────────────
     eligible = []  # list of (persona_name, image_path) tuples
@@ -59,17 +53,14 @@ def build_corpus(
     skipped_missing_zg = 0
     skipped_too_few = 0
 
-    for p in all_personas:
-        pid = p["id"]
-        pname = p["name"]
-
+    for pid, pname in all_personas:
         # Check persona average LDA exists
         avg_lda_path = avg_dir / f"{pname}.lda.npy"
         if not avg_lda_path.exists():
             skipped_missing_avg += 1
             continue
 
-        approved = c.execute(
+        approved = ds.db.execute(
             "SELECT image_path FROM images WHERE persona_id = ? AND status = 'approved'",
             (pid,)
         ).fetchall()
@@ -81,7 +72,7 @@ def build_corpus(
         # Filter: only images with z_g available
         persona_eligible = []
         for img in approved:
-            img_path = img["image_path"]
+            img_path = img[0] if isinstance(img, (tuple, list)) else img["image_path"]
             zg_path = dataset_root / "zg" / img_path.replace('.jpg', '.npy')
             if zg_path.exists():
                 persona_eligible.append(img_path)
@@ -89,12 +80,9 @@ def build_corpus(
                 skipped_missing_zg += 1
 
         if max_images_per_persona and len(persona_eligible) > max_images_per_persona:
-            # Take a random subset (deterministic by sorting)
             persona_eligible = sorted(persona_eligible)[:max_images_per_persona]
 
         eligible.extend((pname, ip) for ip in persona_eligible)
-
-    conn.close()
 
     print(f"Corpus build summary:")
     print(f"  Personas scanned:           {len(all_personas)}")
@@ -115,7 +103,6 @@ def build_corpus(
     errors = 0
 
     for i, (pname, img_path) in enumerate(eligible):
-        # Stable name: persona--image_stem (survives rebuilds when images are added/removed)
         stem = Path(img_path).stem
         dir_name = f"{pname}--{stem}"
         sample_dir = output_dir / dir_name
@@ -150,11 +137,7 @@ def build_corpus(
             # Metadata
             set_slug = Path(img_path).parent.name
             stem = Path(img_path).stem
-            meta = {
-                "persona": pname,
-                "set": set_slug,
-                "image_id": stem,
-            }
+            meta = {"persona": pname, "set": set_slug, "image_id": stem}
             with open(sample_dir / "metadata.json", "w") as f:
                 json.dump(meta, f)
 

@@ -84,8 +84,8 @@ def verify_row_counts(
         sl = sqlite_conn.execute(
             f"SELECT COUNT(*) FROM {table}"
         ).fetchone()[0]
-        pg_result = pg_cursor.execute(f"SELECT COUNT(*) FROM {table}")
-        pg = pg_result.fetchone()[0]
+        pg_cursor.execute(f"SELECT COUNT(*) FROM {table}")
+        pg = pg_cursor.fetchone()[0]
         results.append({
             "table": table,
             "sqlite_count": sl,

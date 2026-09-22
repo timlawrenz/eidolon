@@ -1,10 +1,12 @@
-import sqlite3
+import os, sys, random
 from pathlib import Path
 from collections import defaultdict
 
+
 def get_hegre_cross_shoot_paths(db_path: Path, root_dir: Path, persona_names: list = None) -> dict:
     """
-    Query review.db for approved images and return valid T5 and AuraFace paths.
+    Query review dataset for approved images and return valid T5 and AuraFace paths.
+    Uses HegreDataset (PostgreSQL) — db_path is the dataset root, not a .db file.
     
     Path mapping (both keep faces/ prefix):
       DB image_path:  faces/adriana/adriana-introduction/img.jpg
@@ -13,26 +15,33 @@ def get_hegre_cross_shoot_paths(db_path: Path, root_dir: Path, persona_names: li
     
     Returns: {persona_id: {set_id: [{"t5_path": Path, "auraface_path": Path}, ...]}}
     """
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro&nolock=1", uri=True)
-    c = conn.cursor()
+    # Ensure project root is on sys.path for tools.hegre_dataset import
+    _proj_root = Path(__file__).resolve().parent.parent.parent.parent
+    if str(_proj_root) not in sys.path:
+        sys.path.insert(0, str(_proj_root))
+    
+    from tools.hegre_dataset.dataset import HegreDataset
+    os.environ.setdefault('EIDOLON_SKIP_REVIEWDB_GUARD', '1')
+    
+    ds = HegreDataset(root_dir)
     
     if persona_names:
-        placeholders = ','.join(['?'] * len(persona_names))
+        name_to_id = {p.name.lower(): p.id for p in ds.personas.values()}
+        valid_ids = [pid for name, pid in name_to_id.items() if name in [n.lower() for n in persona_names]]
+        if not valid_ids:
+            return {}
+        placeholders = ','.join(['?'] * len(valid_ids))
         query = f"""
             SELECT i.persona_id, i.set_id, i.image_path 
             FROM images i
-            JOIN personas p ON i.persona_id = p.id
-            WHERE i.status = 'approved' AND p.name IN ({placeholders})
+            WHERE i.status = 'approved' AND i.persona_id IN ({placeholders})
         """
-        c.execute(query, persona_names)
+        rows = ds.db.execute(query, valid_ids).fetchall()
     else:
-        c.execute("""
+        rows = ds.db.execute("""
             SELECT persona_id, set_id, image_path 
             FROM images WHERE status = 'approved'
-        """)
-    
-    rows = c.fetchall()
-    conn.close()
+        """).fetchall()
     
     data = defaultdict(lambda: defaultdict(list))
     
@@ -49,7 +58,6 @@ def get_hegre_cross_shoot_paths(db_path: Path, root_dir: Path, persona_names: li
             
     return {p_id: dict(sets) for p_id, sets in data.items()}
 
-import random
 
 def prepare_cross_shoot_split(data_dict: dict, min_sets: int = 2, seed: int = 42):
     """
