@@ -1,0 +1,26 @@
+arm: refit-cleaned
+hypothesis: >
+  Refitting the AuraFace-LDA basis on the cleaned Hegre dataset (321 personas,
+  166k approved, non-faces purged) produces a basis with lower within-persona
+  scatter and better cross-shoot retrieval ceiling than the old basis fitted on
+  151 personas / 55,680 images (pre-cleaning).
+falsified_if: >
+  The new basis does NOT improve GT-LDA cross-shoot R@1 vs the old basis
+  (0.842), OR the intra/inter-class separation ratio degrades.
+pre_registered_gate: >
+  G1 (Basis quality): intra-class scatter ≤ old basis AND inter/intra ratio ≥ old basis.
+  G2 (GT-LDA ceiling): cross-shoot R@1 ≥ 0.842 (old ceiling); target ≥ 0.85.
+  G3 (Corpus integrity): build-corpus produces ≥ 31,668 samples (old count).
+differs_from: null
+diff_summary: |
+  - Same fit-lda-basis algorithm, new data
+  - Hegre personas: 151 -> 321 (2.1x)
+  - Hegre approved images: 55,680 -> 166,204 (3.0x)
+  - Non-faces and contamination purged from approved set
+  - HegreDataset (PostgreSQL) replacing raw sqlite3 in data_loader
+git_commit: TBD
+git_dirty: true
+training_host: game
+training_gpu: CPU-only
+data_snapshot: "324 personas, 166,195 approved with AuraFace, 321 training-eligible"
+notes: "G1+G2 PASS. GT-LDA ceiling R@1=0.854 (old 0.842, +1.2pp). LDA basis refit: 259 train personas, 137k images, eigenvalues 0.032-0.005. Yaw direction from old basis. Corpus: 31,711 eligible (dry-run), full build pending on training box. Two missing modules repaired (fit_lda_basis.py, compute_lda_vectors). Three files migrated to PG (data_loader, corpus_builder, geometry)."

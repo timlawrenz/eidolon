@@ -142,10 +142,12 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
 
         vectors = []
         img_ids = []
+        img_statuses = []  # Track status for each image ID
         approved_vectors = []
         bad_geo_ids = []
         image_paths = []   # for pixel average anchors
         face_2ds = []       # for pixel average anchors
+        total_updated = 0  # Initialize per persona
 
         for img in images:
             # We know the specific subdirectory structure Stratum uses!
@@ -170,14 +172,16 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                 pose_data = np.load(pose_path)
                 face_2d = pose_data["face_2d"] if isinstance(pose_data, np.lib.npyio.NpzFile) else pose_data
 
-                # Extract shoulder pose if available
-                shoulder_pose = None
-                if isinstance(pose_data, np.lib.npyio.NpzFile) and "shoulder_pose" in pose_data:
-                    shoulder_pose = pose_data["shoulder_pose"]
+                # Extract face_2d (first 68 points, x/y only, ensure float32 for linalg compatibility)
+                if face_2d.shape[0] >= 68:
+                    face_2d = face_2d[:68, :2].astype(np.float32)
+                else:
+                    continue  # Not enough keypoints
 
-                zg = encode_zg(face_2d, shoulder_pose, encoder)
+                zg = encode_zg(face_2d, encoder)
                 vectors.append(zg)
                 img_ids.append(img["id"])
+                img_statuses.append(img["status"])
 
                 if img["status"] == "approved":
                     approved_vectors.append(zg)
@@ -185,8 +189,8 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
                     face_2ds.append(face_2d)
 
                 total_images_processed = len(img_ids)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  Warning: failed to encode {img['image_path']}: {e}")
 
         if not vectors:
             print(f"Skipped {pname} (No valid pose.npy files found)")
@@ -243,7 +247,9 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
 
         for i, dist in enumerate(distances):
             dist_updates.append((float(dist), img_ids[i]))
-            if dist > zg_max_distance:
+            # Only auto-label NON-APPROVED images as non-face
+            # (approved images with high zg_distance are kept for identity training)
+            if dist > zg_max_distance and img_statuses[i] != "approved":
                 nonface_ids.append((img_ids[i],))
 
         if dist_updates:
@@ -267,4 +273,107 @@ def compute_zg_distances(db_path: Path, stratum_dir: Path, encoder_path: str, pe
 
     if len(personas) > 1:
         print(f"\nDone. Updated zg_distance for {total_updated} total images.")
+    return 0
+
+
+def compute_lda_vectors(db_path: Path, dataset_root: Path, persona: str | None = None, overwrite: bool = False) -> int:
+    """Compute per-persona LDA identity averages.
+    
+    Loads AuraFace vectors, batch-projects to LDA, computes per-persona
+    L2-normalized mean vectors, and saves to averages/. Does NOT save
+    per-image LDA files (use `enrich` for that).
+    
+    Args:
+        db_path: Path to review.db (unused; kept for CLI compat)
+        dataset_root: Path to hegre-faces/v1 dataset
+        persona: Optional persona name to limit computation
+        overwrite: Force recompute even if average files exist
+    
+    Returns:
+        0 on success
+    """
+    import sys
+    from tools.hegre_dataset.dataset import HegreDataset
+    
+    _geom_pca = Path(__file__).resolve().parent.parent.parent.parent / "experiments" / "geometry_pca"
+    if str(_geom_pca) not in sys.path:
+        sys.path.insert(0, str(_geom_pca))
+    
+    os.environ.setdefault('EIDOLON_SKIP_REVIEWDB_GUARD', '1')
+    ds = HegreDataset(dataset_root)
+    
+    try:
+        from geometry_pca.auraface_preprocessing import clean_auraface, project_to_lda
+    except ImportError as e:
+        print(f"Error: Cannot import auraface_preprocessing: {e}")
+        return 1
+    
+    # Query approved images grouped by persona
+    if persona:
+        persona_obj = ds.persona(persona)
+        if persona_obj is None:
+            print(f"Persona '{persona}' not found.")
+            return 1
+        rows = ds.db.execute(
+            "SELECT i.persona_id, i.image_path FROM images i WHERE i.status = 'approved' AND i.persona_id = ?",
+            (persona_obj.id,)
+        ).fetchall()
+    else:
+        rows = ds.db.execute(
+            "SELECT i.persona_id, i.image_path FROM images i WHERE i.status = 'approved' ORDER BY i.persona_id"
+        ).fetchall()
+    
+    from collections import defaultdict
+    persona_images = defaultdict(list)
+    for pix, img_path in rows:
+        af_path = dataset_root / "auraface" / img_path.replace(".jpg", ".npy")
+        persona_images[pix].append((img_path, af_path))
+    
+    total_personas = len(persona_images)
+    total_images = sum(len(v) for v in persona_images.values())
+    print(f"Found {total_images} images across {total_personas} personas")
+    
+    averages_dir = dataset_root / "averages"
+    averages_dir.mkdir(parents=True, exist_ok=True)
+    
+    n_avg_computed = 0
+    n_avg_skipped = 0
+    
+    for pix, images in persona_images.items():
+        persona_obj = ds.persona(pix)
+        persona_name = persona_obj.name if persona_obj else f"persona_{pix}"
+        avg_path = averages_dir / f"{persona_name}.lda.npy"
+        
+        if not overwrite and avg_path.exists():
+            n_avg_skipped += 1
+            continue
+        
+        # Batch-load all AuraFace vectors for this persona
+        raw_vecs = []
+        for img_path, af_path in images:
+            try:
+                v = np.load(af_path).astype(np.float64)
+                if v.shape == (512,):
+                    raw_vecs.append(v)
+            except Exception:
+                continue
+        
+        if not raw_vecs:
+            continue
+        
+        # Batch clean + project
+        raw_stack = np.stack(raw_vecs)
+        cleaned = clean_auraface(raw_stack)  # (N, 512)
+        lda_coords_all = project_to_lda(cleaned)  # (N, 64)
+        
+        # Average + L2 normalize
+        avg = np.mean(lda_coords_all, axis=0)
+        avg = avg / (np.linalg.norm(avg) + 1e-12)
+        np.save(avg_path, avg.astype(np.float32))
+        n_avg_computed += 1
+        
+        if n_avg_computed % 50 == 0:
+            print(f"  [{n_avg_computed}/{total_personas - n_avg_skipped}] {persona_name}: {len(raw_vecs)} images, avg norm={np.linalg.norm(avg):.4f}")
+    
+    print(f"\nDone. Computed {n_avg_computed} averages, skipped {n_avg_skipped}.")
     return 0

@@ -1,0 +1,22 @@
+# Re-fit LDA basis with cleaned Hegre dataset
+# Canonical parameters — same algorithm, better data
+
+dataset: /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1
+ffhq_root: /mnt/nas-ai-models/training-data/ffhq
+output: experiments/geometry_pca/output/
+
+# fit-lda-basis parameters
+n_components: 64
+heldout_frac: 0.20
+seed: 42
+max_ffhq: null               # use all FFHQ
+max_hegre_per_persona: null   # use all approved
+
+# compute-lda parameters
+overwrite: true               # force recompute of all per-persona averages
+
+# build-corpus parameters
+corpus_output: /mnt/nas-ai-models/training-data/eidolon/hegre_corpus
+min_images: 5
+max_images: null              # no cap
+resolution: 1024
