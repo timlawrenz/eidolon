@@ -1,6 +1,6 @@
 # Project Status — Eidolon
 
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-20
 **Phase / status:** Phase 5b concluded — between phases
 
 ## Current state
@@ -11,15 +11,20 @@ carry identity (Phase 4, AUC 0.797 cross-shoot), **z_g via DWPose** provides
 identity-blind pose control (Phase 1-R), and **Sapiens2 dense keypoints** form
 a complementary shape-morphology stream (linearly AuraFace-orthogonal, R²=−0.11).
 
+**2026-07-20:** The Hegre dataset underwent massive cleaning (97k unreviewed
+classified, ~54k bad_geometry reclassified). LDA basis refitted on 324 personas
+(2.1×) and 166k images (3×). The refit raised GT-LDA ceiling from R@1=0.842
+→ **0.854** — a tighter target for Phase 5 DiT fusion.
+
 Dead partitions (z_d depth, z_a normals, DINO bridge) are permanently documented
 and will not be re-attempted. No active training runs.
 
 ## Headline result so far
 
-**AuraFace-LDA R@1 = 0.842 cross-shoot** — first proof that AuraFace-LDA
-is a genuine cross-shoot identity carrier (Phase 5b GT-LDA ceiling gate).
-The retrieval space is sound; the gap is in the text→LDA Prior (R@10=0.072,
-statistically indistinguishable from random-projection null, p=0.063 at k=10).
+**AuraFace-LDA R@1 = 0.854 cross-shoot** (raised from 0.842 after dataset
+cleaning + LDA basis refit). The retrieval space is sound; the gap is in the
+text→LDA Prior (R@10=0.072, statistically indistinguishable from
+random-projection null, p=0.063 at k=10).
 
 ## Immediate next action
 
