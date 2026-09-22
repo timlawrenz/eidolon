@@ -7,12 +7,27 @@ Each output directory contains:
     metadata.json    {"persona": ..., "set": ..., "image_id": ...}
 """
 
+import hashlib
 import json, os, time
 from pathlib import Path
 from collections import defaultdict
 
 import numpy as np
 from PIL import Image
+
+
+def _averages_fingerprint(avg_dir: Path) -> str:
+    """sha256 over all per-persona average vectors (sorted) — identifies the LDA basis.
+
+    Any change to the averages (refit, recompute) changes this hash, so a corpus
+    manifest can be tied to an exact basis generation.
+    """
+    h = hashlib.sha256()
+    for p in sorted(avg_dir.glob("*.lda.npy")):
+        h.update(p.name.encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()[:16]
+
 
 
 def build_corpus(
@@ -100,6 +115,7 @@ def build_corpus(
     output_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     written = 0
+    written_names: list[str] = []
     errors = 0
 
     for i, (pname, img_path) in enumerate(eligible):
@@ -142,6 +158,7 @@ def build_corpus(
                 json.dump(meta, f)
 
             written += 1
+            written_names.append(dir_name)
 
         except Exception as e:
             print(f"\n  Error on {sample_dir.name} ({pname}/{img_path}): {e}")
@@ -155,9 +172,38 @@ def build_corpus(
                   f"ETA: {eta/60:.0f}m")
 
     elapsed = time.time() - t0
+
+    # ── Manifest: ties this corpus to an exact basis + selection ──────
+    manifest = {
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "dataset_root": str(dataset_root),
+        "output_dir": str(output_dir),
+        "params": {
+            "min_images_per_persona": min_images_per_persona,
+            "max_images_per_persona": max_images_per_persona,
+            "resolution": resolution,
+        },
+        "lda_basis_fingerprint": _averages_fingerprint(avg_dir),
+        "counts": {
+            "personas_scanned": len(all_personas),
+            "skipped_missing_avg": skipped_missing_avg,
+            "skipped_too_few": skipped_too_few,
+            "skipped_missing_zg": skipped_missing_zg,
+            "eligible": len(eligible),
+            "unique_personas": len(set(name for name, _ in eligible)),
+            "written": written,
+            "errors": errors,
+        },
+        "samples": sorted(written_names),
+    }
+    manifest_path = output_dir / "_manifest.json"
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=1)
+
     print(f"\nCorpus built in {elapsed/60:.1f}m")
     print(f"  Written:  {written}")
     print(f"  Errors:   {errors}")
     print(f"  Output:   {output_dir}")
+    print(f"  Manifest: {manifest_path} (basis {manifest['lda_basis_fingerprint']})")
 
     return 0
