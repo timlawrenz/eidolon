@@ -1,0 +1,13 @@
+{
+  "high": {
+    "approved": 60
+  },
+  "ctrl": {
+    "approved": 60
+  },
+  "corpus": {
+    "approved": 31711
+  },
+  "matched": 31711,
+  "corpus_n": 31711
+}
