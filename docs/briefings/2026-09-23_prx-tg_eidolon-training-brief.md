@@ -5,7 +5,7 @@
 | **From** | Eidolon agent (`~/source/activity/eidolon`) |
 | **To** | prx-tg agent (`~/source/activity/prx-tg`) |
 | **Carried by** | Tim (will walk through implementation details in person) |
-| **Date** | 2026-09-23 |
+| **Date** | 2026-09-23 (identity status revised 2026-09-24 — §2) |
 | **Status** | **Discussion input only.** Nothing here is a registered prx-tg gate. Any gate below must be pre-registered in prx-tg's own ledger *before* the run it judges. |
 
 ---
@@ -16,7 +16,7 @@ Three things:
 
 1. **Separate the tracks.** `latent-first-pretrain` (P1) and `pixel-posttrain` (PP) are **not** Eidolon arms, and the taint diagnosis on them is a result about a *different* experiment.
 2. **Name the arms that do train on Eidolon's desired data**, and what is actually in their training mix.
-3. **Report a blocking data-integrity defect** found in that mix, then propose data, gates and expectations for the next Eidolon-relevant arm.
+3. **Report the state of the conditioning streams** in that mix — identity is settled, `z_g` is still open — then propose data, gates and expectations for the next Eidolon-relevant arm.
 
 ---
 
@@ -56,52 +56,53 @@ Current best Eidolon-relevant result: **Arm O** — CFG-guarded per-dim basis. M
 
 ---
 
-## 2. ⚠️ BLOCKING DEFECT — the Eidolon mix blends two incompatible identity bases
+## 2. Identity stream status — one basis, one convention
 
-`hegre-geometry`, Arm N and Arm O all train on a weighted mix:
+All identity data consumed by the Eidolon adapter sits on the pooled refit basis
+(`auraface_lda.npz`, refit 2026-07-23), L2-normalized to norm 1.0, and is stamped
+with basis fingerprint **`120e1c5a1dc4f423`**:
 
-```yaml
-data:
-  stratum_dirs:
-    - dir: "/mnt/nas-ai-models/training-data/ffhq/stratum"    # weight 2.3
-    - dir: "/mnt/nas-ai-models/training-data/eidolon/hegre_corpus"  # weight 1.0
+| Directory | `auraface_lda` convention | stamp |
+|---|---|---|
+| `/mnt/nas-ai-models/training-data/eidolon/hegre_corpus` | refit basis + L2-normalize (norm 1.0) | ✅ |
+| `/mnt/nas-ai-models/training-data/ffhq/stratum` | refit basis + L2-normalize (norm 1.0) | ✅ |
+| `/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/lda` | refit basis, raw coords (norm ~153) | ✅ |
+
+Verify any of them with:
+
+```
+hegre-dataset basis-fingerprint verify --dataset <dir>
 ```
 
-**The 64-d identity vectors in those two directories are not in the same coordinate system.**
+`hegre-faces/v1/lda` is the per-image retrieval tree, not DiT input — raw coords
+are its correct convention. **The two conventions must not be mixed in one slot:**
+a DiT identity input takes the normalized form.
 
-### Evidence (recomputed from raw AuraFace under both bases)
-
-FFHQ raw embeddings live at `/mnt/nas-ai-models/training-data/ffhq/auraface/{id}.npy`.
-Both bases are on disk: current `.../geometry_pca/output/auraface_lda.npz` (refit **2026-07-23**) and the pre-refit backup `auraface_lda.npz.bak-20260720`.
-
-Recomputing each FFHQ sample's stored `auraface_lda.npy` under each basis:
-
-| FFHQ id | ‖stored‖ | ‖stored − NEW basis‖ | ‖stored − OLD basis‖ | verdict |
-|---|---|---|---|---|
-| 00000 | 0.372512 | 154.212703 | **0.000000** | OLD |
-| 00001 | 0.258704 | 155.637192 | **0.000000** | OLD |
-| 00002 | 0.368948 | 150.827821 | **0.000000** | OLD |
-| 00003 | 0.357462 | 153.039660 | **0.000000** | OLD |
-| 12345 | 0.363495 | 152.653219 | **0.000000** | OLD |
-| 40000 | 0.370834 | 155.252710 | **0.000000** | OLD |
-
-**Bit-exact match on the OLD basis, all six samples.** Corroborated by mtime: FFHQ stratum `auraface_lda.npy` = **2026-06-30**, hegre corpus `auraface_lda.npy` = **2026-09-22**, basis refit = **2026-07-23**.
-
-The two bases are also scaled completely differently — old eigenvalues `[7.01, 6.57, 5.40]` vs new `[0.0319, 0.0264, 0.0248]`.
-
-### What the model actually received in the same `identity_dim: 64` slot
+### What the model receives in the `identity_dim: 64` slot
 
 | | FFHQ (weight 2.3) | hegre corpus (weight 1.0) |
 |---|---|---|
-| basis | **OLD** (pre-refit) | **NEW** (refit) |
-| vector norm | mean 0.352 (σ 0.035, range 0.259–0.487) | **exactly 1.000** |
+| basis | refit | refit |
+| vector norm | **exactly 1.000** | **exactly 1.000** |
 | semantic level | **per-image** (each image its own identity) | **per-persona** (one vector per persona) |
 
-Three simultaneous mismatches: **different basis, 2.84× magnitude, different semantic level.**
+One mismatch remains, and it is **semantic, not encoding**. FFHQ is predominantly
+one image per identity, so its identity vectors teach "identity vector = per-image
+key" (the CLS-memorization hazard class). FFHQ is encoding-consistent and usable
+as a geometry/texture regularizer with the identity stream masked — it is **not** a
+valid identity target.
 
-### Consequence
+### Standing consequence for the prior arms
 
-**Every Eidolon arm's identity conditioning is confounded, and no identity-binding conclusion can be drawn from any of them.** Arm O's PASS is safe as a *geometry* result (`z_g` is a separate stream, unaffected) — but its identity stream is **untested and unsound**, and Arm O's own validation disabled the identity probe (see §4.1).
+The five `exp/eidolon-conditioning` arms trained before 2026-09-24, when FFHQ's
+vectors were still on the pre-refit basis (norm 0.35) while hegre's were on the
+refit basis (norm 1.0) — a 2.84× magnitude gap in the same 64-d slot, verified
+bit-exact rather than inferred.
+
+**Their identity conditioning is unsound. Draw no identity conclusion from any of
+them.** Arm O's PASS is safe as a *geometry* result (`z_g` is a separate stream,
+unaffected) — but its identity stream is untested, and Arm O's own validation
+disabled the identity probe (see §4.1).
 
 ---
 
@@ -129,11 +130,9 @@ Target: pixel 1024², `x_prediction`.
 - ~100 images per persona → a genuine persona-level identity target
 - clean persona holdout available (321 personas) for a never-trained-identity gate
 
-**FFHQ should be excluded from identity-conditioned training, or reprojected and re-scoped.** Two independent reasons:
+**FFHQ should be excluded from identity-conditioned training**, for one structural reason (§2 covers its encoding status):
 
-**(a) It is on the wrong basis** (§2) — fixable by reprojection.
-
-**(b) It cannot supply a persona-level identity target at all.** Measured on 3,000 FFHQ raw AuraFace vectors, nearest-neighbour cosine distribution: mean 0.373, p95 0.542. Vectors with any close partner:
+**It cannot supply a persona-level identity target at all.** Measured on 3,000 FFHQ raw AuraFace vectors, nearest-neighbour cosine distribution: mean 0.373, p95 0.542. Vectors with any close partner:
 
 | threshold | pairs | vectors involved |
 |---|---|---|
@@ -148,8 +147,8 @@ FFHQ is predominantly **one image per identity** — only 3.2% of sampled vector
 | Option | Description | Assessment |
 |---|---|---|
 | **A (recommended)** | hegre_corpus only | Cleanest. Persona-level identity, no per-image key, clean persona holdout. Loses FFHQ's diversity/regularization. |
-| B | FFHQ reprojected to the refit basis, included as a **geometry/texture regularizer with the identity input masked** for FFHQ samples | Keeps diversity, removes the per-image-key hazard. Needs an implementation decision on how to mask identity per-sample. |
-| C | FFHQ reprojected and included **with** identity | Not recommended as primary — reintroduces the per-image-key hazard. Only admissible if the G4 memorization gate passes. |
+| B | FFHQ included as a **geometry/texture regularizer with the identity input masked** for FFHQ samples | Keeps diversity, removes the per-image-key hazard. Encoding is already consistent (§2). Needs an implementation decision on how to mask identity per-sample. |
+| C | FFHQ included **with** identity | Not recommended as primary — reintroduces the per-image-key hazard. Only admissible if the G4 memorization gate passes. |
 
 **A useful fact for the decision:** the persona-average identity index is sound and *better* than the per-image ceiling. Querying a held-out image's per-image LDA against an index of the 321/325 persona averages:
 
@@ -166,14 +165,14 @@ FFHQ is predominantly **one image per identity** — only 3.2% of sampled vector
 
 ---
 
-### 3.3 Data status audit (2026-09-23)
+### 3.3 Data status audit (2026-09-23; identity rows revised 2026-09-24)
 
 **Currency**
 
 | Dataset | Stream | Status |
 |---|---|---|
 | `hegre_corpus` | `pixel`, `auraface_lda`, `z_g`, `metadata` | ✅ current — rebuilt 2026-09-22/23, single basis, fingerprint `e2f66241288e1f50` |
-| `ffhq/stratum` | `auraface_lda` | ❌ **stale — pre-refit LDA basis** (file 2026-06-30; basis refit 2026-07-23) — §2 |
+| `ffhq/stratum` | `auraface_lda` | ✅ current — refit basis, norm 1.0, stamped `120e1c5a1dc4f423` — §2 |
 | `ffhq/stratum` | `z_g` | ✅ same encoding as hegre (both postdate `encoder_production.npz`, 2026-06-23) |
 | `ffhq/stratum` | `pixel`, `pose`, `dinov3_patches`, `t5_hidden`, `flux_latent`, `caption` | ✅ present |
 
@@ -186,7 +185,7 @@ FFHQ is predominantly **one image per identity** — only 3.2% of sampled vector
   - `auraface_lda.npy`: **41 missing (0.06%)**
   - cross-check: the pooled LDA fit used exactly 69,960 FFHQ vectors — equal to the `auraface_lda` present count ✅
 
-**⚠️ `z_g` is a SECOND mismatched conditioning stream — different cause, same effect**
+**⚠️ The remaining conditioning mismatch: `z_g`**
 
 | | FFHQ (n=69,862) | hegre_corpus (n=31,711) |
 |---|---|---|
@@ -199,7 +198,9 @@ FFHQ is predominantly **one image per identity** — only 3.2% of sampled vector
 
 `extract_zg_and_averages.py` documents norm > 25 as *"degenerate z_g (DWPose missed eyes/face → wild PCA projection)"* — but that filter is applied **only when computing persona averages**, not to the per-image vectors the corpus ships. So ~6.7% of `hegre_corpus` carries per-image `z_g` that the project's own heuristic calls degenerate, and the two datasets' geometry streams sit on visibly different scales.
 
-Not settled whether this is genuine hegre domain/pose extremity or DWPose face-keypoint failure — the pre-existing `experiments/geometry_pca/scripts/zg_full_corpus_audit.py` is the tool for a verdict. Either way it must be resolved **consistently across all splits** so it does not become a split confound.
+Not settled whether this is genuine hegre domain/pose extremity or DWPose face-keypoint failure. Either way it must be resolved **consistently across all splits** so it does not become a split confound.
+
+**No existing tool produces this verdict.** `experiments/geometry_pca/scripts/zg_full_corpus_audit.py` settles a *different* question — whether `z_g` encodes pose (`z_g→yaw` R²=0.98) or identity (AUC 0.90) versus the "pose-invariant by construction" claim in the standing docs. The degeneracy-threshold adjudication is new work.
 
 Corpus `z_g` == the `zg/` source tree bit-exactly (‖diff‖ = 0.00000000 over 600 matched samples) — the corpus is a faithful copy; the issue is upstream.
 
@@ -232,7 +233,7 @@ Rules:
 3. **Cross-shoot probe inside held-out personas.** For val/test personas with ≥2 shoots (314 available), hold out one shoot per persona to test *same person, different photo* — the one generalisation test FFHQ structurally cannot provide.
 4. **Lock the split.** Record persona lists + a hash in `provenance.yaml`. Persona splits drift silently otherwise.
 5. **Apply any `z_g` validity filter identically to all three splits**, so it cannot become a confound.
-6. **FFHQ cannot be a val/test set for identity** (1 image/identity, stale basis). If used at all: train-only regularizer with identity masked (Option B).
+6. **FFHQ cannot be a val/test set for identity** (1 image/identity). If used at all: train-only regularizer with identity masked (Option B).
 
 **Open decision:** the corpus caps at 100 images/persona — it uses 31,711 of the 166,204 approved hegre images (19%). The cap buys persona balance; lifting it buys pose coverage. Decide before the split is frozen, as it changes the split sizes.
 
@@ -297,17 +298,18 @@ No collapse over the full run **including** the CFG-dropped steps (the Arm N fai
 
 ## 7. Evidence appendix
 
-All commands run from `~/source/activity/eidolon` with `.venv/bin/python` on 2026-09-23.
+All commands run from `~/source/activity/eidolon` with `.venv/bin/python`. Identity
+rows verified 2026-09-24; all other rows 2026-09-23.
 
 | Claim | How verified |
 |---|---|
 | P1/PP use FFHQ stratum, differ only in latent vs pixel | `experiment-configs/{latent-first-pretrain,pixel-posttrain}/config.yaml` — `data.source: stratum`, `stratum_max_samples: 70000`; `in_channels` 16 vs 3 |
 | Eidolon arms use `adapter.name: eidolon` + weighted FFHQ:hegre mix | `experiments/zg-token-basis-cfg-guard/config.yaml` L34–42, L94–101 |
 | FFHQ has the full conditioning stack | `ls /mnt/nas-ai-models/training-data/ffhq/stratum/00000/` → `z_g.npy`, `auraface_lda.npy`, `pixel.npy`, `pose.npy`, `t5_hidden.npy`, `dinov3_patches.npy` |
-| FFHQ identity is on the OLD basis | `scratch/which_basis_ffhq.py` → ‖stored−OLD‖ = 0.00000000 on 6/6 samples; ‖stored−NEW‖ ≈ 150–155 |
+| All identity dirs share one basis + convention | `hegre-dataset basis-fingerprint verify` → **OK on all three**, `120e1c5a1dc4f423` |
 | Basis refit date | `experiments/geometry_pca/output/auraface_lda.npz` mtime 2026-07-23 16:11; backup `*.bak-20260720` |
-| FFHQ/hegre identity mtimes | FFHQ `auraface_lda.npy` 2026-06-30; hegre corpus 2026-09-22 |
-| Identity magnitude mismatch | FFHQ norm mean 0.352 vs hegre 1.000 → 2.841× (`scratch/check_stream_compat.py`) |
+| FFHQ identity matches hegre's convention | both norm `1.000000000`; FFHQ full scan 69,960/69,960 at unit norm, 0 degenerate, 0 NaN |
+| Prior arms trained on two incompatible bases | FFHQ norm mean 0.352 vs hegre 1.000 → 2.841× (`scratch/check_stream_compat.py`) — the standing consequence in §2 |
 | FFHQ ≈ 1 image per identity | `scratch/ffhq_identity_clusters.py` — 3,000 raw AuraFace vectors, 133 pairs > 0.6, 37 pairs > 0.7 |
 | Persona-average identity index is sound | `scratch/test_average_discriminative.py` — R@1 0.8879, R@5 0.9502, R@10 0.9657 vs chance 0.0031 |
 | Identity signal is compressed | persona averages pairwise cosine mean 0.9953; margin 0.0029 vs 0.0042 (`scratch/diagnose_identity_target.py`) |
@@ -321,8 +323,8 @@ Scratch scripts are at `~/.hermes/profiles/eidolon/cache/scratch/`.
 
 - **P1/PP ≠ Eidolon arms.** They are a latent-vs-pixel training-mode spike on FFHQ stratum. Keep the two projects separate in the ledger language.
 - **The actual Eidolon arms are the `exp/eidolon-conditioning` branch** — and their best result (Arm O, PASS) is a *geometry* result.
-- **Their identity conditioning is unsound**: the mix blends FFHQ (old basis, per-image, norm 0.35) with hegre (refit basis, per-persona, norm 1.0). Proven bit-exact, not inferred.
+- **Their identity conditioning is unsound**: the mix blended FFHQ (pre-refit basis, per-image, norm 0.35) with hegre (refit basis, per-persona, norm 1.0). Verified bit-exact, not inferred.
 - **Data is current and complete where it counts.** `hegre_corpus` is 31,711/31,711 complete on every stream, single-basis, manifest-verified. FFHQ is missing 139 `z_g` and 41 `auraface_lda` files and carries one `@eaDir` to exclude.
-- **Two conditioning streams are mismatched, for different reasons:** identity because FFHQ was never reprojected after the basis refit (§2), geometry because hegre's per-image `z_g` has a degenerate tail and a different scale (§3.3).
+- **One conditioning stream is still mismatched: geometry.** Identity is now on a single basis and convention (§2); hegre's per-image `z_g` retains a degenerate tail and a different scale from FFHQ's (§3.3).
 - **Recommended data: hegre_corpus only**, with a persona-disjoint 249 / 32 / 40 split, a cross-shoot probe inside held-out personas, and the split locked and hashed (§3.4).
 - **Gates:** add the missing identity-binding probe (G1), gate the disentanglement claim (G3), and gate memorization with held-out personas and images (G4) — all pre-registered, all running in-training.
