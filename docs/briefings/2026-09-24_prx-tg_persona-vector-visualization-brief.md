@@ -120,12 +120,19 @@ That gap is the substance of this arm.
 
 ## 3. The blocked premise — current state
 
-**No warm-start donor checkpoint exists.** `pixel-posttrain` was cancelled and
-`latent-first-pretrain` blocked; neither checkpoint may initialize a future arm.
+**The VAE high-fidelity hypothesis is CONFIRMED.** P1/PP were a deliberately quick
+spike on dirty data, and what they set out to verify — the fidelity reachable by
+going through a VAE — is now established. **Do not read the kill as a dead
+hypothesis.**
+
+**What was killed is the arm, not the hypothesis**: the assets that spike produced
+do not meet the data-quality and provenance gates, so neither checkpoint may
+initialize a future arm. The fidelity finding stands; those specific weights are
+unusable.
 
 The v1 visualization plan (`2026-09-21_2320-eidolon-visualization-engine.md`) assumed
-Arm PP as the backbone donor. **That premise is dead and the plan is marked
-superseded, do not execute.**
+Arm PP as the backbone donor. **That donor premise is dead** — there is no
+warm-startable checkpoint — and the plan is marked superseded, do not execute.
 
 **Consequence:** this arm now sits downstream of prx-tg's gated redesign, as
 **Stage E** in that sequence (Stage A forensic baseline → B data prep + split →
