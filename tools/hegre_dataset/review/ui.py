@@ -2,7 +2,34 @@
 Interactive review UI for hegre face datasets.
 
 Shows actual MTCNN face crops for visual verification.
-Brush-to-taint, DONE-to-approve. Port-configurable Flask server.
+Port-configurable Flask server.
+
+DONE SEMANTICS (INTENDED — do not "fix" into uniformity)
+========================================================
+DONE (api_done, below) is NOT a neutral "save and continue". Its meaning depends
+on the active mode, and that asymmetry is deliberate:
+
+  First Pass (unreviewed) : apply brush taints, then BULK-APPROVE every remaining
+                            image in the shown batch. Approve-by-default.
+  Review / Audit          : apply brush taints only. Approve nothing; just deal a
+                            new random sample of already-approved images.
+
+Rationale: First Pass reviews status='unreviewed' images, where approve is the safe
+default and the reviewer signals exceptions by brushing. Review/Audit review
+already-approved images, so approving them is a no-op and DONE exists solely to
+apply corrections and rotate the sample.
+
+Consequences worth knowing when operating this tool:
+  * shown_ids is the FULL 20-image batch, and cards are loading="lazy" in a
+    responsive grid — off-screen images are approved without ever being seen.
+    The batch, not the individual image, is the unit of review.
+  * The `remaining` count in the response is GLOBAL, not persona-scoped
+    (it filters on status only, with no persona_id).
+  * Enter is bound globally to donePersona() — a stray Enter submits the batch.
+  * DONE spawns a background compute-geometry job (_maybe_spawn_geometry_compute)
+    which can write further taint labels minutes after DONE returns.
+  * The Unreview button is NOT an undo: it picks a random persona and resets 10
+    random tainted images, unrelated to your last DONE.
 
 Design system: Lawrenz Admin Dark (DESIGN.md)
 Tokens defined as CSS custom properties; no framework dependency.
