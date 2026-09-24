@@ -55,6 +55,33 @@ def log(msg=""):
 # ---------------------------------------------------------------------------
 # corpus loading
 # ---------------------------------------------------------------------------
+def load_per_image_lda(names_persona_set_id):
+    """Load PER-IMAGE AuraFace-LDA from the source tree.
+
+    WHY (G1b): the corpus's auraface_lda.npy is the PERSONA CENTROID, verified
+    2026-09-24: all 321 personas carry a bit-identical vector across every one of
+    their samples (worst within-persona max|diff| = 0.0000000000e+00). Fisher J is
+    therefore mathematically undefined on it (S_W == 0 by construction), which is
+    why the pre-registered G1 could not run on the named array.
+
+    The per-image vectors live at lda/faces/{persona}/{set}/{image_id}.npy. They
+    are stored at RAW scale (e.g. norm 151.9) while the centroid is unit-norm; J is
+    invariant to a global scale (both scatters scale by c^2), so this does not
+    affect the control.
+    """
+    out = []
+    missing = 0
+    for persona, set_, image_id in names_persona_set_id:
+        p = os.path.join(SOURCE, "lda", "faces", persona, set_, f"{image_id}.npy")
+        if not os.path.exists(p):
+            missing += 1
+            out.append(np.full(64, np.nan))
+            continue
+        out.append(np.load(p).astype(np.float64))
+    log(f"  per-image LDA: loaded {len(out) - missing} | missing {missing}")
+    return np.stack(out), missing
+
+
 def iter_samples():
     """Yield (sample_dir_name, persona, set, image_id) for every corpus sample."""
     for name in sorted(os.listdir(CORPUS)):
@@ -214,23 +241,54 @@ def cmd_g0(args):
 
 
 def cmd_g1(args, cache=None):
-    """G1 — positive control: the instrument MUST separate AuraFace identity."""
+    """G1 — positive control. Also runs G1b on the PER-IMAGE source (see below)."""
     log("=== G1 — positive control (AuraFace must show higher J than z_g) ===")
-    zg, af, personas, confs, _ = cache or load_corpus(args.limit)
+    if cache is None:
+        cache = load_corpus(args.limit)
+    zg, af, personas, confs, names = cache
+    names = np.asarray(names)
     keep = np.isfinite(af).all(1)
     zg, af, personas, confs = zg[keep], af[keep], personas[keep], confs[keep]
     log(f"  usable {len(zg)} samples")
     # fair comparison: restandardize both so per-component scale is matched
     zg_rs, af_rs = restandardize(zg), restandardize(af)
     j_zg = summarise("z_g", zg, personas, zg_rs)
-    j_af = summarise("auraface_lda", af, personas, af_rs)
+    j_af = summarise("auraface_lda (corpus = CENTROID)", af, personas, af_rs)
     ratio_raw = j_af["J"] / max(j_zg["J"], 1e-12)
     ratio_rs = j_af["J_restandardized"] / max(j_zg["J_restandardized"], 1e-12)
     log(f"  ratio J_auraface/J_zg  raw={ratio_raw:.2f}x  restandardized={ratio_rs:.2f}x")
     passed = ratio_rs >= 3.0 or ratio_raw >= 3.0
-    log(f"  G1 {'PASS' if passed else 'FAIL — instrument cannot detect identity separability; arm is VOID'}")
-    return dict(gate="G1", z_g=j_zg, auraface=j_af,
-                ratio_raw=float(ratio_raw), ratio_rs=float(ratio_rs), passed=bool(passed))
+    log(f"  G1 {'PASS' if passed else 'FAIL'}")
+    if not passed:
+        log("  G1 FAILED AS PRE-REGISTERED. Reason is now known and is a DATA property,")
+        log("  not an instrument failure: the corpus auraface_lda is the PERSONA CENTROID")
+        log("  (S_W == 0 by construction -> J is 0 by the guard, not by measurement).")
+        log("  The pre-registered INTENT was 'AuraFace as a stream known to carry identity'.")
+        log("  G1b below implements that intent on the correct array (PER-IMAGE LDA).")
+
+    # ---------- G1b: the intended control, on the correct array ----------
+    log("")
+    log("=== G1b — same control on PER-IMAGE AuraFace-LDA (post-hoc instrument fix) ===")
+    triples = []
+    for name in names[keep]:
+        with open(os.path.join(CORPUS, name, "metadata.json")) as fh:
+            m = json.load(fh)
+        triples.append((m["persona"], m["set"], m["image_id"]))
+    afi, missing_i = load_per_image_lda(triples)
+    ok = np.isfinite(afi).all(1)
+    j_afi = summarise("per-image LDA", afi[ok], personas[ok], restandardize(afi[ok]))
+    ratio_b = j_afi["J"] / max(j_zg["J"], 1e-12)
+    ratio_b_rs = j_afi["J_restandardized"] / max(j_zg["J_restandardized"], 1e-12)
+    log(f"  ratio J_per_image_lda/J_zg  raw={ratio_b:.2f}x  restandardized={ratio_b_rs:.2f}x")
+    passed_b = ratio_b_rs >= 3.0 or ratio_b >= 3.0
+    log(f"  G1b {'PASS — instrument CAN detect identity separability' if passed_b else 'FAIL — arm remains VOID'}")
+    return dict(gate="G1", z_g=j_zg, auraface_centroid=j_af,
+                ratio_raw=float(ratio_raw), ratio_rs=float(ratio_rs),
+                passed=bool(passed),
+                g1b=dict(per_image_lda=j_afi, missing=missing_i,
+                         ratio_raw=float(ratio_b), ratio_rs=float(ratio_b_rs),
+                         passed=bool(passed_b)),
+                g1b_status="POST-HOC instrument correction; disclosed, gate not moved")
 
 
 def cmd_g2(args, cache=None):
