@@ -1,10 +1,21 @@
 # Experiment Directory Structure — Eidolon
 
-This document defines the rules for running and recording experiments in the
-Eidolon project. It is the local governance contract. For the rationale and
-broader principles, see the project-independent
-[Scientific Experiment Structure](https://hermes-agent.nousresearch.com/docs)
-skill.
+**⚠️ This document is a tailored copy of the project-independent
+`scientific-experiment-structure` skill, and it can lag it.** The skill is the
+**source of truth for process**. This document is authoritative only for
+**project-specific facts** — NAS paths, hostnames, hardware, Eidolon conventions,
+and the project's own naming scheme.
+
+Load the skill before running or recording an experiment:
+
+```
+skill_view(name='scientific-experiment-structure')
+```
+
+**If the two disagree, the skill wins.** Drift previously found in this copy is
+recorded in `AGENTS.md` — that list is an *example* of the kind of drift that
+happens here, not a complete inventory. Nothing in this repo detects a skill-side
+change, so re-read the skill rather than trusting this copy to be current.
 
 ## Core Principles
 
@@ -74,6 +85,7 @@ Every arm must have a `provenance.yaml` before the first run:
 
 ```yaml
 arm: ce-baseline                    # matches directory name
+mode: confirmatory                  # confirmatory | exploratory — REQUIRED, see below
 hypothesis: >
   One sentence stating what this arm tests.
   MUST be falsifiable: state the outcome that would prove it WRONG.
@@ -88,11 +100,51 @@ git_commit: a1b2c3d                 # filled at run start
 git_dirty: false
 training_host: game                 # hostname
 training_gpu: RTX 4090
+agent_model: null                   # LLM driving the research (agent-assisted arms)
+agent_model_snapshot: null          # pinned provider/model snapshot
 training_epochs: 50
 data_snapshot: "1475 images, 18568 label points"
 backbone: sapiens2_0.4b (frozen)
 notes: ""
 ```
+
+### `mode:` — confirmatory vs exploratory (the anti-HARKing rule)
+
+**Set `mode:` before the first run.** Every arm is exactly one of two kinds.
+
+- **Confirmatory** — has a pre-registered gate (or a falsifiable hypothesis), run to
+  produce a verdict that counts as evidence. **Only a confirmatory arm may write
+  PASS/FAIL in the ledger.**
+- **Exploratory** — probing for signal with no pre-registered gate: sweeps,
+  calibration surveys, "what happens if…" runs, feasibility runs. Its outputs are
+  **leads, not conclusions.** An interesting exploratory result must be re-registered
+  as a fresh confirmatory arm, on data not yet used, before it counts as evidence.
+
+**Peeked = exploratory, period.** If you looked at the outcome before locking the
+gate, that analysis is exploratory — the data has already shaped what you
+"predicted". You cannot relabel it confirmatory. Write the hypothesis down post hoc
+and pre-register a fresh test, or record the arm as exploratory. **Never promote a
+peeked result to PASS.**
+
+**Decision rules must be result-independent.** A cutoff moved to where it passed, a
+covariate added after seeing the number, a subgroup chosen because it was
+significant — all of these make the result exploratory no matter how it is labelled.
+Fix the rule before the result exists.
+
+### Feasibility before registration
+
+Pre-registering a gate over a configuration that has never run is writing pass/fail
+rules for behaviour you have not seen. When "can this even run at scale?" is the open
+question, resolve feasibility first, then register the study on **measured** numbers.
+
+- **Nothing is feasible until it has run.** An estimate is not a measurement.
+- **Nothing is bounded until the bound has fired.** A kill criterion never observed
+  firing is a hope, not a limit.
+
+**Feasibility mode is opt-in and opt-out by the user alone.** It defers — never
+cancels — the plan and the pre-registration. **Feasibility results are not evidence.**
+Do not enter it to dodge pre-registration, and do not let a promising exploratory
+result silently become "the study."
 
 ## config.yaml Rules
 
@@ -208,8 +260,20 @@ the hypothesis. If you can't write a gate, the hypothesis is too vague to run.
 **Never write `PASS` in the ledger until you have tried to prove the result is a
 lie.** A green metric is a hypothesis, not a conclusion. The most expensive
 failure mode is a *believed* result that was actually a measurement bug. Run
-this 4-question gate on every candidate PASS. If any answer is "no" or "unsure,"
+this gate on every candidate PASS. If any answer is "no" or "unsure,"
 the verdict is `PENDING`, not `PASS`.
+
+**Gate zero — compute the null before the first run.** What would a dummy achieve?
+Always predict the majority class; always guess the mean; always output zero. If the
+null is close to your threshold, the metric cannot discriminate and the experiment
+cannot fail in a detectable way.
+
+**The null must match the feature type.** For a **learned mapping**, the null is a
+**random projection of the same input** — the question is whether training added
+anything over the input. For a **raw geometric feature**, a random-projection null is
+*invalid*: Johnson–Lindenstrauss preserves cosine, so projection ≈ feature and the
+null is artificially high. Use **label-shuffle** there. Applying the wrong null in
+either direction yields a confident wrong answer — see the DINOv3 bridge tombstone.
 
 1. **Is the metric's own code tested?** The validator/scorer/harness must have
    unit tests. An untested validator produces confident, precise, wrong numbers.
@@ -226,13 +290,24 @@ the verdict is `PENDING`, not `PASS`.
    dead-center predictions and eyeball them. Confirm the win isn't an averaging
    artifact.
    → Artifact: ______
+5. **Is the headline number traced to an exact artifact?** An exact log line, a
+   checkpoint metric, a tensorboard value, a committed JSON. A number recalled from
+   memory or paraphrased from a console session is **not** evidence.
+   → Path: ______
+6. **Is every flaw found in review FIXED, or explicitly gated-not-fixed?**
+   Diagnosing a flaw is not a verdict. A known-broken result shipped with its flaw
+   merely *acknowledged* is a `FAIL`, not a `PASS-with-caveat`.
+   → Fix commit, or the explicit decision not to fix + reason: ______
 
 ```markdown
 **Adversarial pass (fill BEFORE writing the verdict):**
+- [ ] Null computed before the first run — value: ______
 - [ ] Metric tested — commit: ______
 - [ ] Metric definition stable — version: ______
 - [ ] Result reproduced — run: ______
 - [ ] Extremes inspected — artifact: ______
+- [ ] Headline number traced to an exact artifact — path: ______
+- [ ] Every flaw found is FIXED or explicitly gated-not-fixed — commit / decision: ______
 Verdict: PASS / FAIL / PENDING  (PENDING if any box is unchecked)
 ```
 
@@ -240,6 +315,21 @@ Verdict: PASS / FAIL / PENDING  (PENDING if any box is unchecked)
 > with ΔAUC +0.028, then overturned when the editorial-keypoint z_g baseline
 > (0.540) was discovered to be a resolution artifact. The real baseline (0.688)
 > showed z_a *subtracts* −0.039. The adversarial pass is not theoretical.
+
+### Evidence must live in the repo, not in a scratch directory
+
+Any number a governance doc cites must have its **producing script committed** — in
+the arm's `src/` or in `docs/assets/<branch>/`. Agent scratch/temp directories are
+pruned (after 24h idle), so a ledger citing `scratch/foo.py` is citing code that will
+not exist when the number is next questioned. This is box 5 applied to the evidence
+itself.
+
+### Retrofitting fields into existing provenance files
+
+**Do not back-fill a guess.** Declare `mode: confirmatory` only where a pre-registered
+gate is actually present in the file; leave `agent_model: null` with a comment for arms
+that pre-date the field. A retrospective marker recording that the value is retroactive
+is more honest than a plausible fabrication — and the fabrication is undetectable later.
 
 ## Three-Document System
 
@@ -349,35 +439,60 @@ order when asked to run or record an experiment.**
 3. **Check the ledger (`02_EXPERIMENTS_AND_RESULTS.md`)** — look for prior
    related experiments. The ledger is the permanent record; trust it over your
    own assumptions about what should work.
-4. **Create the arm's governance BEFORE touching any code:**
-   - `provenance.yaml` with hypothesis, falsified-if, and pre-registered gate
+4. **Read the existing code.** Before proposing a plan, inspect the relevant
+   source files: what measurement machinery already exists, its inputs/outputs,
+   and its known pitfalls. Also trace existing data-loading infrastructure for
+   reusable extension points. A plan built without reading the code is a plan
+   built on assumptions.
+5. **Survey prior work.** Ground the question in what is already known — the
+   established method, known confounds, prior effect sizes to gate against.
+   Searching only the repo and your data misses the literature; an invented
+   method where a standard exists, or a "novel" result that is a known artifact,
+   is wasted effort.
+6. **Survey available data BEFORE designing the pipeline.** Check all local
+   storage for pre-extracted features, captions, and metadata. Match what exists
+   against what the experiment actually needs.
+7. **Verify the git branch is clean and on the correct base.**
+   ```bash
+   git status --short   # must be clean (or only untracked experiment files)
+   git branch           # confirm the base is right, not a stale feature branch
+   ```
+   An experiment built on a dirty branch inherits unrelated changes — provenance
+   says `git_commit: X` while the code is X + 10 dirty files from another arm.
+   If the correct base lacks a dependency the arm needs, **say so explicitly**
+   rather than silently branching from an unrelated `exp/*` branch.
+8. **Create the arm's governance BEFORE touching any code:**
+   - `provenance.yaml` with `mode`, hypothesis, falsified-if, and pre-registered gate
    - `config.yaml` with canonical parameters
    - `README.md` with hypothesis, differs-from, expected outcome
-5. **Register the arm in the tree** (`03_EXPERIMENT_TREE.md`) as `[ACTIVE]`.
-6. **Register the pre-registered gate in the ledger** (`02_EXPERIMENTS_AND_RESULTS.md`)
-   BEFORE seeing results. The gate must be stated first — this is non-negotiable.
+9. **Register the arm in the tree** (`03_EXPERIMENT_TREE.md`) as `[ACTIVE]`.
+10. **Register the pre-registered gate in the ledger** (`02_EXPERIMENTS_AND_RESULTS.md`)
+    BEFORE seeing results. The gate must be stated first — this is non-negotiable.
 
 ### When the experiment produces results
 
-7. **Run the adversarial pass** on any candidate PASS. The 4-question checklist
-   (metric tested? metric stable? result reproducible? extremes inspected?) is
-   NOT optional. Fill it in before writing the verdict. If any box is unchecked,
-   the verdict is `PENDING`.
-8. **Write the ledger entry** with: Goal, Pre-registered gate (copy from step 6),
-   Empirical Evidence (numbers, not narrative), Adversarial Pass checklist,
-   Verdict (GO/PIVOT/PARK/KILL).
-9. **Update `provenance.yaml`** with `git_commit`, `data_snapshot`, and results
-   in the `notes` field.
-10. **Update the tree** (`03_EXPERIMENT_TREE.md`): move the arm from `[ACTIVE]`
+11. **Run the adversarial pass** on any candidate PASS. The full checklist (null
+    computed? metric tested? metric stable? reproducible? extremes inspected?
+    headline traced to an artifact? every flaw fixed or explicitly gated?) is NOT
+    optional. Fill it in before writing the verdict. If any box is unchecked, the
+    verdict is `PENDING`.
+12. **Write the ledger entry** with: Goal, Pre-registered gate (copy from step 10),
+    Empirical Evidence (numbers, not narrative), Adversarial Pass checklist,
+    Verdict (GO/PIVOT/PARK/KILL).
+13. **Update `provenance.yaml`** with `git_commit`, `data_snapshot`, and results
+    in the `notes` field.
+14. **Update the tree** (`03_EXPERIMENT_TREE.md`): move the arm from `[ACTIVE]`
     to `[CONCLUDED]` with the verdict.
-11. **Update `PROJECT_STATUS.md`** with the new headline result and next action.
+15. **Update `PROJECT_STATUS.md`** with the new headline result and next action.
 
 ### When an experiment is KILLed
 
-12. Write a `DISCONTINUATION_NOTICE.md` in the arm directory. This is the single
+16. Write a `DISCONTINUATION_NOTICE.md` in the arm directory. This is the single
     most valuable artifact a dead experiment produces — it prevents re-attempt.
-13. Record the KILL in the ledger and tree.
-14. Never delete the code or artifacts. A KILLed arm with provenance is permanent
+    It must state the **structural** reason the approach cannot work, not just
+    that it failed. Marking something "dead" in the tree is not a tombstone.
+17. Record the KILL in the ledger and tree, and cross-link the tombstone.
+18. Never delete the code or artifacts. A KILLed arm with provenance is permanent
     knowledge; a deleted arm is a trap for the future.
 
 ### Critical rules agents MUST follow

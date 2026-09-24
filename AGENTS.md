@@ -6,28 +6,36 @@ commands, before making any changes.
 
 ## Start here (mandatory — read in this order)
 
-1. **[PROJECT_STATUS.md](PROJECT_STATUS.md)** — The living pointer. Current
-   phase, headline results, and the single next action. This tells you whether
-   the project is active, between phases, or blocked. **Read this before
-   anything else.**
+1. **Load the governance skill — `skill_view(name='scientific-experiment-structure')`.**
+   This is the **source of truth for process**: how experiments are run, gated,
+   recorded, and how verdicts are written. Read it **before** the project docs
+   below, because every one of them is a tailored *copy* of it and copies lag.
+   Skipping this step means following a snapshot of the rules, not the rules.
+   There is no substitute: **the project docs cannot tell you when they are out of
+   date**, and nothing in this repo detects it. Loading the skill is the mechanism.
 
-2. **[docs/experiment-structure.md](docs/experiment-structure.md)** — The
-   governance contract. This is the single most important document for
-   understanding how experiments are run and recorded. It contains:
+2. **[PROJECT_STATUS.md](PROJECT_STATUS.md)** — The living pointer. Current
+   phase, headline results, and the single next action. This tells you whether
+   the project is active, between phases, or blocked.
+
+3. **[docs/experiment-structure.md](docs/experiment-structure.md)** — The project's
+   **tailored copy** of the skill. Authoritative for **project-specific facts**
+   (paths, hostnames, naming, hardware, the project's own conventions); **not**
+   authoritative for process, where the skill wins. **It is known to lag** — see
+   "Governance" below. It contains:
    - The directory layout and naming conventions
    - The provenance.yaml and config.yaml format
    - The pre-registered gate system
    - The adversarial pass checklist (mandatory before any PASS verdict)
    - The project verdict vocabulary (GO/PIVOT/PARK/KILL)
-   - The **Process for Agents** section (16 numbered steps — follow them in order,
-     but the *skill* is authoritative if this copy lags; see below)
+   - The **Process for Agents** section
 
-3. **[docs/03_EXPERIMENT_TREE.md](docs/03_EXPERIMENT_TREE.md)** — The living
+4. **[docs/03_EXPERIMENT_TREE.md](docs/03_EXPERIMENT_TREE.md)** — The living
    workstream map. Check this BEFORE starting any new experiment to see if it's
    already `[CONCLUDED]` or `[ACTIVE]`. Never re-run a concluded experiment
    without explicit user direction.
 
-4. **[docs/02_EXPERIMENTS_AND_RESULTS.md](docs/02_EXPERIMENTS_AND_RESULTS.md)** —
+5. **[docs/02_EXPERIMENTS_AND_RESULTS.md](docs/02_EXPERIMENTS_AND_RESULTS.md)** —
    The permanent ledger. Every experiment has a dated entry with pre-registered
    gates, empirical evidence, and verdicts. Check this before proposing any
    hypothesis — the answer may already be documented as a negative result.
@@ -35,32 +43,35 @@ commands, before making any changes.
 ## Governance: the skill is the source of truth
 
 This repo's governance docs are a **tailored instance** of the
-`scientific-experiment-structure` skill. **Load the skill before running or
-recording any experiment:**
-
-```
-skill_view(name='scientific-experiment-structure')
-```
+`scientific-experiment-structure` skill.
 
 **When this repo's docs and the skill disagree, the skill wins on process.** The
 project docs win only on project-specific facts (paths, hostnames, naming,
 hardware). `docs/experiment-structure.md` is a *copy* and **can lag the skill** —
-it already has. Never treat a project doc as the last word on process; when in
-doubt, re-read the skill.
+it already has. Never treat a project doc as the last word on process.
 
-### Known drift in `docs/experiment-structure.md` (as of 2026-09-24)
+### ⚠️ `docs/experiment-structure.md` lags, and will lag again
 
-The project copy is missing rules the skill requires. Treat the skill as
-authoritative for each of these:
+The project copy is a **snapshot, not a live view**. The table below records drift
+found on **2026-09-24**. It is **an example of the kind of drift that happens here —
+not a complete inventory.** If the skill changes after that date, **nothing in this
+repo detects it** and this table will not list it.
 
-| Rule | Skill requirement | Project copy |
-|---|---|---|
-| Arm kind | `mode: confirmatory\|exploratory` in `provenance.yaml`, **before the first run**. Only a confirmatory arm may write PASS/FAIL | **absent** |
-| Agent provenance | `agent_model` + `agent_model_snapshot` — this project is agent-assisted | **absent** |
-| Adversarial pass | **6 boxes** (incl. "headline number traced to an exact artifact" and "every flaw found is FIXED or explicitly gated-not-fixed") | 4 boxes |
-| Peeking | "Peeked = exploratory, period" — a gate locked after seeing the outcome cannot be relabelled confirmatory | not stated |
-| Feasibility | Feasibility mode is opt-in/opt-out by the user alone; feasibility results are **not evidence** | not stated |
-| Step count | 16 numbered steps in the Process for Agents | says 14 |
+**Do not use this table as a compliance checklist.** It exists to demonstrate that
+drift is real in this repo, not to enumerate it. The only reliable check is loading
+the skill (step 1 above).
+
+| Rule | Drift found 2026-09-24 |
+|---|---|
+| Arm kind | `mode: confirmatory\|exploratory` required in `provenance.yaml` before the first run. Only a confirmatory arm may write PASS/FAIL — **absent** from the project copy |
+| Agent provenance | `agent_model` + `agent_model_snapshot` — **absent** |
+| Adversarial pass | **6 boxes**, incl. "headline number traced to an exact artifact" and "every flaw found is FIXED or explicitly gated-not-fixed" — project copy had 4 |
+| Peeking | "Peeked = exploratory, period" — a gate locked after seeing the outcome cannot be relabelled confirmatory — **not stated** |
+| Feasibility | Feasibility mode is opt-in/opt-out by the user alone; feasibility results are **not evidence** — **not stated** |
+| Process for Agents | **missing 4 pre-flight steps** — read the existing code; survey prior work; survey available data; verify git branch clean — **now synced** |
+
+**If you find drift not listed above, add it here and fix the project copy.** That
+keeps the example current; it does not make the table authoritative.
 
 ## Critical rules (break these and you will waste real compute)
 
