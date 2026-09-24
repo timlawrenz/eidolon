@@ -1785,6 +1785,37 @@ would be p-hacking by filter.
 | **G2** headline | **CONFIRM** if `J ∈ [0.02, 0.12]` AND morphology axes ≤ 10; **FALSIFY** if `J ≥ 0.20` OR morphology axes ≥ 20; else **PARTIAL** | both directions stated above |
 | **G3** legacy collapse | attempt to reproduce "27 → 6 morphology axes" | unreconstructible → record `UNREPRODUCIBLE`; **no stand-in substituted** |
 
+### Metric calibration (performed before any corpus result was read)
+
+A synthetic validation of `fisher_ratios` was run **before** the corpus
+measurement, to confirm the metric measures what is claimed:
+
+| synthetic case | result | expected |
+|---|---|---|
+| strong identity structure (C=30, N=600) | **J = 26.31** | J ≫ 1 ✅ |
+| **pure noise, random labels** | **J = 0.0560** | ≈ (C−1)/(N−C) = 0.0509 ✅ |
+| zero within-variance (degenerate) | **J = 0.0000** via the S_W guard | finite, not inf/nan ✅ |
+
+**The noise case is the important one: J = 0.056 for random labels, against an
+original claim of J = 0.059.** The metric's floor is `(C−1)/(N−C)` — it depends on
+**N and C**, so **raw J is not comparable across corpora of different size**:
+
+| corpus | N | C | floor (C−1)/(N−C) | original J / floor |
+|---|---|---|---|---|
+| pre-curation (original measurement) | 69,110 | 323 | 0.00468 | 0.059 / 0.0047 = **12.6×** |
+| curated (this arm) | 31,711 | 321 | 0.01020 | — |
+
+**The curated corpus has a floor 2.2× higher purely because N fell.** A smaller
+corpus mechanically **raises** raw J. So the raw comparison "J rose vs 0.059"
+is **confounded** — it would rise even if `z_g`'s true identity content were
+identical.
+
+**Disclosure and handling:** the pre-registered gate is on **raw J** and was
+**deliberately not changed** after this calibration was understood. `J_null` and
+`J/J_null` are reported as **declared supplementary diagnostics**, calibrated
+before any corpus result was read, and the cross-corpus comparison is made in
+`J/floor` terms. A post-hoc gate change would have forfeited confirmatory status.
+
 ### Base deviation (explicit)
 
 `docs/00_GIT_WORKFLOW.md` rule 2 requires branching from `main`. **This arm
