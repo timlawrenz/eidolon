@@ -126,15 +126,32 @@ writer in stratum-hq — do not infer the convention from how the array looks.**
 Inferring it cost this project a full round of invalid contact sheets (see
 `docs/02_EXPERIMENTS_AND_RESULTS.md`, `zg-validity-threshold`).
 
-| array (per sample dir) | written by | notes |
-|---|---|---|
-| `pixel.npy` | stratum-hq | `(3, H, W)` float16, **bucket-shaped** (corpus is uniformly 1024×1024) |
-| `pose.npy` | stratum-hq `src/stratum/pipeline/pose.py` | `(133, 3)` float16, DWPose whole-body — `(x_norm, y_norm, confidence)` |
-| `depth.npy`, `normal.npy`, `seg.npy` | stratum-hq | `z_d`, `z_a` inputs (both KILLed) |
-| `caption.txt`, `t5_hidden.npy`, `t5_mask.npy` | stratum-hq | text conditioning |
-| `z_g.npy` | **this repo** (`geometry_pca`) | 50-d whitened PCA of the 68 face keypoints |
-| `auraface_lda.npy` | **this repo** (`geometry_pca`) | LDA-projected AuraFace identity |
-| `metadata.json` (corpus) | **this repo** (`build-corpus`) | `persona` / `set` / `image_id` — the join key to the review DB |
+| array (per sample dir) | written by | model | notes |
+|---|---|---|---|
+| `pixel.npy` | stratum-hq | — | `(3, H, W)` float16, **bucket-shaped** (corpus is uniformly 1024×1024) |
+| `pose.npy` | stratum-hq `src/stratum/pipeline/pose.py` | **DWPose** | `(133, 3)` float16, whole-body — `(x_norm, y_norm, confidence)` |
+| `depth.npy`, `normal.npy`, `seg.npy` | stratum-hq | **Sapiens-1B** (TorchScript) | `z_d`, `z_a` inputs (both KILLed) |
+| `pose2.npy` | stratum-hq **`stratum2/`** tree | **Sapiens2** | 308 kp, genuine visibility signal; **NOT in the corpus** |
+| `caption.txt`, `t5_hidden.npy`, `t5_mask.npy` | stratum-hq | — | text conditioning |
+| `z_g.npy` | **this repo** (`geometry_pca`) | — | 50-d whitened PCA of the 68 face keypoints |
+| `auraface_lda.npy` | **this repo** (`geometry_pca`) | — | LDA-projected AuraFace identity |
+| `metadata.json` (corpus) | **this repo** (`build-corpus`) | — | `persona` / `set` / `image_id` — the join key to the review DB |
+
+**Three distinct models — do not conflate them.** `pose.npy` is **DWPose**;
+`depth`/`normal`/`seg` are **Sapiens-1B** (TorchScript); `pose2.npy` is **Sapiens2**
+(separate `stratum2/` tree). Their failure modes differ in a way that matters:
+
+- **DWPose prioritizes completeness over correctness** — it emits all 68 face
+  keypoints regardless of visibility, so **low confidence does not mean a missed
+  face**; it means degraded landmark geometry. Measured: 0 missing keypoints and 0
+  sub-0.3-confidence keypoints even on the worst pose stratum. DWPose has no
+  visibility signal.
+- **Sapiens2 withholds** ~22% of keypoints per image (33% on profiles) and carries a
+  genuine confidence/visibility signal.
+
+Collapsing these into one "extraction model" produced a wrong causal correction on
+2026-09-24. See `experiments/sapiens2_keypoints/` and the `zg-validity-threshold`
+ledger entry.
 
 **`pose.npy` orientation — the trap.** Both axes are plain image convention
 (**y increases downward**). There is **no y-flip**:
