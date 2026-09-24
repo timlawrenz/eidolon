@@ -145,15 +145,35 @@ Arm O remains the code and recipe reference; it is not a weight donor.
 
 ---
 
-## 4. The data contract — the open design question
+## 4. The data contract — decided
 
-This is the part that needs a decision, and it is the sharpest thing in this
-briefing.
+This was the sharpest open question and it is now settled (§8, decisions 2 and 3).
+The reasoning below is why the answer is what it is.
 
 **Identity persistence — the product claim — can only be trained and measured with
 multiple images per identity.** FFHQ is 1 image/identity; it cannot express "same
 person, different pose". Hegre is the **only** cross-shoot substrate in the project:
 31,711 samples, 321 personas, multiple shoots per persona.
+
+**Why hegre persona centroids must be in the training set — and why FFHQ alone
+cannot work.** FFHQ has **no identity overlap**: every identity vector appears
+exactly once. Trained on FFHQ alone, the model has no pressure to learn an identity
+*representation* at all — the cheapest solution that fits is a **1:1 AuraFace →
+image lookup table**, one entry per training sample. It will reconstruct its
+training identities beautifully and generalise to no one, and no FFHQ metric can
+detect the difference, because FFHQ cannot ask "render *this person* again in a
+different pose".
+
+Adding **hegre persona centroids breaks the lookup table by construction**: one
+identity vector now appears across many poses. The only way to fit those pairs is to
+learn a *representation* of that identity that survives a pose change — which is
+exactly the product requirement expressed as a training constraint. **This is not a
+data-enrichment convenience; it is the mechanism that forces the model to learn
+identity rather than memorise a mapping.**
+
+A holdout remains fully feasible and useful on top of this: hold out whole
+**personas**, so identity persistence is measured on people the model has never
+seen.
 
 **But hegre is also the gate instrument.** Training on it directly destroys the only
 held-out identity-persistence measurement that exists. That is a genuine tension,
@@ -269,24 +289,32 @@ Written before results, so it cannot be rationalised later:
 
 ---
 
-## 8. Open questions for the discussion
+## 8. Decisions (agreed 2026-09-24)
 
-1. **Sequencing.** This arm is Stage E. Is it worth pre-registering its gates *now*
-   so Stage C/D can be shaped to feed it, or does prx-tg prefer to freeze them at
-   Stage E?
-2. **Data contract.** Confirm: hegre **person-level holdout** at Stage E —
-   train personas vs held-out personas — is the agreed contract, and confirm the
-   FFHQ convention-mixing hazard in §4.1.
-3. **Centroid conditioning.** Identity conditioning value = persona AuraFace
-   centroid for every sample of that persona. Confirm, and confirm the all-zero /
-   degenerate-centroid audit is run as a Stage-B prerequisite.
-4. **DINO.** CLS in or out of the arm? If in, the memorization probe is mandatory —
-   is there an existing novel-CLS harness to reuse?
-5. **Warm start.** With no donor checkpoint, does Stage E start from the gated
-   P1/PP output, or from scratch with the Arm O recipe? (This changes what
-   `diff_summary` must declare and what "matched step" means for G4.)
-6. **Budget.** 10k steps at 1k-segment granularity was the v1 assumption; confirm
-   against Stage C/D's actual budget.
+All six open questions are resolved. Recorded here so Stage E is specified rather
+than negotiated:
+
+1. **Sequencing — requirements now, numbers at Stage E.** Pre-register the
+   *requirements* now (persona-level holdout; held-out personas reserved and never
+   touched) so Stage C/D shape the split to feed Stage E. Freeze the numeric
+   thresholds at Stage E.
+2. **Data contract — hegre persona centroids go IN the training set.** Not optional
+   and not merely enrichment: FFHQ has no identity overlap, so FFHQ alone admits a
+   1:1 AuraFace → image lookup table as the cheapest fit. Centroids break that
+   construction (§4). **Person-level holdout confirmed** — and on top of the
+   centroids it is both *feasible and useful*.
+3. **Identity conditioning value = the persona AuraFace centroid** — for now. The
+   per-image drift check (does the render match this persona's *individual* shots,
+   not just their mean?) is deferred; note that it is the measurement that would
+   distinguish "renders this person" from "renders the average of this person".
+4. **DINO — out of this arm.** No patch tokens, and no CLS either. The core arm
+   stays a two-stream test of identity-vs-pose; CLS is a single-variable follow-up
+   with its mandatory novel-CLS probe, not part of this run. (The CLS warning in
+   §1.2 therefore does not gate this arm — it gates any future arm that adds it.)
+5. **Warm start — fresh P1.** Stage E starts from a **fresh P1**; the VAE route is
+   good enough for now. Explicitly *not* the killed P1/PP assets — those weights
+   fail the data-quality and provenance gates and may not warm-start anything.
+6. **Budget — 10k steps at 1k-segment granularity.**
 
 ---
 
@@ -295,11 +323,15 @@ Written before results, so it cannot be rationalised later:
 Eidolon's identity vector is settled and its data is clean, unified and cleared for
 per-image use. The pose conditioning path is **proven to work** (Arm O) and its one
 historical failure — inert geometry producing all-frontal faces — is root-caused and
-fixed by a recipe that must be carried forward intact, not re-derived.
+fixed by a recipe that must be carried forward intact, not re-derived. The VAE
+fidelity question is **answered**; only the spike's weights were unusable.
 
-What is missing is not an idea; it is a **clean backbone to warm-start from**, and a
-**data contract that lets identity persistence be trained and measured at the same
-time**. Both have answers in flight (`Stage C/D`; hegre person-level holdout). This
-briefing pins down the conditions under which the visualization experiment is
-informative — so that when Stage E runs, it answers *"does this vector express a
-person?"* rather than re-discovering why it did not.
+The experiment is now specified end to end: two streams, no DINO, persona centroids
+in the training set against a persona-level holdout, warm-started from a fresh P1,
+10k steps. The one open dependency is prx-tg's own sequence — Stage C/D must yield
+the fresh P1 and the split this arm's measurements require.
+
+What remains is not an idea and not a contract; it is a **clean backbone to
+warm-start from**. This briefing pins down the conditions under which the
+visualization experiment is informative — so that when Stage E runs, it answers
+*"does this vector express a person?"* rather than re-discovering why it did not.
