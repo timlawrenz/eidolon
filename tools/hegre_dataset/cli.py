@@ -153,6 +153,7 @@ def cmd_build_corpus(args):
         max_images_per_persona=args.max_images,
         resolution=args.resolution,
         dry_run=args.dry_run,
+        skip_existing=args.skip_existing,
     )
 
 def main(args=None):
@@ -225,6 +226,8 @@ def main(args=None):
     p_corpus.add_argument("--max-images", type=int, default=None, help="Max images per persona (default: no cap)")
     p_corpus.add_argument("--resolution", type=int, default=1024, help="Target pixel resolution (default: 1024)")
     p_corpus.add_argument("--dry-run", action="store_true", help="Count samples without writing files")
+    p_corpus.add_argument("--skip-existing", action="store_true",
+                          help="Resume: skip samples already fully written (idempotent rebuild)")
     p_corpus.set_defaults(func=cmd_build_corpus)
 
     p_enrich = sub.add_parser("enrich")

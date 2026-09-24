@@ -16,6 +16,9 @@ import numpy as np
 from PIL import Image
 
 
+REQUIRED_SAMPLE_FILES = ("pixel.npy", "auraface_lda.npy", "z_g.npy", "metadata.json")
+
+
 def _averages_fingerprint(avg_dir: Path) -> str:
     """sha256 over all per-persona average vectors (sorted) — identifies the LDA basis.
 
@@ -37,6 +40,7 @@ def build_corpus(
     max_images_per_persona: int | None = None,
     resolution: int = 1024,
     dry_run: bool = False,
+    skip_existing: bool = False,
 ) -> int:
     """Build stratum-style corpus from hegre dataset.
 
@@ -45,8 +49,11 @@ def build_corpus(
         output_dir: Where to create numbered sample directories.
         min_images_per_persona: Skip personas with fewer approved images.
         max_images_per_persona: Cap images per persona (None = no cap).
-        resolution: Target pixel resolution (default 1024).
+        resolution: Target pixel resolution (default: 1024).
         dry_run: If True, only count samples without writing files.
+        skip_existing: If True, skip samples whose directory already holds all
+            REQUIRED_SAMPLE_FILES. Makes the build resumable/idempotent after an
+            interrupted run (safe only against a corpus built from the same basis).
 
     Returns:
         0 on success, 1 on error.
@@ -116,6 +123,7 @@ def build_corpus(
     t0 = time.time()
     written = 0
     written_names: list[str] = []
+    skipped_existing = 0
     errors = 0
 
     for i, (pname, img_path) in enumerate(eligible):
@@ -123,6 +131,12 @@ def build_corpus(
         dir_name = f"{pname}--{stem}"
         sample_dir = output_dir / dir_name
         sample_dir.mkdir(parents=True, exist_ok=True)
+
+        # Resume support: skip samples already fully written by a prior run
+        if skip_existing and all((sample_dir / f).exists() for f in REQUIRED_SAMPLE_FILES):
+            skipped_existing += 1
+            written_names.append(dir_name)
+            continue
 
         try:
             # Pixels: prefer stratum's pixel.npy if enrichment ran pixel pass
@@ -192,6 +206,7 @@ def build_corpus(
             "eligible": len(eligible),
             "unique_personas": len(set(name for name, _ in eligible)),
             "written": written,
+            "skipped_existing": skipped_existing,
             "errors": errors,
         },
         "samples": sorted(written_names),
@@ -202,6 +217,7 @@ def build_corpus(
 
     print(f"\nCorpus built in {elapsed/60:.1f}m")
     print(f"  Written:  {written}")
+    print(f"  Skipped (existing): {skipped_existing}")
     print(f"  Errors:   {errors}")
     print(f"  Output:   {output_dir}")
     print(f"  Manifest: {manifest_path} (basis {manifest['lda_basis_fingerprint']})")
