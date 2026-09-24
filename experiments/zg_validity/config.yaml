@@ -1,0 +1,80 @@
+# zg-validity-threshold — canonical parameters
+# RECORD of frozen parameters. The arm has not run; nothing here has been consumed
+# by code yet. Any key added later must be grep-traced to its consumer before the
+# run (standing project rule: a config key that looks right but is never read
+# produces a silently invalid experiment).
+
+arm: zg-validity-threshold
+branch: exp/zg-validity
+
+data:
+  corpus_dir: /mnt/nas-ai-models/training-data/eidolon/hegre_corpus
+  zg_source_dir: /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1
+  vector_file: z_g.npy          # (50,) float32
+  pixel_file: pixel.npy         # (3,1024,1024) float16 — for the G1 contact sheets
+  manifest: /mnt/nas-ai-models/training-data/eidolon/hegre_corpus/_manifest.json
+  expected_samples: 31711
+  expected_personas: 321
+  basis_fingerprint: 120e1c5a1dc4f423
+
+encoder:
+  file: experiments/geometry_pca/output/encoder_production.npz
+  fitted: 2026-06-23
+  pipeline: frontalize -> center_and_scale -> align_single -> PCA(50) -> whiten
+  # z_g = (raw - whiten_mu) / whiten_sigma
+  # Whitening amplifies low-variance high-index components -> a large norm means
+  # "large projection along a low-variance axis", which is ambiguous between
+  # detector failure and genuine extremity. That ambiguity is the arm.
+  code: experiments/geometry_pca/geometry_pca/zg_inference.py::encode_zg
+  keypoint_source: DWPose (COCO-WholeBody) — NOT Sapiens2 (settled 2026-07-07)
+
+sampling:
+  # G1
+  high_norm_min: 25.0
+  control_norm_min: 8.0
+  control_norm_max: 12.0
+  n_high: 60
+  n_control: 60
+  seed: 20260924                # fixed before drawing; do not re-draw to taste
+  # G2 runs over the same 120 samples plus a corpus-wide pass for distribution
+  g2_corpus_wide: true
+
+decision_rule:
+  # Fixed BEFORE looking. See provenance.yaml pre_registered_gate G1.
+  implausible_fraction_for_H1: 0.70
+  plausible_fraction_for_H2: 0.70
+  else: MIXED                    # criterion must then be keypoint-based, not norm-based
+
+thresholds_under_test: [15.0, 25.0]
+threshold_provenance:
+  15.0: 2026-07-07 Fisher-J cohort cap ("to exclude DWPose-failure tail")
+  25.0: extract_zg_and_averages.py L130-131 docstring (persona averages only)
+  applied_to_shipped_per_image_data: false   # neither one currently is
+  note: >
+    At most one can be right; that neither is right is a live possibility and must
+    remain on the table (G4.3).
+
+criterion_requirements:          # G4 — any filter must satisfy all three
+  computable_at_inference: true  # else train/inference mismatch, worse than the bug
+  identical_across_splits: true  # else a split confound
+  falsifiable_justification: true  # not a round number inherited from old code
+
+data_update_rules:               # G5 — only if the corpus changes
+  backup_before_first_write: true
+  never_overwrite_existing_backup: true
+  idempotent_resumable: true
+  stamp_basis_fingerprint: true
+  update_manifest: true
+  report_count_delta: true
+  rehash_split: true
+
+out_of_scope:
+  - z_g encoder changes / DWPose -> Sapiens2 (settled: z_g stays on DWPose)
+  - the z_g -> yaw R^2 = 0.98 vs "pose-invariant by construction" contradiction
+    (separate question about what z_g encodes; natural follow-up if frontalization
+    failure is implicated)
+  - any training; CPU-only
+
+compute:
+  gpu: none
+  expected_runtime: minutes (NAS I/O bound)

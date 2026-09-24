@@ -13,6 +13,27 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
+* **[ACTIVE — pre-registered, NOT yet run] z_g Validity Threshold (`exp/zg-validity`)**
+  * **Question:** ~6.7% of `hegre_corpus` per-image `z_g` has norm > 25 — the value the
+    project's own extraction code calls degenerate. Are those vectors *wrong* (DWPose
+    failure) or merely *extreme* (genuine pose)? The two readings imply **opposite
+    actions**, and the geometry stream is consumed per-image by the DiT.
+  * **Mechanism:** `z_g` is whitened PCA (`(raw − whiten_mu) / whiten_sigma`), so
+    whitening amplifies low-variance high-index components. A large norm means a large
+    projection along a low-variance axis — ambiguous. `z_g → yaw R² = 0.98`
+    (2026-07-07) makes the "genuine pose" reading live.
+  * **Two conflicting thresholds already in the codebase, neither applied to shipped
+    data:** `>25` (`extract_zg_and_averages.py` L130–131, persona averages only) and
+    `<15` (2026-07-07 Fisher-J cohort cap). At most one can be right.
+  * **Gate (pre-registered, ledger `[PRE-REGISTERED]`):** G0 instrument trust →
+    **G1 visual keypoint plausibility** (60 norm>25 vs 60 controls at 8–12;
+    ≥70% implausible ⇒ filter, ≥70% plausible ⇒ no filter) → G2 quantitative
+    corroboration → G3 falsify the standing docstring claim → G4 criterion must be
+    inference-computable, split-identical, falsifiably justified → G5 data-update
+    governance if the corpus changes.
+  * **KILL is a live, valuable outcome:** if high-norm vectors are valid, change
+    nothing and retire the docstring claim + `DISCONTINUATION_NOTICE.md`.
+  * Arm dir: `experiments/zg_validity/`
 * **[CONCLUDED — PASS] FFHQ Basis Reprojection (`exp/sapiens2-keypoints-study`)**
   * **Problem:** `ffhq/stratum/{id}/auraface_lda.npy` is on the **PRE-refit** LDA basis
     (files 2026-06-30; basis refit 2026-07-23). Proven bit-exact: `‖stored − project_old(raw)‖ = 0`

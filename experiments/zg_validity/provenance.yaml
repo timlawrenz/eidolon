@@ -1,0 +1,112 @@
+arm: zg-validity-threshold
+branch: exp/zg-validity
+status: PRE-REGISTERED — NOT YET RUN
+
+hypothesis: >
+  Per-image z_g vectors in hegre_corpus with norm > 25 are DWPose/encoder failures
+  (the claim made by the comment at extract_zg_and_averages.py L130) rather than
+  genuine pose/expression extremity, and therefore warrant a validity filter applied
+  to the shipped per-image vectors rather than only to persona averages.
+
+  Competing hypothesis, which this arm must be able to prefer:
+  high-norm z_g is genuine extremity that frontalization failed to remove. z_g is
+  whitened PCA ((raw - whiten_mu) / whiten_sigma), so whitening amplifies the
+  low-variance high-index components; a sample with large residual pose after
+  frontalization projects far along those axes. The ledger's 2026-07-07 note that
+  z_g -> yaw R^2 = 0.98 makes this live: z_g demonstrably carries pose.
+
+  Discriminator: the DWPose keypoints behind each vector, NOT the norm itself.
+
+falsified_if: >
+  F1. G0 fails: corpus z_g is not bit-identical to the zg/ source tree. Then every
+      downstream conclusion is about a copy, not the encoder, and the arm aborts.
+  F2. G1 shows >=70% of high-norm samples have PLAUSIBLE keypoints (H2). Then the
+      docstring claim "norm > 25 = degenerate" is falsified and the correct action is
+      to change nothing in the data.
+  F3. G2 shows keypoint quality is equal between high-norm and control but pose
+      amplitude is larger. Same conclusion as F2, reached quantitatively.
+  F4. No criterion satisfying G4.1 (computable per-image at inference time) separates
+      the two populations. Then no defensible filter exists, regardless of mechanism.
+
+pre_registered_gate: >
+  G0 (INSTRUMENT TRUST, run first, abort if it fails): hegre_corpus z_g.npy is
+  bit-identical to the zg/ source tree on this arm's own sample. Previously
+  established over 600 matched samples at ||diff|| = 0.00000000; re-confirm.
+
+  G1 (MECHANISM, VISUAL — the core question): 60 images at norm > 25 and 60 controls
+  at norm 8-12, DWPose 68 keypoints rendered over the pixel, each classified
+  plausible vs implausible. Pre-registered decision rule:
+    - >=70% of high-norm IMPLAUSIBLE  -> H1 (detector failure); a filter is justified
+    - >=70% of high-norm PLAUSIBLE    -> H2 (genuine extremity); NO filter
+    - in between                      -> MIXED; criterion must be keypoint-based
+  Visual verification is mandatory (standing project rule; Phase 2b z_a precedent).
+
+  G2 (QUANTITATIVE CORROBORATION, independent of the visual): high-norm vs control on
+  per-keypoint confidence, missing-point count, inter-ocular distance in normalized
+  units, keypoint-bbox scale/aspect. Direction test: worse keypoint quality -> H1;
+  equal quality with larger pose amplitude -> H2. Report effect sizes WITH confidence
+  intervals, not bare significance.
+
+  G3 (FALSIFICATION OF THE STANDING CLAIM): if H2 holds, "norm > 25 = degenerate" is
+  falsified. Retire the claim AND re-examine the persona-average filter it drives,
+  since persona averages may have been computed over a biased subsample.
+
+  G4 (THE DECISION): any chosen criterion must be (1) computable per-image from data
+  available at inference time, so train and inference paths agree; (2) applied
+  identically to all splits so it cannot become a split confound; (3) justified by a
+  falsifiable measurement, not a round number. The <15 (2026-07-07 cohort cap) vs
+  >25 (extraction docstring) discrepancy must be reconciled explicitly — at most one
+  can be right, and neither being right must be on the table.
+
+  G5 (IF THE CORPUS CHANGES): governed as a data update. Backup before the first
+  write, never overwrite an existing backup, idempotent and resumable, stamped with
+  the basis fingerprint, _manifest.json updated, count delta reported, and the
+  train/val/test split re-hashed (a filter changes split membership).
+
+kill_condition: >
+  If high-norm samples are visually valid with valid keypoints AND their z_g carries
+  genuine pose signal, the premise collapses: change nothing in the data, retire the
+  docstring claim, and write DISCONTINUATION_NOTICE.md so the filter is not
+  re-attempted. A KILL here is a valuable result — it removes a wrong belief and
+  simplifies the architecture.
+
+differs_from: ffhq-basis-reproject, refit-cleaned, zg-token-basis-cfg-guard
+diff_summary: |
+  - ffhq-basis-reproject repaired an ENCODING mismatch (wrong LDA basis). This arm
+    asks about VALUE VALIDITY on an encoder that is not stale — both datasets'
+    z_g postdate encoder_production.npz (2026-06-23).
+  - refit-cleaned refit the identity basis. This arm touches the GEOMETRY stream and
+    changes no encoder.
+  - zg-token-basis-cfg-guard (prx-tg) fixed how z_g TOKENS are fed. This asks whether
+    the values being fed are trustworthy.
+  - No training in this arm. CPU-only.
+
+git_commit: FILL_AT_RUN_START
+git_dirty: false
+training_host: game
+training_gpu: CPU-only
+
+data_snapshot: >
+  /mnt/nas-ai-models/training-data/eidolon/hegre_corpus — 31,711 samples / 321
+  personas, manifest fingerprint e2f66241288e1f50, basis fingerprint
+  120e1c5a1dc4f423. Source for z_g: /mnt/nas-ai-models/training-data/eidolon/
+  hegre-faces/v1 (zg/ tree). Encoder: experiments/geometry_pca/output/
+  encoder_production.npz (2026-06-23).
+
+prior_observations: >
+  These were measured BEFORE this arm was conceived (scratch/zg_audit2.py) and are
+  the motivation, not the answer:
+    hegre z_g: per-dim std 1.916; norm p50 8.49, p95 27.36, p99 42.57;
+               >15 = 20.08%, >25 = 6.66%
+    FFHQ  z_g: per-dim std 1.138; norm p50 6.39, p95 10.10, p99 13.27;
+               >15 = 0.49%,  >25 = 0.03%
+    corpus z_g == zg/ source bit-exact (||diff|| = 0.00000000, 600 matched samples)
+    encoder_production.npz 2026-06-23 -> z_g is NOT stale in either dataset
+  Two conflicting thresholds already in the codebase, neither applied to shipped
+  per-image data:
+    >25  extract_zg_and_averages.py L130-131 (persona averages only)
+    <15  2026-07-07 Fisher-J cohort cap ("to exclude DWPose-failure tail")
+  Prior-art check (process steps 2-3) found NO concluded arm and NO ledger
+  adjudication of z_g validity. This is new work.
+
+notes: ""

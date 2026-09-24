@@ -1523,3 +1523,83 @@ Verdict: PASS (G1 + G2 + G3 + G4)
 - `ffhq/stratum/_auraface_lda.reproject_manifest.json` — counts, fingerprint, git commit
 - `ffhq/stratum/BASIS_FINGERPRINT.json` + 2 more stamps
 - `scripts/reproject_lda_ffhq.py`, `tools/hegre_dataset/basis_fingerprint.py`, `tests/tools/test_basis_fingerprint.py`
+
+---
+
+## [PRE-REGISTERED] z_g Validity Threshold — is the high-norm tail detector failure or genuine pose? (`exp/zg-validity`)
+
+**Date:** 2026-09-24
+**Status:** **PRE-REGISTERED — NOT YET RUN.** Gate stated before any measurement for
+this arm. No data has been examined to design it.
+
+**Goal:** Decide whether per-image `z_g` vectors in `hegre_corpus` with norm > 25 are
+DWPose/encoder failures to be filtered, or genuine pose/expression extremity that must
+be kept — and if a filter is justified, specify a defensible criterion.
+
+**Why it matters:** `z_g` is the geometry control, consumed **per-image** by the DiT.
+~6.7% of the corpus sits past the value the project's own extraction code calls
+degenerate. If those vectors are garbage, the geometry control trains on garbage; if
+they are real signal, filtering deletes real pose coverage. **The two readings imply
+opposite actions.**
+
+**Prior art (process steps 2–3, checked):** NO concluded arm and NO ledger
+adjudication of `z_g` validity exists. Two conflicting thresholds do exist in the
+codebase, **neither applied to shipped per-image data**:
+
+| threshold | where | scope it is applied to |
+|---|---|---|
+| `> 25` | `extract_zg_and_averages.py` L130–131 — *"Reject degenerate z_g (DWPose missed eyes/face → wild PCA projection)"* | **persona averages only** |
+| `< 15` | 2026-07-07 Fisher-J cohort cap — *"to exclude DWPose-failure tail"* | one analysis cohort |
+
+**Mechanism (why the norm is ambiguous):** `encode_zg` is
+`frontalize → center_and_scale → align_single → PCA(50) → whiten`, i.e.
+`z_g = (raw − whiten_mu) / whiten_sigma`. Whitening divides each component by its own
+std, **amplifying the low-variance high-index components**. A large norm therefore
+means "large projection along a low-variance axis" — which is equally consistent with
+(a) a garbage shape from failed keypoints, and (b) a genuine extreme pose that
+frontalization failed to remove. The ledger's 2026-07-07 `z_g → yaw R² = 0.98` makes
+(b) live: `z_g` demonstrably carries pose. **The discriminator is the keypoints, not
+the norm.**
+
+### Pre-registered gate (stated before results)
+
+- **G0 — instrument trust (abort if it fails).** `hegre_corpus` `z_g.npy` bit-identical
+  to the `zg/` source tree on this arm's sample. Previously ‖diff‖ = 0.00000000 over 600
+  matched samples; re-confirm. If it fails, all downstream conclusions are about a copy.
+- **G1 — mechanism, visual (the core question).** 60 images at norm > 25 vs 60 controls
+  at norm 8–12; DWPose 68 keypoints rendered over the pixel; each classified plausible
+  vs implausible. **Decision rule fixed now:**
+  - ≥70% of high-norm **implausible** → **H1** detector failure → a filter is justified
+  - ≥70% of high-norm **plausible** → **H2** genuine extremity → **no filter**
+  - in between → **MIXED** → criterion must be keypoint-based, not norm-based
+  Visual verification is mandatory (standing rule; Phase 2b `z_a` precedent).
+- **G2 — quantitative corroboration, independent of the visual.** High-norm vs control
+  on per-keypoint confidence, missing-point count, inter-ocular distance (normalized
+  units), keypoint-bbox scale/aspect. Direction test: worse keypoint quality → H1;
+  equal quality with larger pose amplitude → H2. **Effect sizes with CIs, not bare
+  significance** — a large-n test on a 6.7% subgroup is how a trivial difference gets
+  promoted to a finding.
+- **G3 — falsify the standing claim.** If H2 holds, *"norm > 25 = degenerate"* is
+  falsified; retire it **and** re-examine the persona-average filter it drives, since
+  persona averages may have been computed over a biased subsample.
+- **G4 — the decision.** Any criterion must be (1) computable per-image from data
+  available **at inference time** (else train/inference mismatch — worse than the bug
+  it fixes); (2) applied **identically to all splits** (else a split confound); (3)
+  justified by a **falsifiable measurement, not a round number**. The `<15` vs `>25`
+  discrepancy must be reconciled; **that neither is right stays on the table.**
+- **G5 — if the corpus changes.** Governed as a **data update**: backup before first
+  write, never overwrite an existing backup, idempotent/resumable, stamped, manifest
+  updated, count delta reported, **split re-hashed** (a filter changes membership).
+
+**Falsified if:** G0 fails; or G1/G2 support H2; or no criterion satisfies G4.1.
+**KILL condition:** high-norm vectors are valid with valid keypoints and carry genuine
+pose signal → change nothing, retire the claim, write `DISCONTINUATION_NOTICE.md`.
+**A KILL here is a valuable result** — it removes a wrong belief and simplifies the
+architecture.
+
+**Adversarial pass (mandatory before any PASS):** all four boxes, with the G1 contact
+sheets preserved under `docs/assets/exp/zg-validity/` as the visual evidence.
+
+**Arm dir:** `experiments/zg_validity/` — `provenance.yaml`, `config.yaml`, `README.md`.
+
+**Expected cost:** CPU-only, minutes. No GPU, no training, no model.
