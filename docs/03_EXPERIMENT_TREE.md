@@ -109,6 +109,11 @@ Link directly to the `exp/*` branch where the work lives.
     measured on hegre (AUC 0.766 vs face-crop z_g 0.67–0.69, z_d 0.56) → DINO =
     identity conditioning; E = interpretable decoupled control. Both fast paths are
     dead; E non-redundant. (Caveat: DINO AUC includes same-shoot context — see C5.)
+  * 🪦 **Tombstone: [`docs/DISCONTINUATION_NOTICE_dino_bridge.md`](DISCONTINUATION_NOTICE_dino_bridge.md)** —
+    root cause: DINO identity does not survive a low-dimensional *geometric*
+    bottleneck (the bridge scored 0.704, **below a random 50-d projection at
+    0.712**). Origin of the mandatory-null rule: a gate of the form "a learned
+    mapping achieves X" must report the untrained/random mapping's score.
 * **[CONCLUDED — FAIL] Phase 2b: Surface Normals Encoder z_a** (`exp/geometry-pca`)
   * **[2026-06-11] Face-Crop Re-run OVERTURNS previous PASS.** Re-tested on the
     `hegre_faces_stratum` dataset using a seg-clean subset (fg≥30%) to prevent
@@ -119,10 +124,16 @@ Link directly to the `exp/*` branch where the work lives.
     mathematically, they add ZERO biological identity over 2D keypoints. Monocular
     models hallucinate *generic, plausible* human geometry; they do not encode
     true identity-specific micro-curvature. The "fast path" is definitively dead.
+  * 🪦 **Tombstone: [`docs/DISCONTINUATION_NOTICE_za_normals.md`](DISCONTINUATION_NOTICE_za_normals.md)** —
+    this arm is the project's canonical *false PASS* (seg-collapse contamination).
+    Origin of the "always verify identity test sets visually" rule.
 * **[CONCLUDED — FAIL] Phase 2: Depth Encoder z_d** (`exp/geometry-pca`)
   * Depth (64×64, k=50, FFHQ-fit) adds NO complementary identity signal over z_g.
   * Operational proof: verification AUC z_g=0.541 → +z_d = −0.004 (every mode);
     kNN identity acc 4.3% → −0.2%. Depth slightly *dilutes* the weak geometry signal.
+  * 🪦 **Tombstone: [`docs/DISCONTINUATION_NOTICE_zd_depth.md`](DISCONTINUATION_NOTICE_zd_depth.md)** —
+    root cause: monocular depth learns a *generic* human-shape prior, so identity
+    information is not present to extract. Do not retry with a better depth model.
   * **[2026-06-11] FAIL confirmed on face-crop re-run at 24× facial depth
     resolution, domain shift eliminated:** z_g 0.681 → +z_d best delta −0.023
     (−0.034 on seg-clean subset). Resolution & distribution are exhausted as
