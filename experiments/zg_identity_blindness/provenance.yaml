@@ -106,4 +106,54 @@ adversarial:
   - explicit 0.059 comparison, noting the original used a larger, different dataset
 
 # ---- notes (filled at conclusion) --------------------------------------------
-notes: ""
+notes: >
+  CONCLUDED 2026-09-24 — verdict PARTIAL (belief stands in direction, magnitude
+  corrected).
+
+  G0 PASS: corpus z_g bit-identical to the encoder source (400 samples,
+  max|diff| = 0.0000000000e+00).
+
+  G1 FAIL as pre-registered, and the failure is a DATA property, not an instrument
+  failure: the corpus auraface_lda.npy IS the persona centroid. Verified on disk —
+  321/321 personas carry a bit-identical vector across every one of their samples
+  (worst within-persona max|diff| = 0.0000000000e+00), so S_W == 0 by construction
+  and J is undefined there. The pre-registered INTENT was "AuraFace as a stream
+  known to carry identity"; G1b implements it on the correct array (per-image LDA
+  from lda/faces/{persona}/{set}/{image_id}.npy, 31704 loaded / 7 missing) and
+  PASSES: J = 2.0137, ratio 23.78x raw / 17.84x restandardized against the required
+  3x. G1 is deliberately left recorded as FAILED; the gate was not retro-fitted.
+
+  G2 PARTIAL: z_g J = 0.0847 (venue B), S_B 15.1058, S_W 178.3654, morph axes 11.
+  J sits inside the CONFIRM band [0.02, 0.12] but morphology missed the
+  pre-registered <= 10 by one axis, so CONFIRM was not written and the threshold
+  was NOT moved.
+
+  Size-corrected result: J_null = (C-1)/(N-C) = 0.01019 on this corpus vs 0.00468
+  on the original 69,110/323 corpus, i.e. 2.18x higher purely because N fell.
+  Raw J rose 0.059 -> 0.085 but that is arithmetic. Size-corrected the relative
+  signal FELL, 12.60x -> 8.31x floor. H1's predicted rise was produced by the
+  corpus shrinking, not by curation revealing structure.
+
+  The decisive number for the orthogonality design is the 24x separation:
+  per-image AuraFace at 197.5x floor vs z_g at 8.31x floor.
+
+  Venue family collapsed: no corpus sample has mean face-keypoint confidence
+  < 0.3 (venues A and B identical at 31,711 samples; venue C removes 35). A
+  confidence-based "Tier 0.3" filter would have been a no-op, so the original's
+  "Tier 0.3" most likely denoted something else. Recorded as inference.
+
+  G3 UNREPRODUCIBLE: the original providing script is absent from every branch; no
+  stand-in substituted.
+
+  FLAWS: ZG_TREE path bug (caught by G0) FIXED; names list-vs-array indexing bug
+  (Pyright-caught) FIXED; mis-specified G1 control -> G1b, disclosed, gate not
+  moved. ACCEPTED DEBT: the arm script was written before the ledger entry
+  (rule 3 ordering), though the design was frozen in the arm's own files before
+  the run.
+
+  SUPERSEDES: the J = 0.059 quoted in
+  docs/briefings/2026-09-24_prx-tg_persona-vector-visualization-brief.md section 5.
+  Carry forward J = 0.0847 / 8.31x floor instead.
+
+  EVIDENCE: docs/assets/exp/zg-identity-blindness/fisher_metrics.json
+  CODE: experiments/zg_identity_blindness/src/run_fisher.py

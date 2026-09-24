@@ -1826,9 +1826,107 @@ cannot load the corpus. Per AGENTS.md the deviation is stated rather than
 silently branching from an unrelated `exp/*` branch. **Standing blocker for every
 future eidolon arm until `main` is merged forward.**
 
-### Results
+### Results (run 2026-09-24)
 
-_(pending — filled after the run, then the 7-box adversarial pass and verdict)_
+**G0 — PASS.** 400 samples checked, 0 missing, `max‖diff‖ = 0.0000000000e+00`. The
+corpus `z_g` is bit-identical to the encoder source.
 
+**G1 — FAIL, as pre-registered, and the failure is a DATA property.** The corpus
+`auraface_lda` returned `S_W = 0.0000` exactly → J = 0 by the guard.
+
+> **Verified on disk: all 321/321 personas carry a bit-identical `auraface_lda`
+> vector across every one of their samples. Worst within-persona
+> `max|diff| = 0.0000000000e+00`.**
+
+**The corpus's `auraface_lda.npy` IS the persona centroid** — one vector replicated
+across all of a person's images. Fisher J is mathematically undefined on it
+(`S_W = 0` **by construction**), so the pre-registered control could not run on the
+array it named. This also confirms the centroid-enrichment construction that was
+previously only recalled, and means the corpus already implements the identity
+conditioning decided for the prx-tg arm.
+
+**G1b — PASS (post-hoc instrument correction, disclosed).** The pre-registered
+*intent* — "AuraFace as a stream known to carry identity" — run on the correct
+array (per-image LDA, `lda/faces/{persona}/{set}/{image_id}.npy`, 31,704 loaded /
+7 missing):
+
+| stream | J | S_B | S_W | morph axes | **J / noise-floor** |
+|---|---|---|---|---|---|
+| per-image AuraFace-LDA | **2.0137** | 124.36 | 61.75 | 64/64 | **197.5×** |
+| `z_g` | **0.0847** | 15.11 | 178.37 | 11/64 | **8.31×** |
+
+Ratio **23.8×** (gate required ≥ 3×). **The instrument detects identity
+separability decisively**, so the `z_g` number is interpretable.
+
+**G2 — PARTIAL** (pre-registered gate, unchanged).
+
+| venue | samples | J | J/J_null | morph axes (J>0.15) |
+|---|---|---|---|---|
+| A (no filter) | 31,711 | 0.0847 | 8.31× | 11 |
+| **B (conf ≥ 0.3) — primary** | **31,711** | **0.0847** | **8.31×** | **11** |
+| C (conf ≥ 0.5) | 31,676 | 0.0871 | 8.54× | 13 |
+
+Re-standardised `z_g` gives J = 0.1095 / 0.1114 (venues B / C).
+
+J = 0.0847 is **inside** the CONFIRM band [0.02, 0.12], but morphology axes = **11**
+**misses the pre-registered ≤ 10 by one axis** → **PARTIAL**. The threshold is **not
+moved**; moving it after seeing the count would forfeit confirmatory status.
+
+**Size-corrected comparison to the original.**
+
+| | N | C | floor (C−1)/(N−C) | J | J/floor |
+|---|---|---|---|---|---|
+| original (lost script) | 69,110 | 323 | 0.00468 | 0.0590 | **12.60×** |
+| this run (venue B) | 31,711 | 321 | 0.01019 | 0.0847 | **8.31×** |
+
+**Raw J rose (0.059 → 0.085) but that is arithmetic**: the curated corpus's floor is
+**2.18× higher** purely because N fell. **Size-corrected, `z_g`'s relative identity
+signal FELL, 12.60× → 8.31×.** The raw rise carries no information about identity
+content; H₁'s predicted rise was produced by the corpus shrinking, not by curation
+revealing structure.
+
+**The venue family collapsed — a signal about the lost original.** Venue A ≡ venue B
+exactly (31,711 both) and venue C removes only 35 samples: **no corpus sample has
+mean face-keypoint confidence < 0.3.** A confidence-based "Tier 0.3" filter would
+have been a **no-op** on this corpus, so the original's "Tier 0.3" most likely
+denoted something else (a norm tier or a per-identity sample-count tier). Recorded
+as an inference, not a finding.
+
+**G3 — `UNREPRODUCIBLE`.** The original's subset (which 1,448 / 101; which tier) is
+not reconstructible because the producing script is absent from every branch. **No
+stand-in was substituted.**
+
+### 7-box adversarial pass
+
+| box | outcome |
+|---|---|
+| **0. Null computed** | **Yes, and it is quantitative.** Synthetic validation of `fisher_ratios` before any corpus result: pure-noise random labels give **J = 0.0560** vs theoretical `(C−1)/(N−C) = 0.0509`; strong structure gives J = 26.31; zero-within-variance is finite (J = 0.0000) via the `S_W` guard. The corpus null is `J_null = 0.01019`. |
+| **1. Metric tested** | The metric was shown to **fire** (J = 26.31 on real structure) and to **not fire** (J ≈ 0 on noise) *before* the corpus was measured. G1b independently proves it fires on a stream known to carry identity (197.5× floor). |
+| **2. Metric stable** | Sampling-free: the arm reads the **entire** corpus (31,711/31,711 loaded, 0 missing `z_g`, 0 missing `auraface`, 0 missing pose). Identities with < 2 samples: **0 dropped** — every persona contributes to within-scatter. Re-standardised variants reported as a scale-sensitivity check (§ above). |
+| **3. Result reproducible** | `experiments/zg_identity_blindness/src/run_fisher.py {g0,g1,g2,g3,all}` + `output/fisher_metrics.json` regenerates every number in this entry, including the G1b control. |
+| **4. Extremes inspected** | **Yes** — the venue family *is* the extremes sweep, and it collapsed (no sample below conf 0.3), which is a substantive finding about the corpus, not a null result. The superseded `z_g` high-norm tail was already inspected in `zg-validity-threshold` (atypical poses, accurate alignment). |
+| **5. Headline number traced to an exact artifact** | `J = 0.0847`, `S_B = 15.1058`, `S_W = 178.3654`, morph = 11, `J_null = 0.01019` → `output/fisher_metrics.json` (venue B block). G1b → same file, `g1b.per_image_lda` (J = 2.0137). Centroid verification → 321/321 bit-identical, produced by the G1b loading path and re-verified standalone. |
+| **6. Every flaw found is FIXED or explicitly gated-not-fixed** | **FIXED:** the `ZG_TREE` path bug G0 caught (`geometry_pca_data/zg` → `hegre-faces/v1/zg`); the `names` list-vs-array indexing bug (Pyright-caught); the mis-specified G1 control (→ G1b, disclosed, gate not moved). **GATED-NOT-FIXED:** G1 stays recorded as FAILED even though G1b passes — the pre-registered gate was on the named array and is not retro-fitted; G3 `UNREPRODUCIBLE`; the "Tier 0.3" definition remains unknown. **ACCEPTED DEBT:** the arm was written before the ledger entry (rule 3 ordering), though the design was frozen in the arm's own files before the run. |
+
+### Verdict
+
+**PARTIAL — the belief is not falsified, and its magnitude is corrected.**
+
+`z_g` is **not** an identity space (J ≪ 1; **23.8× weaker than per-image AuraFace**
+and only **8.31×** its own noise floor), so the design claim "identity lives in
+AuraFace, `z_g` is a geometry/pose control space" **stands in direction**. But the
+arm does **not** record CONFIRM: the morphology-axis count (11) missed the
+pre-registered ≤ 10 by one axis, and size-corrected the relative signal **fell**
+(12.60× → 8.31×) rather than holding. Reported as PARTIAL rather than smoothed into
+either verdict.
+
+**Consequence for the prx-tg arm:** the J = 0.059 quoted in
+`docs/briefings/2026-09-24_prx-tg_persona-vector-visualization-brief.md` §5 is
+**superseded** — it has no producing script and it is size-confounded. The number to
+carry forward is **J = 0.0847 (raw) / 8.31× floor (size-corrected), venue B, curated
+corpus**, alongside the stronger and more useful fact that **per-image AuraFace sits
+at 197.5× the floor** — a 24× separation that is the actual quantitative basis for
+the orthogonality design.
+
+**Evidence:** `experiments/zg_identity_blindness/output/fisher_metrics.json`
 **Code:** `experiments/zg_identity_blindness/src/run_fisher.py`
-**Evidence:** `docs/assets/exp/zg-identity-blindness/`

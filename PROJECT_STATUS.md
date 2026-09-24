@@ -54,6 +54,25 @@ missed eyes/face" case is already handled upstream. The strata are separated by
 pose-atypicality index, not a validity index — **no filter**, and the
 `norm > 25 = degenerate` claim is retired
 (`docs/DISCONTINUATION_NOTICE_zg_norm_filter.md`).
+✅ **Resolved 2026-09-24 (b):** the `z_g` identity-content number is **re-measured and
+corrected.** `exp/zg-identity-blindness` (verdict **PARTIAL**, but decisive on the
+separation). The previously quoted **Fisher J = 0.059 is withdrawn** — it has **no
+producing script on any branch**, so by this project's own rule it was not evidence,
+and it is size-confounded. Re-measured on the curated corpus:
+
+| stream | J | **J / noise floor** |
+|---|---|---|
+| per-image AuraFace-LDA | 2.0137 | **197.5×** |
+| `z_g` (venue B) | **0.0847** | **8.31×** |
+
+Raw J rose (0.059 → 0.085) but **size-corrected it fell (12.60× → 8.31×)** — the
+floor `(C−1)/(N−C)` is 2.18× higher at 31,711 samples than at 69,110, so raw J rises
+for free. The belief holds in direction (a **24× separation**); magnitude corrected.
+Also established: the corpus **`auraface_lda.npy` is the persona centroid**
+(321/321 personas bit-identical across all their samples, `S_W = 0` by construction)
+— the centroid construction for the prx-tg arm is therefore already baked into the
+data and verified, not assumed.
+
 ⚠️ **Still open:** (a) G3 — the retired claim drives a **persona-average filter** in
 `extract_zg_and_averages.py`, so persona averages may be biased; (b) is the `z_g`
 *encoding* reliable at pose-distribution extremes (reviewer's Sapiens-OOD

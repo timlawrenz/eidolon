@@ -234,15 +234,28 @@ Stated so prx-tg can rely on it:
   needs. Consume `z_g` per-image, unfiltered.
 - **Geometry binding is instrumentally verified:** `z_g → yaw R² = 0.996` on the
   full corpus, cleanly isolated on `dim0`.
-- **Orthogonality, representation level:** ridge `z_g → AuraFace` R² = **−0.033**
-  (8k FFHQ pairs) — the streams are genuinely complementary; "project `z_g` out of
-  AuraFace" was dropped as having nothing linear to remove. `z_g` carries almost no
-  identity (Fisher J = **0.059**).
-  ⚠️ **Caveat that matters to your gates:** that J was measured while the corpus was
-  still curating (unreviewed/`bad_geometry` noise inflates within-person scatter,
-  the denominator of J) and is flagged in the ledger as *directional, not final*.
-  Re-measurement on the now-clean corpus is pending on the Eidolon side. Treat the
-  number as provisional in gate thresholds.
+- **Orthogonality, representation level — re-measured 2026-09-24.** Ridge
+  `z_g → AuraFace` R² = **−0.033** (8k FFHQ pairs) — the streams are genuinely
+  complementary; "project `z_g` out of AuraFace" was dropped as having nothing
+  linear to remove.
+- **`z_g`'s identity content — SUPERSEDED NUMBER.** The Fisher J = 0.059 previously
+  quoted here is **withdrawn**: it has **no producing script in the repo, on any
+  branch**, and it is **size-confounded** (raw Fisher J is *not* comparable across
+  corpora of different size — the metric's floor is `(C−1)/(N−C)`). Re-measured on
+  the curated corpus (`exp/zg-identity-blindness`, verdict PARTIAL):
+
+  | stream | J | **J / noise floor** |
+  |---|---|---|
+  | per-image AuraFace-LDA | 2.0137 | **197.5×** |
+  | `z_g` (venue B) | **0.0847** | **8.31×** |
+
+  Raw J rose 0.059 → 0.085, but **size-corrected the relative signal FELL
+  (12.60× → 8.31×)** — the rise is arithmetic from the corpus shrinking, not
+  identity content. **The number to carry forward is `J = 0.0847` / 8.31× floor
+  (venue B)**, and the decisive fact for this design is the **24× separation**:
+  per-image AuraFace sits at 197.5× the floor, `z_g` at 8.31×. `z_g` is a
+  geometry/pose control space, not an identity space — **confirmed in direction,
+  magnitude corrected.**
 
 ---
 
