@@ -1,0 +1,56 @@
+# ffhq-basis-reproject — canonical parameters
+# Script-driven arm: scripts/reproject_lda_ffhq.py constitutes the run.
+# This file is a RECORD of the frozen parameters, not a runtime source of truth.
+
+arm: ffhq-basis-reproject
+
+dataset_dir: /mnt/nas-ai-models/training-data/ffhq/stratum
+source_raw:  /mnt/nas-ai-models/training-data/ffhq/auraface
+
+# --- projection basis (frozen; refit 2026-07-23) ---
+basis_dir: /home/tim/source/activity/eidolon/experiments/geometry_pca/output
+basis_files:
+  - auraface_lda.npz
+  - auraface_preprocess.npz
+basis_fingerprint: 120e1c5a1dc4f423
+pre_refit_backup: auraface_lda.npz.bak-20260720   # evidence artifact, do not delete
+
+# --- projection convention ---
+# true  -> refit basis + L2-normalize (norm 1.0). Matches hegre_corpus.
+# false -> refit basis, raw coords (norm ~153). Matches hegre-faces/v1/lda.
+normalize: true
+expected_targets: 69960
+expected_errors: 0
+
+# --- outputs (written into dataset_dir) ---
+backup_archive: _auraface_lda.oldbasis-backup.tar.gz
+reproject_manifest: _auraface_lda.reproject_manifest.json
+basis_stamp: BASIS_FINGERPRINT.json
+
+# --- guard ---
+# Loaders MUST call basis_fingerprint.assert_basis(dataset_dir) before reading
+# auraface_lda.npy. A missing stamp is an error, not a warning.
+guard_enforced_by: tools/hegre_dataset/basis_fingerprint.py
+
+# --- stamps to write ---
+# The guard fails loud on a MISSING stamp, so every consumed directory must be
+# stamped, not just the one being repaired. hegre_corpus is already on the refit
+# basis but carries no stamp today — verified 2026-09-23: `basis-fingerprint
+# verify` returns FAIL (unstamped) for BOTH ffhq/stratum and hegre_corpus.
+stamp_targets:
+  - dir: /mnt/nas-ai-models/training-data/ffhq/stratum
+    convention: "refit basis + L2-normalize (norm 1.0)"
+    after: reprojection
+  - dir: /mnt/nas-ai-models/training-data/eidolon/hegre_corpus
+    convention: "refit basis + L2-normalize (norm 1.0)"
+    after: none   # already correct; stamp is documentation
+  - dir: /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/lda
+    convention: "refit basis, raw coords (norm ~153)"
+    after: none   # per-image retrieval tree; different convention by design
+
+# --- explicitly out of scope (verified, recorded) ---
+not_in_scope:
+  - hegre-faces/v1/lda/ stale pre-refit files (2,220; all tainted/non-approved)
+  - ffhq/stratum missing z_g.npy (139) and auraface_lda.npy (41)
+  - "@eaDir (Synology metadata; excluded by script and guard)"
+  - "FFHQ per-image identity semantics (structural; reprojection does not change it)"

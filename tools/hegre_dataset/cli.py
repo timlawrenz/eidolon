@@ -156,6 +156,43 @@ def cmd_build_corpus(args):
         skip_existing=args.skip_existing,
     )
 
+def cmd_basis_fingerprint(args):
+    """Stamp or verify a dataset directory's AuraFace-LDA basis fingerprint."""
+    from .basis_fingerprint import compute_basis_fingerprint, stamp, verify
+
+    basis_dir = Path(args.basis_dir)
+    if args.action == "show":
+        print(f"basis dir        : {basis_dir}")
+        print(f"basis_fingerprint: {compute_basis_fingerprint(basis_dir)}")
+        return 0
+
+    if not args.dataset:
+        print("error: --dataset is required for stamp/verify", file=sys.stderr)
+        return 2
+
+    rc = 0
+    for ds in args.dataset:
+        d = Path(ds)
+        if args.action == "stamp":
+            try:
+                p = stamp(d, basis_dir, convention=args.convention,
+                          sample_count=args.samples, scope=args.scope)
+                print(f"stamped  {d}  -> {p.name}")
+            except Exception as e:
+                print(f"FAIL     {d}  {e}", file=sys.stderr)
+                rc = 1
+        else:
+            r = verify(d, basis_dir)
+            if r["ok"]:
+                print(f"OK       {d}  {r['fingerprint']}  {r['convention']}")
+            else:
+                print(f"FAIL     {d}  {r['reason']}"
+                      + (f"  found={r.get('found')} expected={r.get('expected')}"
+                         if r.get("found") else f"  expected={r.get('expected')}"),
+                      file=sys.stderr)
+                rc = 1
+    return rc
+
 def main(args=None):
     parser = argparse.ArgumentParser(prog="hegre-dataset")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -241,6 +278,22 @@ def main(args=None):
     p_enrich.add_argument("--sort-by", choices=["af", "zg"], default=None,
                           help="Sort enrichment order by distance ascending: af (identity) or zg (geometry)")
     p_enrich.set_defaults(func=cmd_enrich)
+
+    p_basis = sub.add_parser("basis-fingerprint",
+                             help="Stamp or verify a dataset dir's AuraFace-LDA basis fingerprint")
+    p_basis.add_argument("action", choices=["show", "stamp", "verify"])
+    p_basis.add_argument("--dataset", action="append", default=[],
+                         help="Dataset directory to stamp/verify (repeatable)")
+    p_basis.add_argument("--basis-dir",
+                         default=str(Path(__file__).resolve().parent.parent.parent
+                                     / "experiments" / "geometry_pca" / "output"),
+                         help="Directory holding auraface_lda.npz + auraface_preprocess.npz")
+    p_basis.add_argument("--convention", default=None,
+                         help="Projection convention to record (required for stamp), e.g. "
+                              "'refit basis + L2-normalize (norm 1.0)'")
+    p_basis.add_argument("--samples", type=int, default=None, help="Recorded sample count")
+    p_basis.add_argument("--scope", default="all samples", help="Recorded scope note")
+    p_basis.set_defaults(func=cmd_basis_fingerprint)
 
     args_parsed = parser.parse_args(args)
     return args_parsed.func(args_parsed)

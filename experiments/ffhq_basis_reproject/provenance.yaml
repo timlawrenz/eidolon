@@ -1,0 +1,66 @@
+arm: ffhq-basis-reproject
+hypothesis: >
+  ffhq/stratum/{id}/auraface_lda.npy holds per-image AuraFace-LDA coordinates in
+  the PRE-refit basis (files dated 2026-06-30; pooled basis refit 2026-07-23).
+  Reprojecting them onto the refit basis + L2-normalizing makes the FFHQ identity
+  stream encoding-identical to hegre_corpus, the dataset an eidolon-adapter DiT
+  actually consumes.
+falsified_if: >
+  Post-run: any sampled file differs from project_refit(raw) by more than 1e-9,
+  OR any sampled file has |L2 norm - 1.0| > 1e-6, OR targets written < 69,960,
+  OR any write error occurs, OR the pre-run premise fails to reproduce
+  (||stored - project_old(raw)|| != 0 on the audit sample).
+pre_registered_gate: >
+  G1 (PREMISE, already observed 2026-09-23 before this arm was formalised):
+  on >= 250 pre-run samples, max ||stored - project_old(raw)|| = 0.0 AND
+  mean ||stored - project_new(raw)|| > 100. Observed: 0.00000000 and 153.5432.
+  PASS.
+  G2 (CORRECTNESS): on >= 300 post-run samples, ||stored - project_new(raw)|| < 1e-9
+  and |L2norm(stored) - 1.0| < 1e-6. Any violation -> FAIL.
+  G3 (COVERAGE + INTEGRITY): exactly 69,960 targets reprojected, 0 errors; the
+  backup tarball contains 69,960 entries; BASIS_FINGERPRINT.json stamps written
+  for ALL consumed dirs (ffhq/stratum, hegre_corpus, hegre-faces/v1/lda), each
+  with its projection_convention. FAIL if errors > 0 or any count mismatches.
+  NOTE: hegre_corpus is already on the refit basis but is UNSTAMPED today, so
+  the guard fails loud on it too - stamping is part of this run.
+  G4 (GUARD EFFICACY - negative control): the guard must be able to FAIL.
+  `assert_basis` raises BasisMismatch on an unstamped dir AND on a dir stamped
+  against a different basis; `verify` returns ok=True only for a matching stamp.
+  Demonstrated by tests/tools/test_basis_fingerprint.py (7 tests, incl.
+  test_different_basis_is_detected). A guard that cannot fail does not count.
+differs_from: refit-cleaned
+diff_summary: |
+  - Scope: FFHQ stratum identity stream only (refit-cleaned never reprojected it)
+  - Target convention: refit basis + L2-normalize (norm 1.0), matching hegre_corpus
+  - Adds a basis fingerprint guard (stamp + loader-side assert_basis)
+  - Adds scripts/reproject_lda_ffhq.py (dry-run / apply / verify)
+  - No model training in this arm
+git_commit: b35a3e6          # HEAD at run start (2026-09-24T07:43:13-0400)
+git_dirty: true              # the arm's scripts were uncommitted at run time (now committed)
+training_host: game
+training_gpu: CPU-only
+data_snapshot: >
+  ffhq/stratum 70,000 real dirs (+1 @eaDir); 69,960 with raw AuraFace and with
+  auraface_lda (1:1, 0 creatable, 0 unfixable); hegre_corpus 31,711 samples /
+  321 personas at basis fingerprint e2f66241288e1f50
+basis_artifacts: >
+  experiments/geometry_pca/output/auraface_lda.npz + auraface_preprocess.npz,
+  basis_fingerprint 120e1c5a1dc4f423; pre-refit backup *.bak-20260720
+backup: /mnt/nas-ai-models/training-data/ffhq/stratum/_auraface_lda.oldbasis-backup.tar.gz
+manifest: /mnt/nas-ai-models/training-data/ffhq/stratum/_auraface_lda.reproject_manifest.json
+notes: >
+  G1+G2+G3+G4 PASS. 69,960 files reprojected, 0 errors, 536s, CPU-only.
+  Convention: refit basis + L2-normalize (norm 1.0) - matches hegre_corpus.
+  Basis fingerprint 120e1c5a1dc4f423. Backup 69,960 entries / 36.5 MB.
+  Adversarial pass: FULL scan of 70,000 dirs (not a sample) - 69,960 at unit
+  norm, 0 degenerate, 0 NaN, norm min=max=mean=1.000000000; random-sample
+  recomputation 0 mismatches. Stamps written for ffhq/stratum, hegre_corpus
+  and hegre-faces/v1/lda.
+  INCIDENT: first --apply failed on all 27,475 files reached - np.save appends
+  '.npy' to a path lacking that suffix, so the atomic os.replace found no
+  source. No data modified, backup already complete, fully recoverable. Fixed
+  by writing through a file handle; 27,475 stray .tmp.npy files removed with a
+  new --clean-litter action.
+  NOT FIXED BY THIS ARM: FFHQ is still ~1 image per identity, so its identity
+  vectors still teach 'identity vector = per-image key'. Encoding-consistent,
+  not a valid identity target.
