@@ -1928,5 +1928,8 @@ corpus**, alongside the stronger and more useful fact that **per-image AuraFace 
 at 197.5× the floor** — a 24× separation that is the actual quantitative basis for
 the orthogonality design.
 
-**Evidence:** `experiments/zg_identity_blindness/output/fisher_metrics.json`
+**Evidence:** `docs/assets/exp/zg-identity-blindness/fisher_metrics.json` (tracked).
+The same file is also written to `experiments/zg_identity_blindness/output/` at run
+time, but `output/` is **gitignored** (`.gitignore:205`) so that copy is **not**
+evidence — cite the `docs/assets/` path.
 **Code:** `experiments/zg_identity_blindness/src/run_fisher.py`
