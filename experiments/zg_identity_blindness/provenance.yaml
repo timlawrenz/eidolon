@@ -1,0 +1,109 @@
+# Provenance — arm `zg-identity-blindness`
+# Pre-registered 2026-09-24 BEFORE the first run (docs/00_GIT_WORKFLOW.md rule 4).
+
+arm: zg-identity-blindness
+branch: exp/zg-identity-blindness
+status: pre-registered
+
+# ---- arm kind (REQUIRED before the first run) --------------------------------
+# Only a confirmatory arm may write PASS/FAIL in the ledger.
+mode: confirmatory
+mode_rationale: >
+  The gate, metric and thresholds were written in README.md §4 before any
+  measurement was taken. The belief under test (z_g carries almost no identity)
+  is a pre-existing project belief being re-measured on changed data — not a
+  post-hoc read of an observed effect. No outcome had been observed at
+  pre-registration time.
+
+# ---- agent provenance --------------------------------------------------------
+agent_model: deepseek/deepseek-v4.1-flash
+agent_model_snapshot: 2026-09-24
+
+# ---- base --------------------------------------------------------------------
+base_branch: exp/zg-validity
+base_commit: 8897b90
+base_deviation: >
+  docs/00_GIT_WORKFLOW.md rule 2 requires branching from `main`. This arm cannot
+  be branched from `main`: verified 2026-09-24 that `main` is 220 commits behind
+  and lacks tools/hegre_dataset/models.py (the corpus loader),
+  tools/hegre_dataset/basis_fingerprint.py, scripts/reproject_lda.py, and the
+  build-corpus tooling. A tree from `main` cannot load the corpus at all. Per
+  AGENTS.md the deviation is stated explicitly rather than silently branching
+  from an unrelated exp/* branch.
+
+# ---- why ---------------------------------------------------------------------
+motivation:
+  - belief_is_load_bearing: >
+      The Eidolon pose-vs-identity orthogonality design assumes z_g is a
+      geometry/pose control space carrying almost no identity. prx-tg is about
+      to spend GPU time testing pose-vs-identity conditioning on that premise.
+  - producing_script_missing: >
+      The ledger's J = 0.059 has no producing script in the repository, on any
+      branch. Verified 2026-09-24: only 07_gate_sweep.py, 21_zd_gate.py,
+      22_zd_complementarity_diagnostic.py and 32_phase3_systematic_review.py
+      consume geometry_pca.fisher.fisher_ratios, and all operate on the legacy
+      1,448 / 101 set. The sapiens2 scripts compute a different quantity (mean
+      of per-axis J). By AGENTS.md ("a ledger number whose producing script no
+      longer exists is not evidence") the number is not currently evidence.
+  - data_changed: >
+      Measured on the pre-curation corpus (69,110 samples / 323 personas) while
+      62k were bad_geometry and 216k unreviewed; the ledger flags it "directional,
+      not final". The corpus is now 31,711 / 321, 100% approved.
+
+# ---- data --------------------------------------------------------------------
+dataset: hegre_corpus
+dataset_path: /mnt/nas-ai-models/training-data/eidolon/hegre_corpus
+samples_expected: 31711
+personas_expected: 321
+basis_fingerprint: 120e1c5a1dc4f423
+arrays_consumed:
+  - z_g.npy            # (50,) float32, whitened PCA of the 68 DWPose face keypoints
+  - auraface_lda.npy   # (64,) float32, L2-normalized (norm 1.0)
+  - metadata.json      # persona / set / image_id
+pose_source: /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/stratum/{persona}/{set}/{image_id}/pose.npy
+
+# ---- instrument --------------------------------------------------------------
+metric: global Fisher discriminant ratio J = S_B / S_W
+implementation: experiments/geometry_pca/geometry_pca/fisher.py::fisher_ratios
+note_on_instrument: >
+  The original instrument is lost with its script and is NOT reproduced
+  verbatim (its "Tier 0.3" filter definition is unknown). This arm declares a
+  venue family (mean face-keypoint confidence floors 0.0 / 0.3 / 0.5) and
+  reports the spread, with venue B (0.3) primary. Reporting only the venue that
+  agrees with 0.059 would be p-hacking by filter.
+
+# ---- pre-registered gates (verbatim from README.md §4) -----------------------
+gates:
+  g0_instrument_identity:
+    requirement: corpus z_g bit-identical to encoder source on 400 samples, max|diff| = 0, missing = 0
+    on_fail: STOP — input is not the real z_g
+  g1_positive_control:
+    requirement: J_auraface >= 3x J_zg (restandardized or raw)
+    on_fail: ARM VOID — instrument cannot detect identity separability
+    rationale: >
+      Without a positive control, a low J for z_g is uninterpretable: it could
+      mean the belief, or that the instrument measures nothing. AuraFace is the
+      correct control (LDA basis gives R@1 = 0.8538).
+  g2_headline:
+    metric: global J(z_g), venue B, curated corpus, plus per-axis morphology count (J_Ci > 0.15)
+    confirm_if: "J in [0.02, 0.12] AND morphology_axes <= 10"
+    falsify_if: "J >= 0.20 OR morphology_axes >= 20"
+    else: PARTIAL (magnitude corrected; neither confirmed nor falsified)
+    declared_direction: >
+      J = S_B/S_W and DWPose noise inflates S_W; curation shrinks S_W and
+      therefore RAISES J. An increase versus 0.059 is the predicted outcome,
+      declared in advance, not an anomaly.
+  g3_legacy_collapse:
+    requirement: attempt to reproduce "27 -> 6 morphology axes"
+    on_unreconstructible: record UNREPRODUCIBLE; do not substitute a stand-in
+
+# ---- adversarial requirements (mandatory before any verdict) -----------------
+adversarial:
+  - S_B and S_W reported separately (a high J via collapsed S_B is not identity)
+  - per-class sizes reported; identities with < 2 samples excluded and counted
+  - full venue spread reported
+  - sample/persona yield vs corpus total reported with the shortfall stated
+  - explicit 0.059 comparison, noting the original used a larger, different dataset
+
+# ---- notes (filled at conclusion) --------------------------------------------
+notes: ""
