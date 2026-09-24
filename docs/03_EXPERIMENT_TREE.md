@@ -198,3 +198,33 @@ Link directly to the `exp/*` branch where the work lives.
     Sapiens2 = a NEW complementary shape/morphology stream, NOT a z_g upgrade. Three handles:
     DWPose→z_g (pose), AuraFace-LDA (appearance), Sapiens2 (shape-morphology). Supersedes the
     "replace DWPose→Sapiens2 for z_g" action above.
+
+---
+
+## `zg-identity-blindness` — `[PRE-REGISTERED]` (2026-09-24)
+
+**Branch:** `exp/zg-identity-blindness` · **Mode:** `confirmatory` · CPU only, no GPU.
+
+**Question:** does `z_g` carry almost no identity, once measured on the *curated*
+corpus with a *rebuilt* instrument?
+
+**Why it exists:** the belief is load-bearing (the pose-vs-identity orthogonality
+design rests on it, and prx-tg is about to spend GPU time on that premise); the
+**producing script for J = 0.059 does not exist on any branch** (so by the
+project's own rule the number is not evidence); and 0.059 was measured on the
+**pre-curation** 69,110 / 323 corpus with a *"directional, not final"* caveat,
+while the corpus is now 31,711 / 321 and 100% `approved`.
+
+**Gates:** G0 instrument identity (bit-identical `z_g`, STOP on fail) · **G1
+positive control** (`J_auraface ≥ 3 × J_zg`, else arm VOID — without it a low J is
+uninterpretable) · G2 headline (CONFIRM if J ∈ [0.02, 0.12] and morph ≤ 10;
+FALSIFY if J ≥ 0.20 or morph ≥ 20; else PARTIAL) · G3 legacy collapse
+(`UNREPRODUCIBLE` is a valid recorded outcome).
+
+**Declared direction in advance:** curation shrinks S_W, so **J is expected to
+RISE** versus 0.059. An increase is the predicted outcome, not an anomaly.
+
+**Known deviation:** this arm **cannot** branch from `main` (220 commits behind;
+lacks the corpus loader and all data infra). Based on `8897b90`; deviation
+recorded explicitly per AGENTS.md rather than branching silently. Standing
+blocker for all future eidolon arms.

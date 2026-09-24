@@ -1722,3 +1722,82 @@ out of scope here and **carried forward.**
 **Evidence:** `docs/assets/exp/zg-validity/` — `g1_skeleton_{high,ctrl}.{png,jpg}`,
 `g1_zoom_{high,ctrl}{4,12}.jpg`, `g2_diagnostics.json`, `review_crosstab.json`.
 **Code:** `experiments/zg_validity/src/run_gates.py` (+ frozen `selection.json`).
+
+---
+
+## `[PRE-REGISTERED]` `zg-identity-blindness` — re-measure z_g's identity content on the curated corpus
+
+**Date pre-registered:** 2026-09-24 · **Branch:** `exp/zg-identity-blindness` ·
+**Mode:** `confirmatory` (declared in `provenance.yaml` before run 1) ·
+**Cost:** CPU only, no GPU, no model.
+
+### Why
+
+Three independent reasons; any one sufficient.
+
+1. **The belief is load-bearing.** The pose-vs-identity orthogonality design —
+   now the frontier of the prx-tg work — assumes `z_g` is a geometry/pose control
+   space carrying almost no identity. prx-tg is about to spend real GPU time on
+   that premise.
+2. **The number's producing script does not exist.** Verified 2026-09-24 across
+   **every branch**: the only consumers of `geometry_pca.fisher.fisher_ratios`
+   are `07_gate_sweep.py`, `21_zd_gate.py`, `22_zd_complementarity_diagnostic.py`
+   and `32_phase3_systematic_review.py` — all operating on the **legacy 1,448 /
+   101** set. The sapiens2 scripts compute a *different* quantity (mean of
+   per-axis J: 0.136 DWPose / 0.331 Sapiens2). By this project's own rule — *"a
+   ledger number whose producing script no longer exists is not evidence"* —
+   **J = 0.059 (below) is not currently evidence.**
+3. **The data changed underneath it.** J = 0.059 was measured on the
+   **pre-curation** corpus (69,110 samples / 323 personas) while 62k were
+   `bad_geometry` and 216k unreviewed, and the entry that recorded it flags it
+   *"directional, not final"*. The corpus is now **31,711 / 321, 100% `approved`**.
+
+### Hypotheses
+
+* **H₀:** `z_g` carries almost no identity — global Fisher J ≪ 1, small
+  morphology block (J > 0.15).
+* **H₁ (declared in advance):** J = S_B / S_W, and DWPose noise inflates the
+  denominator S_W. Curation shrinks S_W and therefore **RAISES J.** A materially
+  higher J means `z_g` carries more identity than believed and the orthogonality
+  premise is weaker than the design assumes. **An increase is the predicted
+  outcome, not an anomaly.**
+
+### Instrument
+
+**Global** Fisher J = S_B / S_W via `geometry_pca.fisher.fisher_ratios` — the same
+function the legacy gate used, rebuilt in-repo because the original is lost.
+Input: per-image `z_g.npy` (50-d), labels = `persona` from the corpus
+`metadata.json`. S_B and S_W are always reported separately (a high J via a
+collapsed S_B is not identity separability).
+
+**Because the original's "Tier 0.3" filter is lost with its script, the quantity
+is not reproducible verbatim.** The arm therefore re-measures a declared **venue
+family** — mean face-keypoint confidence floors **0.0 / 0.3 / 0.5**, venue B (0.3)
+primary — and reports the spread. Reporting only the venue that agrees with 0.059
+would be p-hacking by filter.
+
+### Pre-registered gates (verbatim, written before the first run)
+
+| gate | requirement | falsifier |
+|---|---|---|
+| **G0** instrument identity | corpus `z_g` bit-identical to encoder source, 400 samples, `max‖diff‖ = 0`, `missing = 0` | mismatch → STOP; input is not the real `z_g` |
+| **G1** positive control | `J_auraface ≥ 3 × J_zg` | **arm VOID** — a low J is uninterpretable without proving the instrument *can* detect identity separability |
+| **G2** headline | **CONFIRM** if `J ∈ [0.02, 0.12]` AND morphology axes ≤ 10; **FALSIFY** if `J ≥ 0.20` OR morphology axes ≥ 20; else **PARTIAL** | both directions stated above |
+| **G3** legacy collapse | attempt to reproduce "27 → 6 morphology axes" | unreconstructible → record `UNREPRODUCIBLE`; **no stand-in substituted** |
+
+### Base deviation (explicit)
+
+`docs/00_GIT_WORKFLOW.md` rule 2 requires branching from `main`. **This arm
+cannot.** Verified 2026-09-24: `main` is **220 commits behind** and lacks
+`tools/hegre_dataset/models.py` (the corpus loader), `basis_fingerprint.py`,
+`scripts/reproject_lda.py` and the build-corpus tooling — a tree from `main`
+cannot load the corpus. Per AGENTS.md the deviation is stated rather than
+silently branching from an unrelated `exp/*` branch. **Standing blocker for every
+future eidolon arm until `main` is merged forward.**
+
+### Results
+
+_(pending — filled after the run, then the 7-box adversarial pass and verdict)_
+
+**Code:** `experiments/zg_identity_blindness/src/run_fisher.py`
+**Evidence:** `docs/assets/exp/zg-identity-blindness/`
