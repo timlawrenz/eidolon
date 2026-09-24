@@ -44,9 +44,21 @@ identity-binding conclusion can be drawn from any of them, including Arm O's PAS
 (whose *geometry* result stands independently). See
 `docs/briefings/2026-09-23_prx-tg_eidolon-training-brief.md`.
 
-⚠️ **Also open:** hegre per-image `z_g` carries a 20% high-magnitude tail (6.7%
-past the project's own norm-25 degeneracy threshold) vs FFHQ's 0.5%/0.03%. Needs a
-validity verdict before the geometry stream is trusted for training.
+✅ **Resolved 2026-09-24:** the `z_g` high-magnitude tail is **not** a degeneracy
+artifact. `exp/zg-validity` (KILL of the belief) measured 60 samples at norm>25 vs 60
+controls: **0 missing keypoints and 0 sub-0.3-confidence keypoints in either group**,
+and all corpus samples are `approved` in the review DB — so the docstring's "DWPose
+missed eyes/face" case is already handled upstream. The strata are separated by
+**pose atypicality** (the high tail is atypical, often head-inverted poses with
+*accurate* landmark alignment), not by landmark quality. `z_g` norm is a
+pose-atypicality index, not a validity index — **no filter**, and the
+`norm > 25 = degenerate` claim is retired
+(`docs/DISCONTINUATION_NOTICE_zg_norm_filter.md`).
+⚠️ **Still open:** (a) G3 — the retired claim drives a **persona-average filter** in
+`extract_zg_and_averages.py`, so persona averages may be biased; (b) is the `z_g`
+*encoding* reliable at pose-distribution extremes (reviewer's Sapiens-OOD
+hypothesis); (c) extreme-pose/off-frame crops pass review and affect **all three
+streams**, not just `z_g` — needs its own corpus-quality arm.
 
 ## Headline result so far
 

@@ -109,7 +109,37 @@ prior_observations: >
   Prior-art check (process steps 2-3) found NO concluded arm and NO ledger
   adjudication of z_g validity. This is new work.
 
-notes: ""
+notes: >
+  CONCLUDED 2026-09-24 — KILL of the belief. The claim "z_g norm > 25 = degenerate"
+  is FALSIFIED. z_g norm is a pose-atypicality index, not a validity index.
+  G0 PASS: corpus z_g bit-identical to the zg/ encoder source (400 samples,
+  0 mismatches, max ||diff|| = 0.0000000000).
+  G1 -> H2 (no filter): the high stratum shows accurate landmark alignment on
+  atypical poses (often head-inverted); the control stratum shows strong alignment
+  on normal poses. Strata are separated by pose atypicality, not landmark quality.
+  G2 corroborates on distance-based (mirror-invariant) quantities:
+  eye_mouth_ratio 2.695 vs 1.173 (control textbook-correct), align_residual
+  0.434 vs 0.253, iod_norm 0.209 vs 0.295; 0 missing keypoints and 0 keypoints
+  below 0.3 confidence in either group.
+  Review cross-tab: 31,711/31,711 corpus samples (and 60/60 in both strata) are
+  'approved' — the tainted 215,914 never entered the corpus, so the docstring's
+  stated failure mode ("DWPose missed eyes/face") is already handled upstream.
+  Instrument defect found and fixed mid-run: the first G1 render applied a vertical
+  mirror to the pose points (py = (1-(y+1)/2)*H; the writer uses no y-flip). That
+  render and its visual read were discarded. G2 was unaffected — it reads raw pose
+  coords and never applies the pixel mapping. Fix in src/run_gates.py::_denormalize
+  (commit c0ed696). Caught by the user; the agent's own centroid check was blind to
+  it because a mirror preserves the centroid. Orientation now verified by
+  anatomical ordering (brow < eye < nose < mouth < jaw).
+  git_commit: c0ed696 (fix); arm executed on exp/zg-validity
+  Carried forward: G3 (re-examine the persona-average filter the retired claim
+  drives); H3 (encoding reliability at pose-distribution extremes — reviewer's
+  Sapiens-OOD hypothesis, needs its own gate); corpus-quality arm (extreme-pose /
+  off-frame crops pass review and affect all three streams); and a
+  tainted:approved_bad_geometry constant-distance artifact (19 rows, bit-identical
+  zg_distance 1.605683246452827e-05).
+  Tombstone: docs/DISCONTINUATION_NOTICE_zg_norm_filter.md
+  Evidence: docs/assets/exp/zg-validity/
 
 # --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
 mode: confirmatory          # declared before the run

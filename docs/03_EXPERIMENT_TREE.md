@@ -13,27 +13,43 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
-* **[ACTIVE — pre-registered, NOT yet run] z_g Validity Threshold (`exp/zg-validity`)**
+* **[CONCLUDED — KILL (of the belief)] z_g Validity Threshold (`exp/zg-validity`)** 🪦
   * **Question:** ~6.7% of `hegre_corpus` per-image `z_g` has norm > 25 — the value the
     project's own extraction code calls degenerate. Are those vectors *wrong* (DWPose
     failure) or merely *extreme* (genuine pose)? The two readings imply **opposite
     actions**, and the geometry stream is consumed per-image by the DiT.
-  * **Mechanism:** `z_g` is whitened PCA (`(raw − whiten_mu) / whiten_sigma`), so
-    whitening amplifies low-variance high-index components. A large norm means a large
-    projection along a low-variance axis — ambiguous. `z_g → yaw R² = 0.98`
-    (2026-07-07) makes the "genuine pose" reading live.
-  * **Two conflicting thresholds already in the codebase, neither applied to shipped
-    data:** `>25` (`extract_zg_and_averages.py` L130–131, persona averages only) and
-    `<15` (2026-07-07 Fisher-J cohort cap). At most one can be right.
-  * **Gate (pre-registered, ledger `[PRE-REGISTERED]`):** G0 instrument trust →
-    **G1 visual keypoint plausibility** (60 norm>25 vs 60 controls at 8–12;
-    ≥70% implausible ⇒ filter, ≥70% plausible ⇒ no filter) → G2 quantitative
-    corroboration → G3 falsify the standing docstring claim → G4 criterion must be
-    inference-computable, split-identical, falsifiably justified → G5 data-update
-    governance if the corpus changes.
-  * **KILL is a live, valuable outcome:** if high-norm vectors are valid, change
-    nothing and retire the docstring claim + `DISCONTINUATION_NOTICE.md`.
-  * Arm dir: `experiments/zg_validity/`
+  * **Answer: they are merely extreme. The claim *"norm > 25 = degenerate"* is FALSIFIED.**
+    `z_g` norm is a **pose-atypicality** index, not a validity index. Retired claim +
+    structural reason: `docs/DISCONTINUATION_NOTICE_zg_norm_filter.md`.
+  * **Evidence (run 2026-09-24, CPU-only):**
+    * G0 **PASS** — corpus `z_g` bit-identical to the `zg/` encoder source
+      (400 samples, 0 mismatches, max ‖diff‖ = 0.0000000000).
+    * **The stated mechanism does not occur:** 60 norm>25 vs 60 controls (8–12) →
+      **0 missing keypoints, 0 keypoints below 0.3 confidence in either group**,
+      mean confidence 0.787 vs 0.948. Nothing was "missed".
+    * **The stratum is not the human reject pile:** all 31,711 corpus samples — and
+      60/60 in the high stratum — are `approved` in the review DB. The 215,914
+      `tainted:extraction_nonface` never entered the corpus, so the non-face failure
+      mode is already handled upstream. The filter is redundant with its own purpose.
+    * **Visual (corrected sheets):** high stratum = accurate landmark alignment on
+      **atypical poses (often head-inverted)**; control = strong alignment, normal
+      poses. Separated by pose atypicality, not landmark quality → **H2 → no filter.**
+    * **G2 corroboration (distance-based, mirror-invariant):** `eye_mouth_ratio`
+      **2.695 vs 1.173** (control is textbook-correct for a face), `align_residual`
+      0.434 vs 0.253, `iod_norm` 0.209 vs 0.295.
+  * **Instrument defect found and fixed mid-run:** the first G1 render applied a
+    **vertical mirror** to the pose points; that render and its visual read were
+    discarded. G2 was unaffected (it reads raw pose coords, never the pixel mapping).
+    Fix: `src/run_gates.py::_denormalize`, commit `c0ed696`. Caught by the user —
+    my own "points are centred?" check was blind to it (a mirror preserves the
+    centroid). Orientation is now verified by anatomical ordering.
+  * **Carried forward:** G3 (re-examine the persona-average filter the retired claim
+    drives — persona averages may be biased); H3 (is the *encoding* reliable at
+    pose-distribution extremes? the reviewer's Sapiens-OOD hypothesis — needs its own
+    gate); a corpus-quality arm (extreme-pose/off-frame crops pass review and affect
+    **all three streams**); and a `tainted:approved_bad_geometry` constant-distance
+    artifact (19 rows, bit-identical `zg_distance`).
+  * Arm dir: `experiments/zg_validity/` — evidence in `docs/assets/exp/zg-validity/`
 * **[CONCLUDED — PASS] FFHQ Basis Reprojection (`exp/sapiens2-keypoints-study`)**
   * **Problem:** `ffhq/stratum/{id}/auraface_lda.npy` is on the **PRE-refit** LDA basis
     (files 2026-06-30; basis refit 2026-07-23). Proven bit-exact: `‖stored − project_old(raw)‖ = 0`

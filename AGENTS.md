@@ -111,6 +111,58 @@ keeps the example current; it does not make the table authoritative.
 - **Arm-specific code goes in `experiments/{arm}/src/`,** not in shared
   `scripts/` or `production/`. Shared tools are fine in `tools/`; one-off
   experiment scripts are not.
+- **Never infer a data convention from the array — read the writer.** Open the
+  producing code and copy its inverse. A wrong convention can be *plausible* and
+  survive naive sanity checks (a mirror preserves the centroid, so "the points
+  look centred" proves nothing). See **Data provenance** above.
+
+## Data provenance — who writes what (read before interpreting any array)
+
+**The per-sample arrays are not written by this repo.** They come from
+[**stratum-hq**](https://github.com/timlawrenz/stratum-hq) (local clone at
+`~/source/activity/stratum-hq`), which does the extraction. This repo *consumes*
+them. When a coordinate, unit, or orientation question comes up, **read the
+writer in stratum-hq — do not infer the convention from how the array looks.**
+Inferring it cost this project a full round of invalid contact sheets (see
+`docs/02_EXPERIMENTS_AND_RESULTS.md`, `zg-validity-threshold`).
+
+| array (per sample dir) | written by | notes |
+|---|---|---|
+| `pixel.npy` | stratum-hq | `(3, H, W)` float16, **bucket-shaped** (corpus is uniformly 1024×1024) |
+| `pose.npy` | stratum-hq `src/stratum/pipeline/pose.py` | `(133, 3)` float16, DWPose whole-body — `(x_norm, y_norm, confidence)` |
+| `depth.npy`, `normal.npy`, `seg.npy` | stratum-hq | `z_d`, `z_a` inputs (both KILLed) |
+| `caption.txt`, `t5_hidden.npy`, `t5_mask.npy` | stratum-hq | text conditioning |
+| `z_g.npy` | **this repo** (`geometry_pca`) | 50-d whitened PCA of the 68 face keypoints |
+| `auraface_lda.npy` | **this repo** (`geometry_pca`) | LDA-projected AuraFace identity |
+| `metadata.json` (corpus) | **this repo** (`build-corpus`) | `persona` / `set` / `image_id` — the join key to the review DB |
+
+**`pose.npy` orientation — the trap.** Both axes are plain image convention
+(**y increases downward**). There is **no y-flip**:
+
+```python
+# stratum-hq/src/stratum/pipeline/pose.py  (writer)
+x_norm = (2.0 * kpts[:, 0] / bucket_w) - 1.0
+y_norm = (2.0 * kpts[:, 1] / bucket_h) - 1.0
+
+# stratum-hq/scripts/visualize_example.py  (the canonical inverse — copy this)
+out[:, 0] = (pose[:, 0] + 1.0) * w / 2.0
+out[:, 1] = (pose[:, 1] + 1.0) * h / 2.0
+```
+
+Coordinates are normalised to the **bucket** dimensions, not the original photo,
+so always denormalise with the bucket's `w`/`h`. **A `(1 - (y+1)/2)` term is a
+vertical mirror** — it draws the skeleton upside-down and, because a mirror
+preserves the centroid, it survives naive "are the points centred?" sanity
+checks. Verify orientation by **anatomical ordering** instead: for a face the
+mean row position must satisfy `brow < eye < nose < mouth < jaw`.
+
+**The review DB is PostgreSQL, not SQLite.** `data/hegre_datasets/hegre-faces/v1/*.db`
+are 0-byte stubs; `dbname=eidolon` on localhost is the source of truth
+(`tools/hegre_dataset/config.py`). The `images.status` column is the human
+verdict (`approved` / `tainted:extraction_nonface` / `tainted:contamination` /
+`tainted:unusable` / `tainted:approved_bad_geometry`). `image_path` is relative
+to `hegre-faces/v1/`, i.e. `faces/{persona}/{set}/{image_id}.jpg`.
+**Never write to it while the review UI is open.**
 
 ## Project structure
 

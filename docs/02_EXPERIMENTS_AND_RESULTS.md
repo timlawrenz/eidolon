@@ -1526,11 +1526,23 @@ Verdict: PASS (G1 + G2 + G3 + G4)
 
 ---
 
-## [PRE-REGISTERED] z_g Validity Threshold — is the high-norm tail detector failure or genuine pose? (`exp/zg-validity`)
+## [CONCLUDED — KILL of the belief] z_g Validity Threshold — is the high-norm tail detector failure or genuine pose? (`exp/zg-validity`)
 
 **Date:** 2026-09-24
-**Status:** **PRE-REGISTERED — NOT YET RUN.** Gate stated before any measurement for
-this arm. No data has been examined to design it.
+**Status:** **CONCLUDED — KILL (of the belief).** The claim *"`z_g` norm > 25 =
+degenerate"* is **falsified**. See Results below.
+**Mode:** confirmatory (`provenance.yaml`) — gate locked before any measurement.
+
+> ⚠️ **Instrument defect found and fixed mid-run (recorded, not hidden).** The first
+> G1 render applied a **vertical mirror** to the pose points
+> (`py = (1-(y+1)/2)*H`; the writer uses no y-flip). That render was invalid and its
+> visual read was discarded. `G2` was **unaffected** — it reads raw pose coords and
+> never applies the pixel mapping. The fix is in
+> `experiments/zg_validity/src/run_gates.py::_denormalize`, with the writer's
+> convention quoted inline. The defect was caught by the user, not by my own
+> "are the points centred?" check — **a mirror preserves the centroid**, so that
+> check was blind to it. Orientation is now verified by anatomical ordering
+> (`brow < eye < nose < mouth < jaw`), which is mirror-sensitive.
 
 **Goal:** Decide whether per-image `z_g` vectors in `hegre_corpus` with norm > 25 are
 DWPose/encoder failures to be filtered, or genuine pose/expression extremity that must
@@ -1603,3 +1615,110 @@ sheets preserved under `docs/assets/exp/zg-validity/` as the visual evidence.
 **Arm dir:** `experiments/zg_validity/` — `provenance.yaml`, `config.yaml`, `README.md`.
 
 **Expected cost:** CPU-only, minutes. No GPU, no training, no model.
+
+---
+
+### Results (run 2026-09-24, CPU-only, no GPU, no model)
+
+**G0 — instrument trust: PASS.** 400 random corpus samples compared against
+`zg/faces/{persona}/{set}/{image_id}.npy`: **0 mismatches, 0 missing, max ‖diff‖ =
+0.0000000000.** The corpus is a faithful copy of the encoder output, so every
+downstream conclusion is about the encoder, not a copy.
+
+**Sampling (frozen to `src/selection.json`, seed 20260924).** 31,711 samples
+scanned: p50 = 8.49, p95 = 27.36, p99 = 42.57; > 15 = 20.08%, > 25 = 6.66% —
+**identical to the independent 2026-09-23 audit**, so the corpus has not moved.
+Eligible: 2,113 at norm > 25, 8,848 at 8–12. Drew 60 (norms 62.8 → 25.2) and 60
+controls (11.9 → 8.0).
+
+**Cross-tab against the review DB (this reframed the arm).** Every corpus sample —
+31,711/31,711, and 60/60 in *both* strata — is `approved`. The 215,914
+`tainted:extraction_nonface` in the review DB never entered the corpus. So the
+stratum is **not** a duplicate of the human reject pile: these are faces the
+reviewer passed. That is what makes the high-norm tail a real finding, and it
+**already disposes of the docstring's rationale** — "DWPose missed eyes/face" is
+handled upstream by review.
+
+**G2 — quantitative corroboration.**
+
+| metric | high (norm > 25) | control (8–12) | reading |
+|---|---|---|---|
+| `conf_lt_03` | **0** | **0** | no low-confidence keypoints at all |
+| `zero_xy` | **0** | **0** | no missing keypoints at all |
+| `conf_mean` | 0.787 | 0.948 | mildly lower, nowhere near a filter threshold |
+| `iod_norm` | 0.209 | 0.295 | eyes closer together relative to face box |
+| `eye_mouth_ratio` | **2.695** | **1.173** | control value is textbook-correct; high is 2.3× |
+| `align_residual` | 0.434 | 0.253 | shape deviation 1.7× larger |
+| `roll_deg` | 9.06 | −4.84 | more roll |
+
+The docstring's stated mechanism — *"DWPose missed eyes/face → wild PCA
+projection"* — **did not happen**: zero missing points and zero sub-0.3 confidence
+in either group, with confidence still at 0.787. The signal is **geometric, on
+correctly-detected points.**
+
+**G1 — mechanism, visual (the core question): → H2.** 60 high + 60 control
+rendered as 68-pt skeleton over pixel (`docs/assets/exp/zg-validity/g1_*.jpg`;
+`g1_zoom_{high,ctrl}{4,12}.jpg` face-cropped large panels). Reviewer classification:
+- **high stratum** — landmark alignment **accurate**; poses **atypical**, often
+  **head-inverted**. "The vast majority gives a pretty accurate information about
+  the alignment, pose, gaze of the face."
+- **control stratum** — "'perfect': point alignment is strong, but poses are normal."
+
+Accurate alignment in ≥70% of the high stratum → **H2: genuine extremity → no
+norm-based filter.** The two strata are separated by **pose atypicality**, not by
+landmark quality.
+
+**Verdict: KILL of the belief.** The KILL condition pre-registered for this arm is
+met verbatim — *"high-norm vectors are valid with valid keypoints and carry genuine
+pose signal → change nothing, retire the claim, write `DISCONTINUATION_NOTICE.md`."*
+`z_g` norm is a **pose-atypicality detector, not a degeneracy detector.** Filtering
+it would delete real, correctly-encoded pose coverage from the geometry control —
+the opposite of what the docstring intends.
+
+**G3 applies (triggered by H2).** The claim *"norm > 25 = degenerate"* is retired,
+**and** the persona-average filter it drives must be re-examined: persona averages
+were computed over a subsample selected by a criterion now known to be invalid, so
+they may be biased. **Not yet done — carried forward.**
+
+**Residual open hypothesis (surfaced by the reviewer, NOT adjudicated here).**
+The 2D landmarks are accurate, but the reviewer's mechanism proposal is that these
+poses sit **at or beyond the bounds of the Sapiens pose model's training
+distribution**, so the *encoding* may be unreliable even when the landmarks are
+right. That is a **third** hypothesis (H3) and this arm's gate does not test it —
+it would need its own pre-registered arm. It matters because H2 and H3 imply
+different actions: H2 = keep everything; H3 = the vectors are real poses but
+out-of-distribution for the encoder, which is a train/inference question, not a
+corpus-cleaning question.
+
+### Adversarial pass (all 7 boxes)
+
+| box | outcome |
+|---|---|
+| **0. Null computed** | n/a in the randomised sense; the **control stratum (8–12) is the null** — same pipeline, same review status, same rendering, differing only in norm. |
+| **1. Metric tested** | G2's separation is on **distance-based** quantities (`eye_mouth_ratio`, `iod_norm`) that are invariant to the mirroring defect, so the fix could not manufacture the result. Verified: the defect lived only in `_panel`; `face_metrics` never applies the pixel mapping. |
+| **2. Metric stable** | Sampling is seeded and frozen; a 600-sample bucket probe shows the corpus is **uniformly 1024×1024**, so the bucket normalisation is not a confound. Norm distribution reproduced the prior audit exactly. |
+| **3. Result reproducible** | `src/run_gates.py {select,g0,g2,g1,zoom,review}` — every number in this entry is regenerable from the committed script + frozen `selection.json`. |
+| **4. Extremes inspected** | **Yes** — this entire arm *is* the extreme-tail inspection. `g1_zoom_high4.jpg` (norms 62.8/47.5/46.6/45.5) is the explicit top-of-tail artifact. |
+| **5. Headline number traced to an exact artifact** | `eye_mouth_ratio` 2.695 vs 1.173 → `docs/assets/exp/zg-validity/g2_diagnostics.json`; review cross-tab → `review_crosstab.json`; visual → `g1_skeleton_{high,ctrl}.jpg`. |
+| **6. Every flaw found is FIXED or explicitly gated-not-fixed** | **FIXED:** the mirrored renderer (`_denormalize`, commit `c0ed696`); the stale scratch-path evidence convention. **GATED-NOT-FIXED:** G3's persona-average re-examination; the H3 out-of-distribution question; and the `tainted:approved_bad_geometry` artifact below. **WITHDRAWN as my own errors:** the centroid "alignment verified" check, the eye-darkness test (ran on mirrored coords), and two vision reads of mirrored images. |
+
+### Separate defect found in passing (not this arm's subject)
+
+All 19 `tainted:approved_bad_geometry` rows are from a single persona's shoots
+(`alexandra-and-ombeline-*`) and carry a **bit-identical** `zg_distance` of
+`1.605683246452827e-05`. Nineteen files sharing the same float to 16 digits is a
+failed or placeholder computation, not a measurement — that code path can write a
+constant. Also: `zg_distance` does **not** separate faces from non-faces (approved
+mean 277.8 vs non-face 276.8), so it is not usable as a validity filter. Both are
+out of scope here and **carried forward.**
+
+### Carried forward
+
+1. **G3** — re-examine the persona-average filter driven by the retired claim.
+2. **H3** — is the `z_g` *encoding* reliable at pose-distribution extremes? Needs its own gate.
+3. **Corpus-quality arm** — extreme-pose and off-frame crops pass review and affect **all three streams** (identity, pose, shape), not just `z_g`. This is the larger finding and the one that protects the prx-tg handoff.
+4. **`approved_bad_geometry` constant-distance artifact** — separate defect.
+
+**Evidence:** `docs/assets/exp/zg-validity/` — `g1_skeleton_{high,ctrl}.{png,jpg}`,
+`g1_zoom_{high,ctrl}{4,12}.jpg`, `g2_diagnostics.json`, `review_crosstab.json`.
+**Code:** `experiments/zg_validity/src/run_gates.py` (+ frozen `selection.json`).
