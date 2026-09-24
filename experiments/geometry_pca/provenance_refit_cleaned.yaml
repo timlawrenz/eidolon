@@ -24,3 +24,8 @@ training_host: game
 training_gpu: CPU-only
 data_snapshot: "324 personas, 166,195 approved with AuraFace, 321 training-eligible"
 notes: "G1+G2+G3 PASS. GT-LDA ceiling R@1=0.854 (old 0.842, +1.2pp). LDA basis refit: 259 train personas, 137k images, eigenvalues 0.032-0.005. Yaw direction from old basis. G3 CORPUS PASS: 31,711 samples / 321 personas, 0 errors; on-disk samples == _manifest.json exactly (0 orphans, 0 incomplete); basis fingerprint e2f66241288e1f50. The pre-rebuild corpus (37,011 dirs) was a MIXED-BASIS generation: 5,306 dirs were not re-selected by the current build and carried PRE-REFIT persona averages; preserved at hegre_corpus.old. Two missing modules repaired (fit_lda_basis.py, compute_lda_vectors); three files migrated to PG (data_loader, corpus_builder, geometry). Added corpus _manifest.json + --skip-existing (resumable builds). CRITICAL: corpus samples store the PERSONA AVERAGE as auraface_lda.npy, so any basis change invalidates pre-existing samples — always diff a corpus against its manifest fingerprint before training."
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # RETROSPECTIVE: a pre-registered gate is present in this file
+agent_model: None   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: None

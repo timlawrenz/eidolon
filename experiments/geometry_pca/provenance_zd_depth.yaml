@@ -40,3 +40,8 @@ notes: |
   Scripts: 18_fit_zd_encoders.py, 19_build_depth_cache_singlepass.py,
   20_extract_zd_gate.py, 21_zd_gate.py, 22_zd_complementarity_diagnostic.py,
   23_zd_verification_auc.py. Face-crop re-run: 36_zd_facecrop_seg_control.py.
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # RETROSPECTIVE: a pre-registered gate is present in this file
+agent_model: None   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: None

@@ -64,3 +64,8 @@ notes: >
   NOT FIXED BY THIS ARM: FFHQ is still ~1 image per identity, so its identity
   vectors still teach 'identity vector = per-image key'. Encoding-consistent,
   not a valid identity target.
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # declared before the run
+agent_model: deepseek/deepseek-v4.1-flash   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: openrouter/deepseek/deepseek-v4.1-flash

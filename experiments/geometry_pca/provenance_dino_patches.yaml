@@ -47,3 +47,8 @@ notes: |
 
   Scripts: 35_build_hegre_face_dataset.py, 36_zd_facecrop_seg_control.py,
   37_dino_patch_face_pooling.py.
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # RETROSPECTIVE: a pre-registered gate is present in this file
+agent_model: None   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: None

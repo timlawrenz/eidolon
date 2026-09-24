@@ -110,3 +110,8 @@ prior_observations: >
   adjudication of z_g validity. This is new work.
 
 notes: ""
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # declared before the run
+agent_model: deepseek/deepseek-v4.1-flash   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: openrouter/deepseek/deepseek-v4.1-flash

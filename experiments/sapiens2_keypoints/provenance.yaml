@@ -61,3 +61,8 @@ notes: |
   Scripts: extract_study_features.py, extract_kp3d.py, identity_gate_2d.py,
   identity_gate_3d.py, step3_method_control.py, identity_gate_wide.py,
   fisher_split_sapiens2.py (confounded), fisher_split_mixed.py (corrected).
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # RETROSPECTIVE: a pre-registered gate is present in this file
+agent_model: None   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: None

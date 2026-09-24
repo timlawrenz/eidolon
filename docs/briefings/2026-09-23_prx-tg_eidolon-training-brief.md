@@ -315,7 +315,11 @@ rows verified 2026-09-24; all other rows 2026-09-23.
 | Identity signal is compressed | persona averages pairwise cosine mean 0.9953; margin 0.0029 vs 0.0042 (`scratch/diagnose_identity_target.py`) |
 | hegre corpus is single-basis & complete | `_manifest.json` fingerprint `e2f66241288e1f50`; on-disk == manifest, 31,711 samples |
 
-Scratch scripts are at `~/.hermes/profiles/eidolon/cache/scratch/`.
+Evidence scripts for every row above are committed at
+`docs/assets/exp/sapiens2-keypoints-study/evidence-20260923/` (see its `README.md`
+for a script→finding index). Rows labelled `scratch/<name>.py` refer to files in
+that directory — they were written to the agent scratch dir, which is pruned after
+24h idle, and were copied into the repo on 2026-09-24.
 
 ---
 

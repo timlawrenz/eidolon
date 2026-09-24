@@ -43,3 +43,8 @@ notes: |
 
   Scripts: 24_build_normal_cache_singlepass.py, 25_fit_za_encoders.py,
   26_extract_za_gate.py, 27_za_gate.py, 28_za_systematic_review.py.
+
+# --- retrofit 2026-09-24 (AGENTS.md: skill mandates these fields) ---
+mode: confirmatory          # RETROSPECTIVE: a pre-registered gate is present in this file
+agent_model: None   # null = not recorded at run time (field post-dates this arm)
+agent_model_snapshot: None
