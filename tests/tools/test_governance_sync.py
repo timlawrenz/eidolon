@@ -358,6 +358,114 @@ def _resolve_against(ledger_text: str, tracked: set, ignored: set):
     return unresolved
 
 
+def test_ledger_entries_name_an_immutable_tagged_commit():
+    """docs/00_GIT_WORKFLOW.md §2: the experiment IS a commit, not a branch.
+
+    An entry that cites evidence or code must therefore name a full 40-hex SHA,
+    that SHA must exist, it must be TAGGED (or a branch deletion can orphan it and
+    the number stops being checkable), and every cited path must resolve IN THAT
+    COMMIT — not merely in the working tree.
+
+    This is strictly stronger than checking paths against HEAD: if the arm's code
+    is edited later, the citation still resolves to the version that produced the
+    number.
+    """
+    text = LEDGER.read_text()
+    lines = text.splitlines()
+    problems = []
+
+    def is_full_sha(s):
+        return bool(re.fullmatch(r"[0-9a-f]{40}", s or ""))
+
+    # Split the ledger into entries at blank-line-delimited '**Evidence:**' groups.
+    # An entry is the span from its '**Commit:**'/'**Evidence:**'/'**Code:**' lines;
+    # we only require a commit when an entry cites evidence or code.
+    cites = [(i, l) for i, l in enumerate(lines, 1)
+             if "**Evidence:**" in l or "**Code:**" in l]
+    if not cites:
+        return  # nothing to police (the other test already fails loudly on this)
+
+    for start, _ in cites:
+        # look back within the entry for a Commit line (entries are short)
+        window = lines[max(0, start - 15):start]
+        commit_line = next((l for l in reversed(window) if "**Commit:**" in l), None)
+
+        def cited_paths_near(idx):
+            out = []
+            for l in lines[idx - 1: idx + 6]:
+                if "**Evidence:**" in l or "**Code:**" in l or out:
+                    out.extend(m.group(1) for m in _PATH_RE.finditer(l))
+                    if "**Evidence:**" in l or "**Code:**" in l:
+                        continue
+                    break
+            return out
+
+        paths = cited_paths_near(start)
+        if commit_line is None:
+            problems.append(
+                f"line {start}: entry cites {paths or ['(?)']} but names NO commit "
+                f"— unverifiable by construction (workflow §2.1)"
+            )
+            continue
+
+        shas = re.findall(r"\b[0-9a-f]{7,40}\b", commit_line)
+        sha = next((s for s in shas if is_full_sha(s)), None)
+        if sha is None:
+            problems.append(
+                f"line {start}: '**Commit:**' does not carry a full 40-hex SHA "
+                f"(got {shas!r}) — short SHAs are ambiguous (workflow §2.1)"
+            )
+            continue
+
+        # (a) the commit exists
+        ok = subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+                            cwd=ROOT, capture_output=True, check=False)
+        if ok.returncode != 0:
+            problems.append(f"line {start}: commit {sha} does not exist")
+            continue
+
+        # (b) the commit is reachable via a tag (not orphanable)
+        tagged = subprocess.run(
+            ["git", "tag", "--points-at", sha], cwd=ROOT, capture_output=True, text=True, check=False
+        ).stdout.strip()
+        if not tagged:
+            problems.append(
+                f"line {start}: commit {sha[:12]} is NOT TAGGED — deleting its branch "
+                f"would orphan it and the number stops being checkable (workflow §2.3)"
+            )
+
+        # (c) cited paths resolve IN THAT COMMIT
+        for p in paths:
+            if "/" not in p:      # bare-filename convention; skip (see sibling test)
+                continue
+            r = subprocess.run(["git", "cat-file", "-e", f"{sha}:{p}"],
+                               cwd=ROOT, capture_output=True, check=False)
+            if r.returncode != 0:
+                problems.append(
+                    f"line {start}: {p!r} does not exist in commit {sha[:12]} — the "
+                    f"citation does not resolve against the experiment's own commit"
+                )
+
+    assert not problems, (
+        "Ledger entries are not pinned to immutable, tagged commits "
+        "(docs/00_GIT_WORKFLOW.md §2):\n  " + "\n  ".join(problems)
+    )
+
+
+def test_ledger_commit_checker_fires_on_bad_entries():
+    """Negative control: the §2 checker must fire on an untagged/branch-only entry."""
+    good = "**Commit:** `" + "a" * 40 + "`\n**Evidence:** `docs/assets/x/m.json`\n"
+    assert re.search(r"\*\*Commit:\*\* *`?[0-9a-f]{40}`?", good), "good entry should match"
+
+    branch_only = "**Evidence:** `docs/assets/x/m.json`\n(mode: confirmatory on exp/foo)\n"
+    assert not re.search(r"\*\*Commit:\*\*", branch_only), "branch-only entry must be rejected"
+
+    short = "**Commit:** `abc123f`\n**Evidence:** `docs/assets/x/m.json`\n"
+    found = re.findall(r"\b[0-9a-f]{7,40}\b", short)
+    assert not any(re.fullmatch(r"[0-9a-f]{40}", s) for s in found), \
+        "short SHA must not satisfy the full-SHA requirement"
+
+
 def test_resolvability_checker_fires_on_bad_citations():
     tracked = {"docs/assets/exp/x/metrics.json", "experiments/a/src/run.py"}
     ignored = {"experiments/a/output/metrics.json"}

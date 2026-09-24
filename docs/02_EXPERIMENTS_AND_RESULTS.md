@@ -1719,6 +1719,9 @@ out of scope here and **carried forward.**
 3. **Corpus-quality arm** — extreme-pose and off-frame crops pass review and affect **all three streams** (identity, pose, shape), not just `z_g`. This is the larger finding and the one that protects the prx-tg handoff.
 4. **`approved_bad_geometry` constant-distance artifact** — separate defect.
 
+**Commit:** `c0ed696d82e9544fe63e38d5594384db144a6cc7` (tag `arm/zg-validity`) — the tree
+at this commit **is** this experiment (per `docs/00_GIT_WORKFLOW.md` §2). Resolve citations
+with `git show c0ed696:<path>`, branch-independent.
 **Evidence:** `docs/assets/exp/zg-validity/` — `g1_skeleton_{high,ctrl}.{png,jpg}`,
 `g1_zoom_{high,ctrl}{4,12}.jpg`, `g2_diagnostics.json`, `review_crosstab.json`.
 **Code:** `experiments/zg_validity/src/run_gates.py` (+ frozen `selection.json`).
@@ -1928,6 +1931,14 @@ corpus**, alongside the stronger and more useful fact that **per-image AuraFace 
 at 197.5× the floor** — a 24× separation that is the actual quantitative basis for
 the orthogonality design.
 
+**Commit:** `29aba37d6e0fc499eb3f011e6d28ccb1cbd4c5a7` (tag `arm/zg-identity-blindness`)
+— the tree at this commit **is** this experiment (per `docs/00_GIT_WORKFLOW.md` §2). It is
+the first commit at which the **run code, its evidence artifact, and this results entry
+are all present** — a commit holding the code but not the evidence cannot verify anything
+(this was caught by the governance lint, which initially rejected the run-code-only commit
+`ca1b49b`). The branch tip is `4299ac4c47a9eeca6113eb8078da3072d1823c24` (two later commits:
+a citation fix and the lint itself, neither part of the experiment): **the branch is not
+the experiment.** Resolve any citation in this entry with `git show 29aba37:<path>`.
 **Evidence:** `docs/assets/exp/zg-identity-blindness/fisher_metrics.json` (tracked).
 The same file is also written to `experiments/zg_identity_blindness/output/` at run
 time, but `output/` is **gitignored** (`.gitignore:205`) so that copy is **not**
