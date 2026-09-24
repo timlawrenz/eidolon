@@ -257,6 +257,14 @@ Stated so prx-tg can rely on it:
   geometry/pose control space, not an identity space — **confirmed in direction,
   magnitude corrected.**
 
+  *Provenance of the numbers in this section (workflow §2):* the arm is the tree at
+  `29aba37d6e0fc499eb3f011e6d28ccb1cbd4c5a7` (tag `arm/zg-identity-blindness`) —
+  run code, evidence and results entry all present at that commit. Read them with
+  `git show 29aba37:experiments/zg_identity_blindness/src/run_fisher.py` and
+  `git show 29aba37:docs/assets/exp/zg-identity-blindness/fisher_metrics.json`.
+  The withdrawn `J = 0.059` remains withdrawn — it had no producing script on any
+  branch, which is why it could not be checked.
+
 ---
 
 ## 6. Gates
