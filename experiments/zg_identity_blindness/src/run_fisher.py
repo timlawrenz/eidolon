@@ -121,6 +121,23 @@ def j_of(Z, y):
     return float(J), float(S_B), float(S_W), np.asarray(J_Ci)
 
 
+def j_null(n_samples, n_classes):
+    """Expected global J under random labels: E[J] ~= (C-1)/(N-C).
+
+    Validated 2026-09-24 on synthetic data before any corpus result was read:
+    pure-noise random labels at N=600/C=30 gave J=0.0560 vs (C-1)/(N-C)=0.0509.
+
+    WHY THIS MATTERS: the floor is a function of N and C, so raw J is NOT
+    comparable across corpora of different size. The old corpus (69,110/323) has
+    floor 0.0047; the curated corpus (31,711/321) has floor 0.0102 -- 2.2x
+    higher. A smaller corpus mechanically RAISES raw J. J_ratio = J / J_null is
+    the size-corrected comparison; the raw comparison is confounded.
+    """
+    if n_samples <= n_classes:
+        return float("nan")
+    return (n_classes - 1) / (n_samples - n_classes)
+
+
 def keep_min2(Z, y):
     """Drop identities with < 2 samples (within-scatter undefined) and count them."""
     counts = defaultdict(int)
@@ -138,16 +155,23 @@ def summarise(tag, Z, y, Z_rs=None):
     n_ident = len(set(yk.tolist()))
     n_morph = int((J_Ci > 0.15).sum())
     n_trans = int((J_Ci < 0.05).sum())
+    jn = j_null(len(Zk), n_ident)
+    jratio = J / jn if jn and np.isfinite(jn) else float("nan")
     row = dict(tag=tag, J=J, S_B=S_B, S_W=S_W, n_samples=int(len(Zk)),
                n_identities=n_ident, dropped_ids=dropped,
-               n_morph_axes=n_morph, n_transient_axes=n_trans)
+               n_morph_axes=n_morph, n_transient_axes=n_trans,
+               J_null=jn, J_ratio=jratio)
     if Z_rs is not None:
-        J2, S_B2, S_W2, J_Ci2 = j_of(*keep_min2(Z_rs, y)[:2])
+        Zk2, yk2, _ = keep_min2(Z_rs, y)
+        J2, S_B2, S_W2, J_Ci2 = j_of(Zk2, yk2)
         row.update(J_restandardized=float(J2), S_B_rs=float(S_B2), S_W_rs=float(S_W2),
                    n_morph_axes_rs=int((J_Ci2 > 0.15).sum()))
     log(f"  {tag:34s} J={J:8.4f}  S_B={S_B:10.4f}  S_W={S_W:10.4f}  "
         f"morph(J>0.15)={n_morph:3d}  trans(J<0.05)={n_trans:3d}  "
         f"n={len(Zk)} ids={n_ident} dropped_ids={dropped}")
+    log(f"  {tag + ' [null-corrected]':34s} J_null={jn:8.4f}  "
+        f"J/J_null={jratio:8.2f}x  (floor depends on N,C -> raw J is NOT "
+        f"comparable across corpora)")
     if Z_rs is not None:
         log(f"  {tag + ' [restandardized]':34s} J={row['J_restandardized']:8.4f}  "
             f"morph(J>0.15)={row['n_morph_axes_rs']:3d}")
@@ -235,12 +259,32 @@ def cmd_g2(args, cache=None):
         verdict = "FALSIFY"
     else:
         verdict = "PARTIAL"
-    log(f"\n  PRIMARY venue {PRIMARY_VENUE}: J={J:.4f}  morph={morph}")
+
+    # ---- size-corrected comparison to the original (see j_null docstring) ----
+    jn_new = prim["J_null"]
+    jn_old = j_null(69110, 323)
+    ratio_new = prim["J_ratio"]
+    ratio_old = 0.059 / jn_old if jn_old else float("nan")
+    log("")
+    log("  --- size-corrected comparison to the lost-script original ---")
+    log(f"  original  J=0.0590  N=69110 C=323  floor={jn_old:.5f}  J/floor={ratio_old:6.2f}x")
+    log(f"  this run  J={J:.4f}  N={prim['n_samples']} C={prim['n_identities']}  "
+        f"floor={jn_new:.5f}  J/floor={ratio_new:6.2f}x")
+    log(f"  RAW J is confounded by corpus size; the floor rose {jn_new / jn_old:.2f}x "
+        f"because N fell, which RAISES raw J for free.")
+    log(f"  The honest comparison is J/floor: {ratio_old:.2f}x -> {ratio_new:.2f}x.")
+    log("")
+    log(f"  PRIMARY venue {PRIMARY_VENUE}: J={J:.4f}  morph={morph}")
     log(f"  reference: original (lost script, pre-curation corpus) J=0.059, morph 6 (was 27)")
-    log(f"  G2 verdict: {verdict}")
+    log(f"  G2 verdict (pre-registered gate on RAW J, unchanged): {verdict}")
     return dict(gate="G2", venues=out, primary_venue=PRIMARY_VENUE, J=J,
-                n_morph_axes=morph, verdict=verdict,
-                reference_J=0.059, reference_note="lost script; pre-curation 69,110/323 corpus")
+                n_morph_axes=morph, verdict=verdict, J_null=jn_new,
+                J_ratio=ratio_new, J_null_original=jn_old, J_ratio_original=ratio_old,
+                reference_J=0.059,
+                reference_note="lost script; pre-curation 69,110/323 corpus",
+                gate_note=("pre-registered gate is on RAW J and was NOT changed after "
+                           "seeing J_null; J_null/J_ratio are declared supplementary "
+                           "diagnostics calibrated before any corpus result was read"))
 
 
 def cmd_g3(args, cache=None):
