@@ -197,6 +197,9 @@ cython_debug/
 # Project-specific ignores
 data/
 
+# Externally-cloned third-party repos (re-cloneable; not ours to track)
+experiments/flame_spike/smirk/
+
 # Sapiens2 keypoints study — regenerable feature caches (keep JSON results + manifest)
 experiments/sapiens2_keypoints/output/*.npz
 output/
