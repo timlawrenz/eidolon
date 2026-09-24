@@ -1418,3 +1418,108 @@ Two operational findings recorded:
 
 - Sapiens2 widen to 100 personas (already planned, cleaner data simplifies cohort selection)
 - Optionally purge `hegre_corpus.old` (233 GB) once the new corpus has been exercised
+
+---
+
+## [PRE-REGISTERED] FFHQ Basis Reprojection — pre-refit identity stream (`exp/sapiens2-keypoints-study`)
+
+**Date:** 2026-09-23
+**Arm:** `ffhq-basis-reproject` (`experiments/ffhq_basis_reproject/`)
+**Goal:** Repair `ffhq/stratum/{id}/auraface_lda.npy`, which is on the **pre-refit** LDA basis, so the FFHQ identity stream is encoding-identical to `hegre_corpus`.
+
+### Background — why this exists
+
+`refit-cleaned` refit the pooled LDA basis (2026-07-23) and rebuilt the hegre corpus, but **never reprojected FFHQ**. `prx-tg/production/data_stratum.py` loads the identity vector directly:
+
+```python
+identity_emb = np.load(d / 'auraface_lda.npy')   # (64,) float64
+```
+
+with no basis check. Every Eidolon-adapter arm whose `stratum_dirs` included `ffhq/stratum` (weight 2.3) therefore trained a 64-d identity slot receiving **two incompatible encodings**. Measured:
+
+| | ffhq/stratum | hegre_corpus |
+|---|---|---|
+| basis | pre-refit | refit |
+| norm | 0.350 (σ 0.035) | **exactly 1.000000** |
+| semantic level | per-image | per-persona |
+
+Bit-exact confirmation that the stored files are pre-refit: `‖stored − project_old(raw)‖ = 0` on 6/6 samples, `‖stored − project_new(raw)‖ ≈ 153`.
+
+**Consequence:** the identity conditioning of the five `exp/eidolon-conditioning` arms is confounded. No identity-binding conclusion can be drawn from any of them, including Arm O's PASS (whose geometry result stands independently).
+
+### Premise audit — run 2026-09-23 BEFORE this gate was formalised (recorded honestly)
+
+`scripts/reproject_lda_ffhq.py --dry-run`, 250 samples:
+
+| check | result |
+|---|---|
+| stratum dirs (real) | 70,000 (+1 `@eaDir`) |
+| with raw AuraFace / with auraface_lda | 69,960 / 69,960 |
+| raw-but-no-lda (creatable) / lda-but-no-raw (unfixable) | 0 / 0 |
+| `‖stored − project_old(raw)‖` | mean **0.00000000**, max **0.00000000** |
+| `‖stored − project_new(raw)‖` | mean **153.5432**, max 157.8826 |
+| basis fingerprint | `120e1c5a1dc4f423` |
+
+**Premise CONFIRMED.** This was observed before the gate text below was written; that ordering is disclosed rather than concealed.
+
+### Pre-registered gate (stated BEFORE the run)
+
+> **G1 (PREMISE, already observed above):** on ≥250 pre-run samples, max `‖stored − project_old(raw)‖ = 0` AND mean `‖stored − project_new(raw)‖ > 100`. **Observed: 0.00000000 / 153.5432 → PASS.**
+> **G2 (CORRECTNESS):** on ≥300 post-run samples, `‖stored − project_new(raw)‖ < 1e-9` AND `|L2norm(stored) − 1.0| < 1e-6`. Any violation → FAIL.
+> **G3 (COVERAGE + INTEGRITY):** exactly 69,960 targets written, 0 errors; backup archive contains 69,960 entries; `BASIS_FINGERPRINT.json` stamped. Any mismatch → FAIL.
+> **G4 (GUARD EFFICACY — negative control):** the guard must be able to FAIL. `assert_basis` raises `BasisMismatch` on an unstamped dir and on a dir stamped against a different basis. A guard that cannot fail does not count.
+>
+> **FAIL if** any of G2/G3 fails, or the premise fails to reproduce.
+
+### Target convention
+
+**Refit basis + L2-normalize (norm 1.0)** — matches `hegre_corpus`, which is what the DiT consumes. L2 normalization provably does not change cosine geometry (between-image cosine identical before/after, 0.9945 ± 0.0012), so this costs no identity information. Rejected alternative: raw refit coords (norm ≈ 153), the convention of the per-image retrieval tree `hegre-faces/v1/lda/`, which is *not* what the DiT consumes.
+
+### Out of scope (checked, recorded)
+
+- `hegre-faces/v1/lda/` holds **2,220 stale pre-refit files** (0.75% of 295,468). All 2,220 are `tainted:extraction_nonface` (2,219) or `tainted:contamination` (1) — **none approved**, so none reachable from training, the corpus, or the GT-LDA ceiling. Left untouched.
+- FFHQ's 139 missing `z_g.npy` / 41 missing `auraface_lda.npy` — do not intersect the 69,960-file reprojection surface.
+- **Reprojection fixes the basis, not the semantics.** FFHQ is ~1 image per identity, so even corrected its identity vectors still teach "identity vector = per-image key". It becomes encoding-consistent, not a valid identity target.
+
+### Results (run 2026-09-24)
+
+`scripts/reproject_lda_ffhq.py --apply --force`, 536 s, CPU-only:
+
+| metric | value |
+|---|---|
+| targets | 69,960 |
+| written | **69,960** |
+| errors | **0** |
+| throughput | ~131 files/s |
+| basis fingerprint | `120e1c5a1dc4f423` |
+| HEAD at run start | `b35a3e6` (working tree dirty — the arm's scripts were uncommitted at run time) |
+
+Backup: `_auraface_lda.oldbasis-backup.tar.gz`, 36.5 MB, **69,960 entries** — the pre-refit files are preserved, not destroyed.
+
+Stamps written for all three consumed dirs: `ffhq/stratum`, `hegre_corpus` (refit basis + L2-normalize), `hegre-faces/v1/lda` (refit basis, raw coords).
+
+**Incident, recorded:** the first `--apply` attempt failed on all 27,475 files it reached. Root cause: `np.save("…/auraface_lda.npy.tmp", v)` — numpy **appends** `.npy` when the path lacks that suffix, creating `auraface_lda.npy.tmp.npy`, so the subsequent `os.replace` found no source. No data was modified (the replace never ran) and the backup was already complete, so the failure was fully recoverable. Fixed by writing through a file handle (`with open(tmp,'wb') as fh: np.save(fh, v)`); 27,475 stray `.tmp.npy` files removed via a new `--clean-litter` action; re-run clean. **Lesson: never hand a non-`.npy` path to `np.save` in an atomic-write pattern.**
+
+### Adversarial pass
+
+- [x] **Metric code tested** — `tests/tools/test_basis_fingerprint.py` (7 tests, incl. `test_different_basis_is_detected` as a negative control). The apply path and the verify path are *independent* implementations (verify recomputes from raw), and the adversarial audit below used a third path.
+- [x] **Metric definition stable** — basis fingerprint `120e1c5a1dc4f423` recorded in both the manifest and the stamps; projection convention recorded per directory.
+- [x] **Result reproduced** — recomputation from raw on a **random** 250-file sample (deliberately not the first N, which `--verify` had sampled) in a fresh process: **0 mismatches**.
+- [x] **Extremes inspected** — **FULL scan of all 70,000 dirs**, not a sample: 69,960 at unit norm, 0 with norm ≠ 1, 0 near-zero/degenerate, 0 NaN/Inf, 0 wrong-shape, 40 missing (the known gap). `norm min = max = mean = 1.000000000` exactly. Single mtime day (all rewritten).
+
+```
+Verdict: PASS (G1 + G2 + G3 + G4)
+```
+
+### Verdict
+
+**GO** — the FFHQ identity stream is now encoding-identical to `hegre_corpus` (both norm `1.000000000`, both on basis `120e1c5a1dc4f423`). The mixed-basis confound that silently affected every `eidolon`-adapter arm with FFHQ in its `stratum_dirs` is removed, and a guard now exists so it cannot recur silently.
+
+**What this does NOT fix:** FFHQ remains ~1 image per identity, so its identity vectors still teach "identity vector = per-image key". FFHQ is now *encoding-consistent*, not *suitable as an identity target*.
+
+### Artifacts
+
+- `ffhq/stratum/_auraface_lda.oldbasis-backup.tar.gz` — pre-refit files (69,960 entries, 36.5 MB)
+- `ffhq/stratum/_auraface_lda.reproject_manifest.json` — counts, fingerprint, git commit
+- `ffhq/stratum/BASIS_FINGERPRINT.json` + 2 more stamps
+- `scripts/reproject_lda_ffhq.py`, `tools/hegre_dataset/basis_fingerprint.py`, `tests/tools/test_basis_fingerprint.py`

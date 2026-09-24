@@ -1,6 +1,6 @@
 # Project Status — Eidolon
 
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-24
 **Phase / status:** Phase 5b concluded — between phases
 
 ## Current state
@@ -26,6 +26,27 @@ new basis. Gate **G3 PASS**.
 
 Dead partitions (z_d depth, z_a normals, DINO bridge) are permanently documented
 and will not be re-attempted. No active training runs.
+
+**2026-09-24:** **FFHQ identity reprojected onto the refit basis** — 69,960 files,
+0 errors. `ffhq/stratum/{id}/auraface_lda.npy` was still on the *pre-refit* basis
+(files 2026-06-30 vs refit 2026-07-23; proven bit-exact), so every `eidolon`-adapter
+arm whose `stratum_dirs` included FFHQ fed a 64-d identity slot **two incompatible
+encodings** (FFHQ norm 0.35 / hegre-corpus norm 1.0). FFHQ is now encoding-identical
+to `hegre_corpus` (both norm `1.000000000`). A **basis fingerprint guard**
+(`tools/hegre_dataset/basis_fingerprint.py`, `hegre-dataset basis-fingerprint
+verify`) now lets loaders refuse mixed-basis input instead of silently training on
+it; all three consumed dirs are stamped (`120e1c5a1dc4f423`). Arm
+`ffhq-basis-reproject`, gate **G1–G4 PASS**.
+
+⚠️ **Open consequence:** the identity conditioning of the five
+`exp/eidolon-conditioning` arms in prx-tg is confounded by that mixed basis — no
+identity-binding conclusion can be drawn from any of them, including Arm O's PASS
+(whose *geometry* result stands independently). See
+`docs/briefings/2026-09-23_prx-tg_eidolon-training-brief.md`.
+
+⚠️ **Also open:** hegre per-image `z_g` carries a 20% high-magnitude tail (6.7%
+past the project's own norm-25 degeneracy threshold) vs FFHQ's 0.5%/0.03%. Needs a
+validity verdict before the geometry stream is trusted for training.
 
 ## Headline result so far
 

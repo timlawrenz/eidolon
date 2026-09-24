@@ -13,6 +13,28 @@ Link directly to the `exp/*` branch where the work lives.
 ---
 
 ## Active & Planned
+* **[CONCLUDED — PASS] FFHQ Basis Reprojection (`exp/sapiens2-keypoints-study`)**
+  * **Problem:** `ffhq/stratum/{id}/auraface_lda.npy` is on the **PRE-refit** LDA basis
+    (files 2026-06-30; basis refit 2026-07-23). Proven bit-exact: `‖stored − project_old(raw)‖ = 0`
+    on every sampled file, `‖stored − project_new(raw)‖ ≈ 153`.
+  * **Consequence:** `prx-tg/production/data_stratum.py` loads `auraface_lda.npy`
+    directly with no basis check, so every `eidolon`-adapter arm whose `stratum_dirs`
+    included FFHQ (weight 2.3) fed a 64-d identity slot **two incompatible encodings**
+    (FFHQ pre-refit norm 0.35 / hegre-corpus refit norm 1.0). The identity conditioning
+    of all five `exp/eidolon-conditioning` arms is therefore confounded — including
+    Arm O's PASS, whose *geometry* result stands independently.
+  * **Fix:** reproject 69,960 files onto the refit basis + L2-normalize (matches
+    `hegre_corpus`), with a pre-refit backup and a `BASIS_FINGERPRINT.json` guard so
+    loaders can refuse mixed-basis input.
+  * **Result (2026-09-24): 69,960 written, 0 errors, 536 s, CPU-only.** Adversarial pass
+    on a FULL scan of 70,000 dirs: 69,960 at unit norm, 0 degenerate, 0 NaN,
+    `norm min=max=mean=1.000000000`; random-sample recomputation 0 mismatches.
+    Backup 69,960 entries (36.5 MB). Stamps written for `ffhq/stratum`,
+    `hegre_corpus`, `hegre-faces/v1/lda`. Basis fingerprint `120e1c5a1dc4f423`.
+  * **Not fixed by this arm:** FFHQ is still ~1 image per identity, so its identity
+    vectors still teach "identity vector = per-image key" — encoding-consistent,
+    not a valid identity target.
+  * Arm dir: `experiments/ffhq_basis_reproject/`
 * **[CONCLUDED] Phase 5b: Poser Retrieval Spike — G-A FAIL (informative); GT-LDA ceiling PASS** (`exp/text-to-zg`)
   * G-A: cross-shoot Prior Recall@k FAIL. Text→LDA Prior does not beat random-projection
     null at statistical significance (Δ=+0.014, CI[−0.004,+0.033], p=0.063 at k=10,
