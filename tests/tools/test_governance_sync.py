@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+import re
+import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS = ROOT / "AGENTS.md"
@@ -230,3 +232,151 @@ def test_declared_modes_are_valid_values():
         if d.get("mode") not in valid:
             bad.append(f"{f.relative_to(ROOT)}: mode={d.get('mode')!r}")
     assert not bad, "Invalid `mode` values (must be confirmatory|exploratory|null):\n  " + "\n  ".join(bad)
+
+
+# --------------------------------------------------------------------------
+# Evidence resolvability — a cited artifact must exist in the repo
+# --------------------------------------------------------------------------
+#
+# WHY THIS EXISTS (added 2026-09-24): two real instances in one session of a ledger
+# number whose producer the repo cannot resolve.
+#
+#   1. The `z_g` Fisher J = 0.059 had NO producing script on ANY branch. By the
+#      project's own rule ("a ledger number whose producing script no longer exists
+#      is not evidence") the number was not evidence, and nothing detected it.
+#   2. A new ledger entry cited `experiments/.../output/fisher_metrics.json` while
+#      `output/` was gitignored — fresh evidence rot, committed minutes after
+#      complaining about evidence rot.
+#
+# The prose rule cannot catch either. This test can, for the paths a ledger entry
+# actually cites: every backticked `**Evidence:**` / `**Code:**` path must resolve
+# to a file git tracks (so a future agent can see it).
+#
+# LIMIT: this catches *path* rot, not *content* rot. It cannot know whether a
+# committed script still produces the number attributed to it. It also only checks
+# the explicit Evidence/Code lines, not prose mentions.
+
+LEDGER = ROOT / "docs" / "02_EXPERIMENTS_AND_RESULTS.md"
+# Backticked path-looking tokens on Evidence/Code lines. Matches things like
+# `docs/assets/x/y.json`, `experiments/a/src/b.py`, `tools/c/d.py`.
+_PATH_RE = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|json|md|yaml|yml|png|jpg|jpeg|csv|npz|npy))`")
+
+
+def _tracked_paths() -> set:
+    out = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=False
+    )
+    return {ln.strip() for ln in out.stdout.splitlines() if ln.strip()}
+
+
+def _cited_evidence_paths():
+    """(line_no, path) for every path cited on an Evidence/Code line."""
+    cited = []
+    for i, line in enumerate(LEDGER.read_text().splitlines(), start=1):
+        if "**Evidence:**" in line or "**Code:**" in line:
+            for m in _PATH_RE.finditer(line):
+                cited.append((i, m.group(1)))
+    return cited
+
+
+def test_evidence_citations_resolve_to_tracked_paths():
+    cited = _cited_evidence_paths()
+    assert cited, (
+        "no `**Evidence:**`/`**Code:**` citations found in the ledger — either the "
+        "ledger was gutted or the citation convention changed. Investigate before "
+        "assuming this lint is still meaningful."
+    )
+    tracked = _tracked_paths()
+    # Bare-filename citations are a legitimate convention in this ledger (e.g.
+    # "(+ frozen `selection.json`)"), so a token that does not resolve as a
+    # repo-relative path may still resolve by basename to a tracked file.
+    tracked_basenames = {p.rsplit("/", 1)[-1] for p in tracked}
+    unresolved = []
+    for line_no, path in cited:
+        candidates = {path, path.lstrip("./")}
+        if candidates & tracked:
+            continue
+        if "/" not in path and path in tracked_basenames:
+            continue
+        unresolved.append(f"docs/02_EXPERIMENTS_AND_RESULTS.md:{line_no} cites {path!r}")
+    assert not unresolved, (
+        "Ledger cites artifacts that are NOT tracked by git — a future agent cannot "
+        "resolve them, which is evidence rot. Either commit the artifact (prefer "
+        "docs/assets/<branch>/) or fix the citation:\n  " + "\n  ".join(unresolved)
+    )
+
+
+def test_no_evidence_citation_points_at_a_gitignored_path():
+    """A path can be untracked simply because .gitignore excludes it — the
+    gitignored-`output/` failure mode. Name that cause explicitly."""
+    cited = _cited_evidence_paths()
+    bad = []
+    for line_no, path in cited:
+        if not (ROOT / path).exists():
+            continue
+        r = subprocess.run(
+            ["git", "check-ignore", "-q", path], cwd=ROOT, capture_output=True, check=False
+        )
+        if r.returncode == 0:
+            bad.append(f"docs/02_EXPERIMENTS_AND_RESULTS.md:{line_no} cites {path!r}")
+    assert not bad, (
+        "Ledger cites a path that EXISTS on disk but is GITIGNORED, so it is not "
+        "evidence — it will be absent for any other checkout. Move the artifact "
+        "somewhere tracked (e.g. docs/assets/<branch>/) and cite that:\n  "
+        + "\n  ".join(bad)
+    )
+
+
+# --------------------------------------------------------------------------
+# Self-test: the resolvability checker must actually FIRE
+# --------------------------------------------------------------------------
+# A lint that cannot be shown to fail is not a control. This exercises the same
+# logic against a SYNTHETIC ledger in a temp dir, so the proof needs no mutation
+# of the real ledger (which would itself be a destructive edit).
+
+def _resolve_against(ledger_text: str, tracked: set, ignored: set):
+    """Mirror of the resolvability rule, run against supplied inputs.
+
+    Returns a list of unresolved citations. Kept in lockstep with
+    test_evidence_citations_resolve_to_tracked_paths.
+    """
+    tracked_basenames = {p.rsplit("/", 1)[-1] for p in tracked}
+    unresolved = []
+    for i, line in enumerate(ledger_text.splitlines(), start=1):
+        if "**Evidence:**" not in line and "**Code:**" not in line:
+            continue
+        for m in _PATH_RE.finditer(line):
+            path = m.group(1)
+            if path in ignored:
+                unresolved.append(f"line {i}: {path!r} (gitignored)")
+                continue
+            if {path, path.lstrip("./")} & tracked:
+                continue
+            if "/" not in path and path in tracked_basenames:
+                continue
+            unresolved.append(f"line {i}: {path!r} (untracked)")
+    return unresolved
+
+
+def test_resolvability_checker_fires_on_bad_citations():
+    tracked = {"docs/assets/exp/x/metrics.json", "experiments/a/src/run.py"}
+    ignored = {"experiments/a/output/metrics.json"}
+
+    # positive: good citations resolve
+    good = (
+        "**Evidence:** `docs/assets/exp/x/metrics.json`\n"
+        "**Code:** `experiments/a/src/run.py` (+ frozen `selection.json`)\n"
+    )
+    assert _resolve_against(good, tracked | {"experiments/a/src/selection.json"}, ignored) == []
+
+    # negative 1: cites a gitignored path -> must fire
+    bad_ignored = "**Evidence:** `experiments/a/output/metrics.json`\n"
+    got = _resolve_against(bad_ignored, tracked, ignored)
+    assert got, "checker did NOT fire on a gitignored citation — it is not a control"
+    assert "gitignored" in got[0]
+
+    # negative 2: cites a path that does not exist / is untracked -> must fire
+    bad_untracked = "**Code:** `experiments/a/src/DOES_NOT_EXIST.py`\n"
+    got2 = _resolve_against(bad_untracked, tracked, ignored)
+    assert got2, "checker did NOT fire on an untracked citation — it is not a control"
+    assert "untracked" in got2[0]
