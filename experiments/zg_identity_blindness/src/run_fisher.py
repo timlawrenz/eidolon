@@ -33,8 +33,9 @@ CORPUS = "/mnt/nas-ai-models/training-data/eidolon/hegre_corpus"
 SOURCE = "/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1"
 ZG_SRC = "/mnt/nas-ai-models/training-data/eidolon/hegre_corpus"  # corpus z_g is the consumed copy
 
-# The zg source tree used by the zg-validity arm (flat {image_id}.npy):
-ZG_TREE = "/mnt/nas-ai-models/training-data/eidolon/geometry_pca_data/zg"
+# The zg source tree (flat {image_id}.npy under zg/faces/{persona}/{set}/):
+#   verified 2026-09-24 -> /mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/zg
+ZG_TREE = "/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/zg"
 
 FACE_SLICE = slice(23, 91)  # 68 face keypoints of the 133 DWPose whole-body
 
