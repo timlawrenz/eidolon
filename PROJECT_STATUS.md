@@ -1,6 +1,6 @@
 # Project Status — Eidolon
 
-**Last updated:** 2026-07-20
+**Last updated:** 2026-09-23
 **Phase / status:** Phase 5b concluded — between phases
 
 ## Current state
@@ -15,6 +15,14 @@ a complementary shape-morphology stream (linearly AuraFace-orthogonal, R²=−0.
 classified, ~54k bad_geometry reclassified). LDA basis refitted on 324 personas
 (2.1×) and 166k images (3×). The refit raised GT-LDA ceiling from R@1=0.842
 → **0.854** — a tighter target for Phase 5 DiT fusion.
+
+**2026-09-23:** Training corpus rebuilt on the refitted basis: **31,711 samples /
+321 personas, 0 errors**, with `_manifest.json` recording the basis fingerprint
+(`e2f66241288e1f50`). The prior corpus was revealed to be a *mixed-basis*
+generation (37,011 dirs; 5,306 stale dirs carried pre-refit persona averages) —
+retained at `hegre_corpus.old`. Corpus builds are now resumable
+(`--skip-existing`) and auditable (manifest); per-image LDA reprojected onto the
+new basis. Gate **G3 PASS**.
 
 Dead partitions (z_d depth, z_a normals, DINO bridge) are permanently documented
 and will not be re-attempted. No active training runs.

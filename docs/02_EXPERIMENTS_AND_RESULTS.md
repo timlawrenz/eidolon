@@ -1367,7 +1367,22 @@ Cross-shoot evaluation: query = held-out-shoot AuraFace → LDA, index = remaini
 
 ### G3 — Corpus integrity
 
-Dry-run confirms 31,711 eligible samples (321 personas, max 100/img). Full build pending on training box (NAS-to-NAS copy too slow from agent). Old corpus at 31,668 samples survives — rebuild with new LDA averages when convenient.
+**PASS.** Full rebuild executed on the cleaned dataset: **31,711 samples / 321 personas, 0 errors** (target ≥ 31,668). On-disk sample dirs match `_manifest.json` exactly (0 orphans, 0 incomplete in a 500-sample audit); basis fingerprint `e2f66241288e1f50`.
+
+**The pre-rebuild corpus was a mixed-basis generation.** The old corpus held **37,011 dirs**, not the ~31.7k a single build produces. Because samples are named `{persona}--{stem}` ("stable across rebuilds") and every sample stores the **persona average** (not per-image vector) as `auraface_lda.npy`, dirs that a later build does not re-select simply survive — carrying the *previous* basis. Diff of old vs new sample sets:
+
+| | count |
+|---|---|
+| old corpus dirs (pre-rebuild) | 37,011 |
+| new corpus (manifest) | 31,711 |
+| **stale dirs** (in old, not re-selected) | **5,306** (14.3%) |
+| new dirs (not in old) | 6 |
+
+The 5,306 stale dirs carried pre-refit persona averages → training on the old corpus would silently mix bases. Old corpus preserved at `hegre_corpus.old`.
+
+Two operational findings recorded:
+- The first build was **killed by a session interruption at 81.4%** (25,820/31,711) — agent-spawned background processes do not survive session restarts. Fixed structurally: added `--skip-existing` (idempotent, resumable) + a `_manifest.json` recording the basis fingerprint and full sample list. Re-run: 25,815 skipped + 5,896 written = 31,711 in 19.4 min, 0 errors.
+- **4 orphan dirs** appeared where images were re-labelled `tainted:extraction_nonface` *between* the two runs (the review UI's DONE spawns a background `compute-geometry` job that can keep writing taint labels minutes after it returns). Quarantined to `hegre_corpus.orphans-20260923/`.
 
 ### Adversarial pass
 
@@ -1375,7 +1390,8 @@ Dry-run confirms 31,711 eligible samples (321 personas, max 100/img). Full build
 - [x] Metric definition unchanged — same R@k cdist-based recall
 - [x] Result reproduced — 4 variants consistent, Euclidean dominant
 - [x] Extremes inspected — ceiling rise (+1.2pp) directionally consistent with cleaner data
-**Verdict: PASS (G1 + G2)**
+- [x] G3 corpus integrity cross-checked against the manifest AND a raw on-disk diff (37,011 vs 31,711) — the 5,306 stale dirs were *measured*, not assumed; the 4 orphans were traced to a label change between runs rather than waved away
+**Verdict: PASS (G1 + G2 + G3)**
 
 ### Verdict
 
@@ -1394,9 +1410,11 @@ Dry-run confirms 31,711 eligible samples (321 personas, max 100/img). Full build
 - `corpus_builder.py` — migrated to HegreDataset (PG)
 - `data_loader.py` — migrated to HegreDataset (PG)
 - `experiments/geometry_pca/scripts/46b_phase5b_gt_lda_refit.py` — fast-path retrieval script
+- `hegre_corpus/_manifest.json` — corpus manifest (basis fingerprint `e2f66241288e1f50`, 31,711 samples)
+- `hegre_corpus.old` — pre-rebuild corpus (37,011 dirs, mixed-basis) — retained for audit
+- `hegre_corpus.orphans-20260923/` — 4 dirs whose images were re-labelled tainted between runs
 
 ### Pending
 
-- Full corpus rebuild on training box: `python -m tools.hegre_dataset build-corpus --dataset ... --output ... --max-images 100`
-- Per-image LDA re-projection: `python -m tools.hegre_dataset enrich --dataset ... --status approved --skip-stratum`
 - Sapiens2 widen to 100 personas (already planned, cleaner data simplifies cohort selection)
+- Optionally purge `hegre_corpus.old` (233 GB) once the new corpus has been exercised
