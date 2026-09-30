@@ -1,11 +1,18 @@
 # Tests excluded from the CI gate — GATED-NOT-FIXED (2026-09-30).
 #
 # The in-scope suite was not green when CI was added (21 failed / 121 passed /
-# 1 collection error). These files are excluded so the CI gate is green and
-# honest rather than red and ignored. Fix each, then delete its line.
+# 1 collection error, plus env-dependent failures on a clean runner). These
+# entries are excluded so the CI gate is green and honest rather than red and
+# ignored. Fix each, then delete its line.
 # Tracking ticket: https://github.com/timlawrenz/eidolon/issues/3
 #
-# Re-including is the completion condition for issue #3.
+# Syntax:
+#   path                     -> whole file ignored (--ignore)
+#   path::test_node_id       -> single test deselected (--deselect)
+#
+# Re-including every line is the completion condition for issue #3.
+
+# --- Whole files (broken/bit-rotted or torch/NAS-dependent) ---
 tests/tools/test_enrichment.py
 tests/tools/test_review_ui.py
 tests/tools/test_hegre_dataset_cli.py
@@ -13,3 +20,10 @@ tools/hegre_dataset/tests/test_flame_shape.py
 tools/hegre_dataset/tests/test_flame_render.py
 tools/hegre_dataset/tests/test_db_migrate.py
 tools/hegre_dataset/tests/test_averages.py
+
+# --- Single tests in test_auraface_extract.py (cannot run on a neutral runner) ---
+# These need a GITIGNORED basis artifact (experiments/geometry_pca/output/auraface_preprocess.npz)
+# and/or cv2; everything else in the file is a pure abstraction test and runs.
+tests/tools/test_auraface_extract.py::test_real_basis_verifies
+tests/tools/test_auraface_extract.py::test_describe_instrument_records_everything_required
+tests/tools/test_auraface_extract.py::test_extract_verifies_basis_before_detecting

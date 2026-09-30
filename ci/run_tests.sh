@@ -17,7 +17,11 @@ while IFS= read -r line; do
   line="${line%%#*}"                       # strip trailing comments
   line="$(echo "$line" | xargs)"           # trim
   [ -z "$line" ] && continue
-  ignores+=("--ignore=$line")
+  if [[ "$line" == *"::"* ]]; then
+    ignores+=("--deselect=$line")
+  else
+    ignores+=("--ignore=$line")
+  fi
 done < ci/known-failing.txt
 
 echo "::group::Excluded from this gate (known-failing — see ci/known-failing.txt, issue #3)"

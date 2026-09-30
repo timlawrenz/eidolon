@@ -37,6 +37,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags too: this job also runs the ledger/citation lint
+          # (it lives under tests/tools/), which asserts cited commits exist and
+          # carry tags. A shallow checkout makes that assertion fail here.
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
