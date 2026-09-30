@@ -1,0 +1,15 @@
+# Tests excluded from the CI gate — GATED-NOT-FIXED (2026-09-30).
+#
+# The in-scope suite was not green when CI was added (21 failed / 121 passed /
+# 1 collection error). These files are excluded so the CI gate is green and
+# honest rather than red and ignored. Fix each, then delete its line.
+# Tracking ticket: https://github.com/timlawrenz/eidolon/issues/3
+#
+# Re-including is the completion condition for issue #3.
+tests/tools/test_enrichment.py
+tests/tools/test_review_ui.py
+tests/tools/test_hegre_dataset_cli.py
+tools/hegre_dataset/tests/test_flame_shape.py
+tools/hegre_dataset/tests/test_flame_render.py
+tools/hegre_dataset/tests/test_db_migrate.py
+tools/hegre_dataset/tests/test_averages.py

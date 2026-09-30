@@ -1,0 +1,14 @@
+# Test / CI dependencies — the neutral-runner subset.
+#
+# This repo intentionally has no root manifest beyond this file: the heavy
+# scientific stack (torch, cv2, insightface, sapiens, matplotlib) lives in the
+# per-experiment venvs (e.g. experiments/geometry_pca/requirements.txt), because
+# the experiments are script-driven and arm-local.
+#
+# The CI gate runs only tests that need no GPU, no NAS mount, and none of the
+# heavy extras. Add a dep here only if a test in the judged suite imports it.
+pytest>=8.0
+numpy>=1.26
+PyYAML>=6.0
+pillow>=10.0
+SQLAlchemy>=2.0
