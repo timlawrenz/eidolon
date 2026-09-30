@@ -12,3 +12,7 @@ numpy>=1.26
 PyYAML>=6.0
 pillow>=10.0
 SQLAlchemy>=2.0
+# `tools/hegre_dataset/models.py` imports pgvector at module level, so any test
+# that touches models/dataset needs it. Present in the dev venv, hence invisible
+# until the first CI run — the CI-local divergence the neutral runner exists to catch.
+pgvector>=0.3
