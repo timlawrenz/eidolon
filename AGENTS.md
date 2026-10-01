@@ -115,6 +115,19 @@ keeps the example current; it does not make the table authoritative.
   producing code and copy its inverse. A wrong convention can be *plausible* and
   survive naive sanity checks (a mirror preserves the centroid, so "the points
   look centred" proves nothing). See **Data provenance** above.
+- **All GPU work goes through the shared GPU scheduler — never run on the 4090
+  (or Strix) outside a reservation.** Reserve with
+  `/mnt/nas-ai-models/gpu-scheduler/gpu_scheduler.py`
+  (`request → poll → activate → launch detached → heartbeat → release`). The
+  scheduler is shared and FIFO: a process holding the card with **no claim** is a
+  *foreign process* that blocks every other consumer (`not_my_turn`) even while
+  the GPU reads idle. Long jobs must be launched **detached** (`setsid nohup`)
+  with a heartbeat that keeps the claim alive.
+- **eidolon reserves its own GPU needs and owns no other project's scheduling.**
+  eidolon does not operate, monitor, or clear another project's runs or queue
+  entries (e.g. prx-tg's) — those belong to that project and to the scheduler. A
+  cross-project dependency is recorded as a pointer in `docs/briefings/`, never as
+  eidolon's operational responsibility.
 
 ## Data provenance — who writes what (read before interpreting any array)
 
@@ -237,6 +250,7 @@ full workflow reference.
 | NAS (experiment data) | `/mnt/nas-ai-models/training-data/eidolon/` |
 | Hegre dataset | `/mnt/nas-ai-models/training-data/eidolon/hegre-faces/v1/` |
 | Strix Halo box | Data feeder only (not for training) |
+| GPU access | **Scheduler-only** — reserve via `/mnt/nas-ai-models/gpu-scheduler/gpu_scheduler.py`; never run on the card without a claim |
 
 ## Verdicts at a glance
 
