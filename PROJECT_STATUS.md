@@ -1,7 +1,7 @@
 # Project Status — Eidolon
 
-**Last updated:** 2026-09-24
-**Phase / status:** Phase 5b concluded — between phases
+**Last updated:** 2026-09-30
+**Phase / status:** Phase 5 (DiT Fusion) not started · enrolled on the Founders-Harness as `research`
 
 ## Current state
 
@@ -73,11 +73,44 @@ Also established: the corpus **`auraface_lda.npy` is the persona centroid**
 — the centroid construction for the prx-tg arm is therefore already baked into the
 data and verified, not assumed.
 
-⚠️ **Still open:** (a) G3 — the retired claim drives a **persona-average filter** in
-`extract_zg_and_averages.py`, so persona averages may be biased; (b) is the `z_g`
-*encoding* reliable at pose-distribution extremes (reviewer's Sapiens-OOD
-hypothesis); (c) extreme-pose/off-frame crops pass review and affect **all three
-streams**, not just `z_g` — needs its own corpus-quality arm.
+**2026-09-30 — governance & harness (no science change).** eidolon enrolled on the
+**Founders-Harness** as `research · founder-gated`: the destination question — *is
+eidolon research or a product?* — is answered **research** (publish to build
+reputation on lawrenz.com / HF; the product frame is deferred, not refused, until a
+monetization hypothesis exists). Its rigour leg was already in place
+(`experiment-structure`, `EXPERIMENT_TREE`, pre-registered gates, tombstones);
+**the missing leg is publication, not rigour.** `main` was reconciled to the single
+governance tip — before this it was 232 commits behind and carried **none** of
+`PROJECT_STATUS.md` / `AGENTS.md` / the tree / the ledger; `docs/architecture.md` is
+superseded by `01_VISION_AND_ARCHITECTURE.md`. CI added (see below). No new
+experiments — the science state above is unchanged since 2026-09-24.
+
+## Harness / legibility
+
+The research kind's success is **reputation → being hired**; its gate is **a legible
+public artefact**, its one-number is **artefacts published** (witnessed externally —
+the HF API / the live URL, never self-reported).
+
+| Field | Value |
+|---|---|
+| kind · mode | `research` · `founder-gated` |
+| gate | a legible public artefact (HF release · published lawrenz.com post) |
+| one-number | **artefacts published = 0** (external witness: HF API + live URL) |
+| driver | `eidolon-publication` — created **paused** (staging only; first public release needs founder approval) |
+| conformance loop | `eidolon-vision-review` — created **paused** |
+| open question | **audience** — who the artefact must be legible to (default: *a hiring manager in 10 minutes*) |
+| state note | `04 - projects/eidolon/State.md` |
+
+## Repo & CI
+
+- **`main` is the single reconciled tip** — governance backbone + tools + the
+  concluded arms' code and history. No active experiment branch.
+- **CI** on push/PR to `main`: a **governance lint** (every ledger citation must
+  resolve to an existing, *tagged* commit and cite tracked files) and the
+  **shared-tool test** suite (103 pass).
+- **Test debt:** 21 known-failing / CI-incompatible tests are recorded in
+  `ci/known-failing.txt` and tracked as **issue #3**; the gate is green on the
+  remainder rather than red and ignored.
 
 ## Headline result so far
 
@@ -86,22 +119,34 @@ cleaning + LDA basis refit). The retrieval space is sound; the gap is in the
 text→LDA Prior (R@10=0.072, statistically indistinguishable from
 random-projection null, p=0.063 at k=10).
 
+## Open debts (science, carried)
+
+- **G3 — persona-average filter.** The retired `norm>25` claim drives a
+  persona-average filter in `extract_zg_and_averages.py`, so persona averages may be
+  biased. Not re-examined.
+- **H3 — `z_g` encoding at pose extremes.** Is the *encoding* reliable where the pose
+  distribution is extreme (the reviewer's Sapiens-OOD hypothesis)? Needs its own
+  pre-registered gate.
+- **Corpus quality.** Extreme-pose / off-frame crops pass human review and affect
+  **all three streams** (not just `z_g`) — needs a corpus-quality arm.
+- **`tainted:approved_bad_geometry` artifact** — 19 rows with a bit-identical
+  `zg_distance` (a constant-distance defect), unexplained.
+
 ## Immediate next action
 
-**Phase 5: DiT Fusion Stack** — implement the 2-stream decoupled cross-attention
-DiT with block-diagonal ingestion. Conditioning inputs settled:
-- Identity: flesh-masked DINOv3 patch tokens
-- Geometry control: z_g expanded tokens (DWPose, identity-blind)
-- (Future) Shape-morphology: Sapiens2 stream (AuraFace-orthogonal)
+1. **Legibility (the named blocker).** Answer the **audience** question → resume
+   `eidolon-publication` → stage the first artefact (the disentanglement write-up:
+   Phase 1–5 method, AuraFace-LDA R@1 = 0.854, and the negative results).
+2. **Science.** **Phase 5 — DiT Fusion Stack**: the 2-stream decoupled
+   cross-attention DiT with block-diagonal ingestion. Conditioning inputs settled:
+   - Identity: flesh-masked DINOv3 patch tokens
+   - Geometry control: `z_g` expanded tokens (DWPose, identity-blind)
+   - (Future) Shape-morphology: Sapiens2 stream (AuraFace-orthogonal)
 
-Architecture reference: `docs/01_VISION_AND_ARCHITECTURE.md` §7.
-No blockers. Ready to start.
+   Architecture reference: `docs/01_VISION_AND_ARCHITECTURE.md` §7. No blockers.
 
 ## Active branches
 
-| Branch | Workstream | Status |
-|--------|-----------|--------|
-| `exp/text-to-zg` | Phase 5a/b — Text→identity Prior + Poser retrieval | CONCLUDED |
-| `exp/sapiens2-keypoints-study` | Sapiens2 keypoints — faithfulness + identity carrier | CONCLUDED |
-| `exp/geometry-pca` | Phases 1–4 — geometry PCA, volumetric encoders, DINO bridge | CONCLUDED |
-| `main` | Infrastructure, docs, tools | STABLE |
+`main` = the single reconciled tip (governance + tools + concluded arms). All
+Phase 1–5b work is `[CONCLUDED]` and now lives on `main`; no active experiment
+branch. Historical work is preserved on the concluded `exp/*` branches and tags.
