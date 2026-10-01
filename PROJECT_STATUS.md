@@ -98,7 +98,7 @@ the HF API / the live URL, never self-reported).
 | one-number | **artefacts published = 0** (external witness: HF API + live URL) |
 | driver | `eidolon-publication` — created **paused** (staging only; first public release needs founder approval) |
 | conformance loop | `eidolon-vision-review` — created **paused** |
-| open question | **audience** — who the artefact must be legible to (default: *a hiring manager in 10 minutes*) |
+| audience | **resolved 2026-09-30: scientists** — advance the field, presented well; conversion to product/venture is conditional on it working *really, really well* |
 | state note | `04 - projects/eidolon/State.md` |
 
 ## Repo & CI
@@ -134,9 +134,9 @@ random-projection null, p=0.063 at k=10).
 
 ## Immediate next action
 
-1. **Legibility (the named blocker).** Answer the **audience** question → resume
-   `eidolon-publication` → stage the first artefact (the disentanglement write-up:
-   Phase 1–5 method, AuraFace-LDA R@1 = 0.854, and the negative results).
+1. **Legibility (the named blocker).** Stage the first **scientist-facing** artefact —
+   an arXiv-oriented technical write-up (method, ablations, and the negative results;
+   AuraFace-LDA R@1 = 0.854) — then resume `eidolon-publication`.
 2. **Science.** **Phase 5 — DiT Fusion Stack**: the 2-stream decoupled
    cross-attention DiT with block-diagonal ingestion. Conditioning inputs settled:
    - Identity: flesh-masked DINOv3 patch tokens
