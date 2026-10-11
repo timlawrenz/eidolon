@@ -94,3 +94,48 @@ directory is unchanged. No new approvals since 2026-09-28; the job remains
 complete. The cron job's premise ("~1,500 missing per-image LDA files", new
 refit basis) is **stale** — that reprojection ran 2026-07-25/28 — so every
 future run of this job will sweep 166k NFS paths to report zero.
+
+## Re-run — 2026-10-11 (scheduled cron, same command)
+
+Identical outcome for the third consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261011.log`; wall clock 5 m 07 s, git `98882c8`,
+clean tree). Independent `probe_scan.py` re-sweep over all approved images
+(`probe_scan-20261011.log`):
+
+| quantity | 2026-09-28 | 2026-09-30 | 2026-10-11 |
+|---|---|---|---|
+| approved images | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | **0** |
+| LDA files written by the run | 0 | 0 | **0** |
+
+Independent checks:
+
+* `find v1/lda -name '*.npy' -newermt 2026-10-10` → **0** — no LDA file was
+  written or touched by this run (the "0 files written" line is a true zero, not
+  a silent-failure zero).
+* `hegre-dataset basis-fingerprint verify` on `v1/lda/` →
+  `120e1c5a1dc4f423` ("refit basis, raw coords (norm ~153)") — match.
+* Sampled existing LDA files: shape `(64,)`, `float32`, norm 152.6–154.8 —
+  refit raw-coords convention.
+
+No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
+remains complete.
+
+## Recommendation — de-register this cron job (no-op since the reprojection)
+
+The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
+2026-07-24, `repeat.completed = 36` recorded before this run, `last_status = ok`.
+Each of the three *audited* runs (2026-09-28, 2026-09-30, 2026-10-11) has written
+**zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
+basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
+costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
+
+Nothing can recreate the condition this job guards against except (a) new images
+being *approved* in the review DB, or (b) a fresh LDA basis refit — and (b) already
+writes its own reprojection step (`scripts/reproject_lda.py`,
+`scripts/reproject_lda_ffhq.py`). Recommendation: **remove the daily schedule** and
+run this sweep on demand (or once) after a basis refit or an approval batch, never
+on a fixed cadence. Not executed here — the cron registry is the operator's, and a
+job run may not modify its own schedule.
