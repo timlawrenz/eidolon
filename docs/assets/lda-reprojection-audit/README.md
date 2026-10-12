@@ -123,11 +123,57 @@ Independent checks:
 No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
 remains complete.
 
+## Re-run — 2026-10-12 (scheduled cron, same command)
+
+Identical outcome for the **fourth** consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261012.log`; wall clock 5 m 43 s, git `9c1f731`,
+clean tree). Independent `probe_scan.py` re-sweep over all approved images
+(`probe_scan-20261012.log`):
+
+| quantity | 2026-09-28 | 2026-09-30 | 2026-10-11 | 2026-10-12 |
+|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | **0** |
+
+Independent checks:
+
+* `find v1/lda -name '*.npy' -newermt 2026-10-11` → **0** — no LDA file was
+  written or touched by this run (the "0 files written" line is a true zero, not
+  a silent-failure zero).
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK 120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match.
+  (Verifying the *dataset root* now reports `FAIL … unstamped`: the stamp lives in
+  `v1/lda/`, not the root — verify the `lda/` subdir, not `v1/`.)
+* Sampled existing LDA files: shape `(64,)`, `float32`, norm 152.6–154.8 —
+  refit raw-coords convention.
+
+No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
+remains complete.
+
+Raw `enrich` output for this run (exit 0):
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+(The `enrich-*.log` / `probe_scan-*.log` files in this dir are working-tree
+artifacts only — `.gitignore` excludes `*.log`, so they are **not** committed;
+the numbers they evidence are transcribed into this README.)
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
 2026-07-24, `repeat.completed = 36` recorded before this run, `last_status = ok`.
-Each of the three *audited* runs (2026-09-28, 2026-09-30, 2026-10-11) has written
+Each of the **four** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11,
+2026-10-12) has written
 **zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
 basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
 costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
