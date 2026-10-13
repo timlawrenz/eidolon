@@ -168,12 +168,72 @@ Enrichment complete.
 artifacts only — `.gitignore` excludes `*.log`, so they are **not** committed;
 the numbers they evidence are transcribed into this README.)
 
+## Re-run — 2026-10-13 (scheduled cron, same command)
+
+Identical outcome for the **fifth** consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261013.log`; wall clock **6 m 33 s**, git
+`f5a9b15`, clean tree). Independent `probe_scan.py` re-sweep over all approved
+images (`probe_scan-20261013.log`):
+
+| quantity | 2026-09-28 | 2026-09-30 | 2026-10-11 | 2026-10-12 | 2026-10-13 |
+|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | **0** |
+
+Independent checks:
+
+* `find v1/lda -name '*.npy' -newermt 2026-10-12` → **0**; `-newermt '2026-10-13 00:00'`
+  → **0** — no LDA file was written or touched by this run (the "0 files written"
+  line is a true zero, not a silent-failure zero). Newest file in the tree is still
+  `2026-07-28`.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK 120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match.
+* Sampled existing LDA files: shape `(64,)`, `float32`, norms 152.6–154.8 —
+  refit raw-coords convention (five samples, same as prior runs).
+
+No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
+remains complete.
+
+**New observation this run — the `os.execv` restart fired.** Unlike the four prior
+recorded runs, this launch printed `Restarting subprocess to load CUDA libraries...`
+after the z_g stage: `LD_LIBRARY_PATH` was not pre-set, so `enrichment.py` re-exec'd
+with `sys.executable` (the `.venv` python) once to set the cuDNN path, then re-ran
+the **entire** NFS sweep from the top. Result: the 166k-path stat loop ran **twice**
+and wall clock roughly doubled (6 m 33 s vs ~5 m 07–43 s on 2026-10-11/12). It is a
+**single** restart, not the infinite loop the enrichment-operations reference warns
+about — the second pass finds `LD_LIBRARY_PATH` set, skips the guard, and terminates
+normally (`Error: insightface not installed. Skipping AuraFace extraction.` is the
+expected benign path: all AuraFace files already exist). Pre-setting `LD_LIBRARY_PATH`
+per the reference would avoid the wasted double sweep, but since the job is a proven
+no-op the restart cost is moot — it is a further argument for de-registration.
+
+Raw `enrich` output for this run (exit 0):
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
-2026-07-24, `repeat.completed = 36` recorded before this run, `last_status = ok`.
-Each of the **four** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11,
-2026-10-12) has written
+2026-07-24, `repeat.completed = 38` recorded before this run, `last_status = ok`.
+Each of the **five** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
+2026-10-13) has written
 **zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
 basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
 costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
