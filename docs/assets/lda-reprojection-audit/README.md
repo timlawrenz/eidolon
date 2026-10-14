@@ -228,6 +228,75 @@ All approved images already have AuraFace-LDA data.
 Enrichment complete.
 ```
 
+## Re-run — 2026-10-14 (scheduled cron, same command)
+
+Identical outcome for the **sixth** consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261014.log`; wall clock **≈ 6 min 34 s**
+[03:00:38 → 03:07:12 EDT], git `1a7a282`, clean tree at launch). Independent
+`probe_scan.py` re-sweep over all approved images (`probe_scan-20261014.log`):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 |
+|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Independent checks:
+
+* `find v1/lda -name '*.npy' -newermt '2026-10-13 00:00'` → **0** — no LDA file
+  was written or touched by this run (the "0 files written" line is a true zero,
+  not a silent-failure zero). Newest file in the tree is still **2026-07-28**.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK       .../v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match.
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`,
+  `float32`, norms 152.61–154.79 — refit raw-coords convention, unchanged.
+
+No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
+remains complete.
+
+**Restart fired again (second consecutive run).** As on 2026-10-13, the launch did
+**not** pre-set `LD_LIBRARY_PATH`, so `enrichment.py` re-exec'd once
+(`Restarting subprocess to load CUDA libraries...`) and re-ran the entire 166k-path
+NFS sweep — hence the ~6.5 min wall clock (vs ~5 m 07–43 s when no restart fires,
+cf. 2026-10-11/12). Single restart, not a loop; second pass terminates normally.
+Pre-setting `LD_LIBRARY_PATH` per `references/enrichment-operations.md` would avoid
+the wasted double sweep.
+
+Raw `enrich` output for this run (exit 0):
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
+**Job state at this run:** still `enabled: true`, `state: scheduled`,
+`repeat.completed = 39` (was 38 before the 2026-10-13 run), `last_status = ok`,
+`next_run_at = 2026-10-15T03:00` — i.e. the de-registration recommendation below
+has still not been executed, and the next run is already queued.
+
+**New observation this run — the audit records were never pushed.** `main` is
+**ahead of `origin/main` by 4 commits**: the 2026-10-11 / 10-12 / 10-13 audit
+commits plus `98882c8 docs(briefings): stage the eidolon scientist-facing
+write-up`. The job is `deliver: local`, so each run committed its record locally
+and stopped — six days of audit history existed only in the working clone.
+Diff is docs-only (374 insertions, 2 markdown files, zero binaries/gitlinks), so
+the 2026-10-14 run pushed it (remote `main` → `1a7a282`-equivalent tip). This is
+the first run of this job to gate on **remote-visible** state rather than
+local commit state.
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
