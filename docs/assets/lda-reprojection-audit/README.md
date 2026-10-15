@@ -297,12 +297,79 @@ the 2026-10-14 run pushed it (remote `main` → `1a7a282`-equivalent tip). This 
 the first run of this job to gate on **remote-visible** state rather than
 local commit state.
 
+## Re-run — 2026-10-15 (scheduled cron, same command)
+
+Identical outcome for the **seventh** consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261015.log`; wall clock **6 m 12 s**
+[03:04:07 → 03:10:19 EDT], git `f74c8e7`, clean tree at launch). Independent
+`probe_scan.py` re-sweep over all approved images (`probe_scan-20261015.log`):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 |
+|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Independent checks:
+
+* **Pre-flight tree set-difference (the authoritative check, run *before* `enrich`):**
+  `auraface/` and `lda/` hold exactly **295,468 `.npy` each — `comm` diff 0 missing,
+  0 orphans** (full `find`+sort of both trees). Zero LDA work is reachable from the
+  entire tree, not merely from the approved set.
+* `find v1/lda -name '*.npy' -newermt '2026-10-15 00:00'` → **0**;
+  `-newermt '2026-10-14 00:00'` → **0** — no LDA file was written or touched by this
+  run (the "0 files written" line is a true zero, not a silent-failure zero). Newest
+  file in the tree is still **2026-07-28 14:42**.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK       .../v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match.
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`,
+  `float32`, norms 152.61–154.79 — refit raw-coords convention, unchanged.
+
+No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
+remains complete.
+
+**Restart fired again (third consecutive run).** The launch did not pre-set
+`LD_LIBRARY_PATH`, so `enrichment.py` re-exec'd once (`Restarting subprocess to load
+CUDA libraries...`) and re-ran the entire 166k-path NFS sweep — hence the 6 m 12 s
+wall clock (vs ~5 m 07–43 s when no restart fires, cf. 2026-10-11/12). Single
+restart, not a loop; the second pass terminates normally.
+
+**Remote state gated (second run to do so).** At launch `main` **== `origin/main`**
+(`f74c8e7`) — the 2026-10-14 run's push landed, so no audit history is stranded in
+the working clone. This run commits and pushes its own record on the same
+remote-visible basis.
+
+**Job state at this run:** still `enabled: true`, `state: scheduled`,
+`repeat.completed = 40` (was 39 before the 2026-10-14 run), `last_status = ok`,
+`next_run_at = 2026-10-16T03:00` — the de-registration recommendation below remains
+unexecuted, and the next run is already queued.
+
+Raw `enrich` output for this run (exit 0):
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
-2026-07-24, `repeat.completed = 38` recorded before this run, `last_status = ok`.
-Each of the **five** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
-2026-10-13) has written
+2026-07-24, `repeat.completed = 40` as of the 2026-10-15 run, `last_status = ok`.
+Each of the **seven** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
+2026-10-13, 2026-10-14, 2026-10-15) has written
 **zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
 basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
 costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
