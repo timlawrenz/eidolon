@@ -364,12 +364,94 @@ All approved images already have AuraFace-LDA data.
 Enrichment complete.
 ```
 
+## Re-run — 2026-10-16 (scheduled cron, same command)
+
+Identical outcome for the **eighth** consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261016.log`; wall clock **348.0 s**
+[03:01:17 → 03:07:05 EDT], git `43f933e`, clean tree at launch,
+`main == origin/main`). Independent `probe_scan.py` re-sweep over all approved
+images (`probe_scan-20261016.log`):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 |
+|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Approved count unchanged at 166,200 — no new approvals since 2026-09-30. The
+review-DB status census this run: `tainted:extraction_nonface` 215,914 ·
+`approved` 166,200 · `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19.
+
+Independent checks:
+
+* **Pre-flight whole-tree set-difference (the authoritative check, run *before*
+  `enrich`):** `auraface/` and `lda/` hold exactly **295,468 `.npy` each**; full
+  `find`+`sort`+`comm` → **0 in auraface-not-lda, 0 in lda-not-auraface**. Zero
+  LDA work is reachable from the entire tree, not merely from the approved set.
+* `find v1/lda -name '*.npy' -newermt '2026-10-16 00:00'` → **0**;
+  `-newermt '2026-10-15 00:00'` → **0** — no LDA file was written or touched by
+  this run (the "0 files written" line is a true zero, not a silent-failure
+  zero). Newest file in the tree is still **2026-07-28 14:42**.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK       .../v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match.
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`,
+  `float32`, norms 152.61–154.79 — refit raw-coords convention, unchanged.
+
+**Correction to a prior claim — the "Restarting subprocess…" log line is not a
+reliable witness that the restart fired.** Runs 2026-10-13…10-15 were recorded
+above as "restart fired" *because the line appears in the log*, and 10-11/10-12
+as "no restart" *because it does not*. That inference does not hold: the line is
+emitted immediately **before** `os.execv` in `enrichment.py`, and **`os.execv`
+does not flush Python's userspace stdout buffer** — so under the block-buffered
+redirection this job uses, a *fired* restart discards every unflushed pre-exec
+line and can leave a single-sequence log indistinguishable from no restart.
+Demonstrated with [`exec_flush_probe.py`](exec_flush_probe.py) (committed this
+run; `.venv/bin/python` = CPython 3.14, stdout redirected to a file):
+`MARKER_PRE_EXEC_NO_FLUSH` (explicitly flushed) **survives** the exec;
+`MARKER_PRE_EXEC_BUFFERED` (unflushed) is **lost**. Note `enrich`'s own prints
+carry no `flush=True` outside the every-500 progress line, so the whole pre-exec
+sequence is buffer-resident at exec time.
+
+Consequences for this audit: (a) the 10-11…10-15 wall-clock split
+(5 m 07–43 s "no restart" vs 6 m 12–34 s "restart") is likewise **not**
+dispositive — a second pass over the same paths is largely dentry/page-cache
+warm, so the observed ~30–50 s delta is within this job's run-to-run spread; and
+(b) this run's log shows a **single sequence** (no restart line) at 348.0 s,
+which falls in the "no-restart" band — but that is consistent with *either*
+state, and the guard's preconditions do hold here (**`LD_LIBRARY_PATH` empty at
+launch, and the cuDNN dir present**, both verified). The restart's true
+incidence across runs is therefore **unresolved**, and no prior "restart fired"
+attribution should be relied on. It does not affect the material finding: **0
+files written**, which is independently corroborated by the tree checks above
+(log-line-free evidence).
+
+Raw `enrich` output for this run (exit 0):
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
+**Job state, read mid-run (03:14 EDT):** `enabled: true`, `state: scheduled`,
+`last_status: ok`, `last_error: null`, `repeat.completed = 41` (was 40 at the
+2026-10-15 run), `next_run_at = 2026-10-17T03:00` (today's fire already
+advanced), `deliver: local`, `created_at = 2026-07-24T08:45:36`. The
+de-registration recommendation below remains unexecuted.
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
-2026-07-24, `repeat.completed = 40` as of the 2026-10-15 run, `last_status = ok`.
-Each of the **seven** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
-2026-10-13, 2026-10-14, 2026-10-15) has written
+2026-07-24, `repeat.completed = 41` as of the 2026-10-16 run, `last_status = ok`.
+Each of the **eight** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
+2026-10-13, 2026-10-14, 2026-10-15, 2026-10-16) has written
 **zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
 basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
 costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
