@@ -574,12 +574,88 @@ Enrichment complete.
 `created_at = 2026-07-24T08:45:36`. The de-registration recommendation below
 remains unexecuted.
 
+## Re-run — 2026-10-19 (scheduled cron, same command)
+
+Identical outcome for the **eleventh** consecutive recorded run. `enrich` exit 0,
+**0 files written** (`enrich-20261019.log`; wall clock **5 m 13 s**
+[03:02:43 → 03:07:56 EDT], git `fe90ffe`, clean tree at launch). Independent
+`probe_scan.py` re-sweep over all approved images (`probe_scan-20261019.log`,
+exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (via [`status_census.py`](status_census.py)):
+`tainted:extraction_nonface` 215,914 · `approved` 166,200 ·
+`tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 (total 384,012) — **identical to 2026-10-18**;
+no new approvals.
+
+Independent checks:
+
+* **Pre-flight whole-tree set-difference (the authoritative check, run *before*
+  `enrich`):** `auraface/` and `lda/` hold exactly **295,468 `.npy` each**; full
+  `find` + `LC_ALL=C sort` + `comm` on the **tree-relative** paths → **0 in
+  auraface-not-lda, 0 in lda-not-auraface**. Zero LDA work is reachable from the
+  entire tree, not merely from the approved set.
+  *Method note:* the two trees must be compared on paths made relative to their own
+  roots. Comparing the raw `find` output puts *every* line in both difference sets
+  (the `auraface/` vs `lda/` prefix differs on every path) and `comm` **silently
+  returns the full count instead of erroring** — a plausible-looking
+  "295,468 missing" that is pure artifact. Also sort with `LC_ALL=C`: under the
+  default locale `comm` emitted `file 1 is not in sorted order` and produced the
+  same full-count false positive.
+* `find v1/lda -name '*.npy' -newermt '2026-10-19 00:00'` → **0**;
+  `-newermt '2026-10-18 00:00'` → **0** — no LDA file was written or touched by
+  this run (the "0 files written" line is a true zero, not a silent-failure
+  zero). Newest file in the tree is still **2026-07-28 14:42**.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK       .../v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match.
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`,
+  `float32`, norms 152.61–154.79 — refit raw-coords convention, unchanged.
+
+No new approvals since 2026-09-30 (approved count unchanged at 166,200). The job
+remains complete. Per the 2026-10-16 correction, no restart attribution is made:
+the `Restarting subprocess…` line *is* present in this run's log, but `os.execv`
+drops the userspace stdout buffer, so its presence is not a reliable witness. It
+does not affect the material finding (**0 files written**), which the tree checks
+corroborate independently of any log line.
+
+Raw `enrich` output for this run (exit 0):
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
+**Job state, read after the run:** `enabled: true`, `state: scheduled`,
+`last_status: ok`, `last_error: null`, `repeat.completed = 44` (was 43 at the
+2026-10-18 run), `next_run_at = 2026-10-20T03:00`, `deliver: local`,
+`created_at = 2026-07-24T08:45:36`. The de-registration recommendation below
+remains unexecuted.
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
-2026-07-24, `repeat.completed = 43` as of the 2026-10-18 run, `last_status = ok`.
-Each of the **ten** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
-2026-10-13, 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, 2026-10-18) has written
+2026-07-24, `repeat.completed = 44` as of the 2026-10-19 run, `last_status = ok`.
+Each of the **eleven** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
+2026-10-13, 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, 2026-10-18, 2026-10-19) has written
 **zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
 basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
 costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
