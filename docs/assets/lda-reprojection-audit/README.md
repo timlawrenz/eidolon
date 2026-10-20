@@ -650,12 +650,61 @@ Enrichment complete.
 `created_at = 2026-07-24T08:45:36`. The de-registration recommendation below
 remains unexecuted.
 
+## Re-run — 2026-10-20 (scheduled cron, same command)
+
+Identical outcome for the **twelfth** consecutive audited run. `enrich` exit 0,
+**0 files written** (`enrich-20261020.log`; wall clock **4 m 53 s**
+[03:01 → 03:06 EDT], git `64f39f7`, clean tree at launch — an earlier plain
+invocation the same morning also wrote 0, in 5 m 28 s). Independent
+`probe_scan.py` re-sweep over all approved images (`probe_scan-20261020.log`,
+exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census: identical to 2026-10-19 — `approved` 166,200 ·
+`tainted:extraction_nonface` 215,914 · `tainted:contamination` 1,626 ·
+`tainted:unusable` 253 · `tainted:approved_bad_geometry` 19 (total 384,012).
+**No new approvals.**
+
+Independent checks:
+
+* **Pre-flight whole-tree set-difference (the authoritative check):** `auraface/`
+  and `lda/` each hold exactly **295,468 `.npy`**; `comm -23` / `comm -13` on
+  **tree-relative** paths → **0** and **0** (same-cwd subshells, `LC_ALL=C`
+  sort — see the 2026-10-19 method note). Zero LDA work is reachable from the
+  entire tree, independent of the review DB.
+* `find v1/lda -name '*.npy' -newermt '2026-10-20 00:00'` → **0**; newest file in
+  the tree is still **2026-07-28 14:42**. The "0 files written" line is a true
+  zero, not a silent-failure zero.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  .../v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`BASIS_FINGERPRINT.json` stamped 2026-09-24, git `b35a3e6`).
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`,
+  `float32`, norms 152.61–154.79 — refit raw-coords convention, unchanged.
+
+**Job state, read after the run:** `enabled: true`, `state: scheduled`,
+`last_status: ok`, `last_error: null`, `repeat.completed = 46`,
+`next_run_at = 2026-10-21T03:00`, `deliver: local`,
+`created_at = 2026-07-24T08:45:36`. A `last_failure` entry dated
+`2026-10-19T03:08` records a restart-safe worker exit 1 with no durable terminal
+state; the 2026-10-19 material finding (0 files written) stands as recorded —
+the failure is in the worker's terminal-state bookkeeping, not in the sweep.
+
+The job remains complete. Recommendation below unchanged.
+
 ## Recommendation — de-register this cron job (no-op since the reprojection)
 
 The cron entry is `2aec4dd52b5c` / `eidolon-lda-reproject`, `0 3 * * *`, created
-2026-07-24, `repeat.completed = 44` as of the 2026-10-19 run, `last_status = ok`.
-Each of the **eleven** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
-2026-10-13, 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, 2026-10-18, 2026-10-19) has written
+2026-07-24, `repeat.completed = 46` as of the 2026-10-20 run, `last_status = ok`.
+Each of the **twelve** *audited* runs (2026-09-28, 2026-09-30, 2026-10-11, 2026-10-12,
+2026-10-13, 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17, 2026-10-18, 2026-10-19,
+2026-10-20) has written
 **zero** files: the premise ("~1,500 missing per-image LDA files on the new refit
 basis") has been stale since the reprojection ran 2026-07-25/28. Every run still
 costs ~5–8 min of NFS stat load over 166k paths to prove nothing changed.
