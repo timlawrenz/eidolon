@@ -954,3 +954,63 @@ writes its own reprojection step (`scripts/reproject_lda.py`,
 run this sweep on demand (or once) after a basis refit or an approval batch, never
 on a fixed cadence. Not executed here — the cron registry is the operator's, and a
 job run may not modify its own schedule.
+
+## Re-run — 2026-10-26 (scheduled cron, same command)
+
+Identical outcome for the **sixteenth** audited run. `enrich` exit 0, **0 files
+written** (`enrich-20261026.log`; wall clock **5 m 04 s** [03:02:13 → 03:07:17 EDT],
+git `15db7b1`, clean tree at launch — `main` at `15db7b1`; remote sync state not
+re-checked this run). Independent `probe_scan.py` re-sweep over all approved images
+(`probe_scan-20261026.log`, exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Independent checks:
+
+* Post-run write verification via [`verify_writes.sh`](verify_writes.sh)
+  (`verify_writes-20261026.log`, exit 0): `find v1/lda -name '*.npy' -newermt '2026-10-26 00:00'`
+  → **0**; `-newermt '2026-10-25 00:00'` → **0**; `-mmin -1440` → **0**; tree counts
+  **295,468** (`auraface/`) and **295,468** (`lda/`). Newest file in the tree is
+  still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`). The
+  "0 files written" line is a true zero, not a silent-failure zero.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261026.log`).
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`, `float32`,
+  norms 152.41–155.34 — refit raw-coords convention, unchanged.
+
+Raw `enrich` output for this run (exit 0) — the CUDA-library self-restart fired
+(also seen 2026-10-19 and 2026-10-22); it does not change the material finding:
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
+**Audit-coverage gap noted this run:** the cron registry shows the job's last run
+was 2026-10-25T03:12 (`ok`) and its next is 2026-10-27T03:00, so runs on **10-24 and
+10-25 did fire but were not appended to this README** (no `enrich-20261024.log` /
+`enrich-20261025.log` exist here). They are presumed no-ops by continuity but are
+**not audited**. The job remains `[active]`, `deliver: local`, `repeat: ∞`.
+
+**Job state:** `enabled: true`, `state: scheduled`, `last_status: ok`,
+`failure_streak: 0`; the 2026-10-19 worker-bookkeeping failure remains recovered.
+The de-registration recommendation above remains unexecuted.
