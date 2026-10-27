@@ -1014,3 +1014,123 @@ was 2026-10-25T03:12 (`ok`) and its next is 2026-10-27T03:00, so runs on **10-24
 **Job state:** `enabled: true`, `state: scheduled`, `last_status: ok`,
 `failure_streak: 0`; the 2026-10-19 worker-bookkeeping failure remains recovered.
 The de-registration recommendation above remains unexecuted.
+
+## Re-run — 2026-10-27 (scheduled cron, same command)
+
+Identical outcome for the **seventeenth** audited run. `enrich` exit 0, **0 files
+written** (`enrich-20261027.log`; wall clock **6 m 24 s** [03:01:05 → 03:07:29 EDT],
+git `49db71f`, clean tree at launch — `main` and `origin/main` both at `49db71f`).
+Independent `probe_scan.py` re-sweep over all approved images
+(`probe_scan-20261027.log`, exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 | 10-27 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Independent checks:
+
+* **Pre-flight whole-tree set-difference** (tree-relative, `LC_ALL=C`), re-run this
+  sweep (`preflight_setdiff-20261027.log`): `auraface/` and `lda/` each hold exactly
+  **295,468 `.npy`**; `comm -23` / `comm -13` → **0** and **0**. Zero LDA work is
+  reachable from the *entire* tree, independent of the review DB. (Invocation copied
+  from the 2026-10-23 run's corrected form — see that run's instrumentation note.)
+* Post-run write verification via [`verify_writes.sh`](verify_writes.sh)
+  (`verify_writes-20261027.log`, exit 0): `find v1/lda -name '*.npy' -newermt '2026-10-27 00:00'`
+  → **0**; `-newermt '2026-10-26 00:00'` → **0**; `-mmin -1440` → **0**; tree counts
+  **295,468** (`auraface/`) and **295,468** (`lda/`). Newest file in the tree is
+  still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`). The
+  "0 files written" line is a true zero, not a silent-failure zero.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261027.log`).
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`, `float32`,
+  norms 152.61–154.79 — refit raw-coords convention, unchanged.
+* **Audit-coverage gap from the 2026-10-26 run — CLOSED.** That run noted that the
+  10-24 and 10-25 occurrences fired but were never appended here. Two independent
+  sources now account for them: (a) `cron/executions.db` (read-only) shows both as
+  `status = completed` with an empty `error` column — 10-24 `completed` 03:00:33 →
+  03:15:21, 10-25 `completed` 03:00:33 → 03:12:27, i.e. same shape and duration as
+  every audited no-op; and (b) `gapcheck-20261027.log`:
+  `find lda -name '*.npy' -newermt '2026-10-24 00:00'` → **0** and
+  `-newermt '2026-10-20 00:00'` → **0** — **no LDA file was written on any day since
+  2026-10-20**, so the two unaudited occurrences provably wrote nothing. The gap was
+  a *recording* gap, not a *measurement* gap.
+
+Review-DB status census (via [`status_census.py`](status_census.py),
+`status_census-20261027.log`) — **set identical to every prior audited run**, store
+total included: `approved` 166,200 · `tainted:extraction_nonface` 215,914 ·
+`tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or
+re-statused.
+
+Raw `enrich` output for this run (exit 0) — the CUDA-library self-restart fired
+(also seen 2026-10-19, 2026-10-22, 2026-10-26); it does not change the material
+finding:
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+
+No eidolon process held the GPU: `nvidia-smi --query-compute-apps` at 03:08 showed
+only `xdg-desktop-portal-gnome` (12 MiB) and `ollama` (20,256 MiB — another
+project's process, not eidolon). No `insightface` CUDA work therefore ran, so this
+job needed no GPU-scheduler reservation.
+
+### Instrumentation notes (new this run)
+
+Two *tooling* failures occurred while producing the audit itself. Both are recorded
+because each one's failure state is a plausible-looking value, not an obvious error
+— the `mirror-preserves-the-centroid` pattern again.
+
+1. **A typo'd shell assignment silently produced an empty scan with exit 127.** The
+   first `probe_scan.py` invocation was written as
+   `.venv_py=$(echo /path/to/python)` — the leading `.` makes bash treat the line as
+   `source`, so `probe_scan.py` never ran and `probe_scan-20261027.log` contained
+   **only** `PROBE_EXIT=127`. Had the exit marker not been appended, an empty log
+   would have read as "a scan that found nothing". Fix: invoke the interpreter by
+   absolute path directly; never build it via a variable whose name can be
+   mis-parsed as a command. **Lesson: an empty result file is not evidence of an
+   empty result — check the exit code.**
+2. **`set -u` aborts under the runner's login+interactive shell.** The pre-flight
+   set-difference command began with `set -u` and died with
+   `rvm_bash_nounset: unbound variable` (the runner invokes `bash -lic`, which
+   sources rvm). A committed script that sets `set -u` *inside itself* (like
+   `verify_writes.sh`) is fine; `set -u` on the command line of a backgrounded
+   `bash -lic` command is not. Fix: drop `set -u` from the command line.
+
+**Evidence-tracking caveat (carried, unresolved).** As recorded for the
+2026-10-23 run, the `.log` files cited by name in this section are **not tracked**
+(global `*.log` ignore, `.gitignore:59`). The raw `enrich` output is inlined above
+and every producing script (`probe_scan.py`, `verify_writes.sh`, `status_census.py`)
+is committed, so the record is auditable in-repo; but a citation to
+`enrich-20261027.log` resolves only on this machine. Force-adding the per-run logs
+remains a suggested, unexecuted operator decision — not changed unilaterally here.
+
+**Job state, read after the run:** `enabled: true`, `state: scheduled`,
+`last_status: ok`, `last_error: null`, `failure_streak: 0`,
+`repeat.completed = 53` (was 49 at the 2026-10-23 run — the 10-24, 10-25, 10-26
+occurrences plus this one), `last_run_at = 2026-10-26T03:16:58`,
+`next_run_at = 2026-10-28T03:00`, `deliver: local`,
+`created_at = 2026-07-24T08:45:36`, `last_failure` still the 2026-10-19
+worker-bookkeeping entry (failure-strike 0 since). `last_dispatch` for this run:
+`scheduled_at 2026-10-27T03:00:00`, `dispatched_at 03:00:39`, `lateness_seconds
+39.7`, `kind: on_time`. This run's own execution row is `status = running`
+(finished on completion). The de-registration recommendation above remains
+unexecuted, and the next run is already queued for 2026-10-28.
