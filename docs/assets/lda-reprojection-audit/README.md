@@ -1134,3 +1134,140 @@ worker-bookkeeping entry (failure-strike 0 since). `last_dispatch` for this run:
 39.7`, `kind: on_time`. This run's own execution row is `status = running`
 (finished on completion). The de-registration recommendation above remains
 unexecuted, and the next run is already queued for 2026-10-28.
+
+## Re-run — 2026-10-28 (occurrence fired, enrich KILLED — no-op proved indirectly)
+
+The **2026-10-28** occurrence is closed here retrospectively: it appended no
+section (the agent run was terminated at 03:02:10, see below), but its own
+working-tree artifacts survive in this directory and are sufficient to record it.
+
+* `preflight_setdiff-20261028.log` (03:02:00): `auraface/` and `lda/` each
+  **295,468**; `comm -23` / `comm -13` → **0** and **0**.
+* `status_census-20261028.log`: **identical** to every prior audited run —
+  `approved` 166,200 · `tainted:extraction_nonface` 215,914 ·
+  `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+  `tainted:approved_bad_geometry` 19 · **TOTAL 384,012**.
+* `enrich-20261028.log` — **the sweep was killed**: the log holds the launch
+  banner, the two `Skipping Stratum` / `Running AuraFace-only enrichment` lines,
+  then
+  ```
+  bash: [796096: 1 (255)] tcsetattr: Inappropriate ioctl for device
+  ENRICH_EXIT=143 WALL=3s END=2026-10-28 03:02:10 EDT
+  ```
+  **exit 143 = SIGTERM after 3 s**: the process was torn down together with its
+  controlling terminal, before it ever reached the projection loop. There is no
+  `Enrichment complete.` line.
+* `cron/executions.db` (read-only) nevertheless records the 10-28 occurrence as
+  `status = completed`, `error = NULL`, `started_at 03:00:17` →
+  `finished_at 03:02:10` — **113 s**, one third of the fastest genuine sweep.
+
+**Consequence — 10-28 is a *false* "completed".** The occurrence's status field
+says `completed` while its `enrich` never ran: the finding is inherited from the
+10-29 run's independent tree checks (`gapcheck-20261029.log`,
+`verify_writes-20261029.log`): `find lda -name '*.npy' -newermt '2026-10-28 00:00'`
+→ **0**, i.e. the 10-28 occurrence provably wrote nothing. It is a recording and
+process failure, **not** a measurement failure — the material claim (0 files
+written on 10-28) is independently corroborated, so 10-28 counts as a no-op on
+evidence, but it was **not** a successful sweep. (`Completion status ≠ completion
+evidence`: an exit-0-shaped registry row can wrap a SIGTERMed child.)
+
+**Mitigation applied this run.** The kill appears to be launcher-side terminal
+teardown, so the sweep is now launched through
+[`run_enrich.sh`](run_enrich.sh) (detached; no pty attached to the child). The
+2026-10-29 sweep ran to completion under it (337 s — see below), where the
+pty-tracked 10-28 launch died at 3 s. Re-labelling: only *prior* runs (which
+completed their sweep) carry a full audit; 10-28 is a killed-enrich occurrence
+recorded for completeness.
+
+## Re-run — 2026-10-29 (scheduled cron, same command)
+
+Identical outcome for the **eighteenth** audited run. `enrich` exit 0, **0 files
+written** (`enrich-20261029.log`; wall clock **337 s** [03:02:24 → 03:08:01 EDT],
+git `b1542b4`, clean tree at launch — `main` and `origin/main` both at `b1542b4`;
+launched detached via [`run_enrich.sh`](run_enrich.sh), see the 10-28 note).
+Independent `probe_scan.py` re-sweep over all approved images
+(`probe_scan-20261029.log`, exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 | 10-27 | 10-28 | 10-29 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (via [`status_census.py`](status_census.py)) — **set
+strictly identical to every prior audited run**, store total included: `approved`
+166,200 · `tainted:extraction_nonface` 215,914 · `tainted:contamination` 1,626 ·
+`tainted:unusable` 253 · `tainted:approved_bad_geometry` 19 · **TOTAL 384,012**.
+No row added, removed, or re-statused.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (run *before* `enrich`; now itself a
+  committed script — [`preflight_setdiff.sh`](preflight_setdiff.sh) — so the
+  C-locale, tree-relative form can no longer vary between runs):
+  `preflight_setdiff-20261029.log` → `auraface/` and `lda/` each **295,468 `.npy`**;
+  `comm -23` / `comm -13` → **0** and **0**. Zero LDA work is reachable from the
+  *entire* tree, independent of the review DB.
+* Post-run write verification via [`verify_writes.sh`](verify_writes.sh)
+  (`verify_writes-20261029.log`, exit 0): `find v1/lda -name '*.npy' -newermt
+  '2026-10-29 00:00'` → **0**; `-newermt '2026-10-28 00:00'` → **0**;
+  `-mmin -1440` → **0**; tree counts **295,468** (`auraface/`) and **295,468**
+  (`lda/`). Newest file in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`).
+  The "0 files written" line is a true zero, not a silent-failure zero.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261029.log`).
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`, `float32`,
+  norms 152.61–154.79 — refit raw-coords convention, unchanged.
+* `gapcheck-20261029.log`: `find lda -name '*.npy' -newermt '2026-10-20 00:00'`
+  → **0** — no LDA file has been written on **any** day since 2026-10-20, which
+  is what independently retires the 10-28 killed occurrence (above).
+
+Raw `enrich` output for this run (exit 0) — the CUDA-library self-restart fired
+(also seen 2026-10-19, 10-22, 10-26, 10-27); it does not change the material
+finding:
+```
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+```
+`ENRICH_EXIT=0 WALL=337s` — the restart **is** visible this time as a doubled
+sequence, consistent with the 2026-10-16 note that the line is an unreliable
+witness in the other direction (a fired restart can *hide* the line by dropping
+the userspace stdout buffer at `os.execv`); here both passes' output survived.
+
+No eidolon process held the GPU: `nvidia-smi --query-compute-apps` at 03:14:53
+showed only `xdg-desktop-portal-gnome` (12 MiB). No `insightface` CUDA work ran,
+so this job needed no GPU-scheduler reservation.
+
+**Job state, read mid-run (03:1x EDT):** `enabled: true`, `state: scheduled`,
+`last_status: ok`, `last_error: null`, `failure_streak: 0`,
+`repeat.completed = 55`, `last_run_at = 2026-10-28T03:02:10`,
+`next_run_at = 2026-10-30T03:00`, `deliver: local`,
+`created_at = 2026-07-24T08:45:36`. This run completes as occurrence **56**.
+The de-registration recommendation below remains unexecuted, and the next run is
+already queued for 2026-10-30.
+
+### Scripts committed this run
+
+[`preflight_setdiff.sh`](preflight_setdiff.sh) (canonicalises the pre-flight
+set-difference in its one correct form), [`run_enrich.sh`](run_enrich.sh)
+(detached sweep launcher — removes the pty-teardown SIGTERM seen on 10-28),
+[`cron_state.py`](cron_state.py) (read-only dump of this job's
+`cron/executions.db` rows + registry block). Every number in this section is
+produced by one of these or the pre-existing `probe_scan.py` / `verify_writes.sh`
+/ `status_census.py`.
