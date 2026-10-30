@@ -1271,3 +1271,121 @@ set-difference in its one correct form), [`run_enrich.sh`](run_enrich.sh)
 `cron/executions.db` rows + registry block). Every number in this section is
 produced by one of these or the pre-existing `probe_scan.py` / `verify_writes.sh`
 / `status_census.py`.
+
+## Re-run — 2026-10-30 (scheduled cron, same command)
+
+Identical outcome for the **nineteenth** audited run. `enrich` exit 0, **0 files
+written** (`enrich-20261030.log`; wall clock **408 s** [03:02:00 → 03:08:48 EDT],
+git `9b4cf43`, clean tree at launch — `main` and `origin/main` both at `9b4cf43`;
+launched via [`run_enrich.sh`](run_enrich.sh)). Independent `probe_scan.py`
+re-sweep over all approved images (`probe_scan-20261030.log`, exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 | 10-27 | 10-28 | 10-29 | 10-30 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (via [`status_census.py`](status_census.py),
+`status_census-20261030.log`) — **set strictly identical to every prior audited
+run**, store total included: `approved` 166,200 · `tainted:extraction_nonface`
+215,914 · `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or
+re-statused.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (run *before* `enrich`, via the
+  committed [`preflight_setdiff.sh`](preflight_setdiff.sh)): see below —
+  `preflight_setdiff-20261030.log`. This run the pre-flight was executed *first*
+  and separately; the write-verification half of the checks was moved into a new
+  background script (below), because the pre-flight + `enrich` + verify + probe
+  sequence no longer fits inside a single 420 s foreground window.
+* Post-run write verification (`verify_writes-20261030.log`, exit 0):
+  `find v1/lda -name '*.npy' -newermt '2026-10-30 00:00'` → **0**;
+  `-newermt '2026-10-29 00:00'` → **0**; `-mmin -1440` → **0**; tree counts
+  **295,468** (`auraface/`) and **295,468** (`lda/`). Newest file in the tree is
+  still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`).
+  The "0 files written" line is a true zero, not a silent-failure zero.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261030.log`).
+* Sampled existing LDA files (five, `probe_scan` output): shape `(64,)`, `float32`,
+  norms 152.61–154.79 — refit raw-coords convention, unchanged.
+* `gapcheck-20261030.log`: `find lda -name '*.npy' -newermt '2026-10-20 00:00'`
+  → **0** and `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any
+  day since 2026-10-20, which independently retires the 10-28 killed occurrence
+  and *this* run.
+
+### Pre-flight observation — the earlier combined command was cut by the 420 s window
+
+The pre-flight set-difference and the write verification both walk the full NFS
+tree (~295k paths each). On this run the **first** attempt bundled
+`basis-verify + status-census + verify_writes + gapcheck` into one foreground
+command; the tool's foreground cap fired at **420 s** with the combined command
+still on its *first* `find -printf` over `lda/`. Two consequences, both fixed
+this run:
+
+* The scale-verify and census commands printed
+  `.venv/bin/python: No such file or directory` because they ran from the audit
+  directory (the repo's `.venv` is only resolvable from the repo root). Re-run
+  from `/home/tim/source/activity/eidolon` with `.venv/bin/python` → both
+  succeeded (`basis_verify-20261030.log`, `status_census-20261030.log`).
+  **Lesson: `enrich`'s own launcher `cd`s to the repo root for you; hand-run
+  audit commands do not.**
+* The NFS-heavy post-checks are now a committed background script,
+  [`postchecks.sh`](postchecks.sh) (`bash postchecks.sh YYYYMMDD`), so the whole
+  verify + gapcheck + `probe_scan` sequence runs detached as one tracked job
+  instead of racing the foreground window.
+
+Pre-flight result (`preflight_setdiff-20261030.log`, run **before** `enrich`):
+`auraface/` and `lda/` each hold exactly **295,468 `.npy`**; `comm -23` / `comm
+-13` on tree-relative, `LC_ALL=C`-sorted paths → **0** and **0**. Zero LDA work
+is reachable from the *entire* tree, independent of the review DB.
+
+Raw `enrich` output for this run (exit 0) — a **single clean sequence** (no
+CUDA-library re-exec line; per the 2026-10-16 correction that line is *not* a
+reliable witness in either direction, and it does not change the material
+finding):
+```
+=== enrich launch Fri Oct 30 03:02:00 AM EDT 2026 (git 9b4cf43, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=408s END=Fri Oct 30 03:08:48 AM EDT 2026
+```
+
+No eidolon process held the GPU: `nvidia-smi --query-compute-apps` at 03:1x showed
+only `xdg-desktop-portal-gnome` (12 MiB). No `insightface` CUDA work ran, so this
+job needed no GPU-scheduler reservation.
+
+**Job state, read after the run** (via [`cron_state.py`](cron_state.py),
+`cron_state-20261030.log`): `enabled: true`, `state: scheduled`,
+`last_status: ok`, `last_error: null`, `failure_streak: 0`,
+`repeat.completed = 56` (the 10-24 / 10-25 / 10-26 / 10-27 / 10-28 / 10-29
+occurrences plus their audit commits), `last_run_at = 2026-10-29T03:24:56`,
+`next_run_at = 2026-10-31T03:00`, `deliver: local`,
+`created_at = 2026-07-24T08:45:36`. This run's own `executions.db` row shows
+`status = running` as of 03:0x (finishes on completion); occurrence **57**.
+The 10-24 and 10-25 rows are now visible in `executions.db` as `completed`
+(closing the recording gap noted on 2026-10-26); the 10-28 row is `completed`
+with a 113 s duration — the **false** completed recorded in that section, which
+this run's `gapcheck` again retires on evidence.
+
+The de-registration recommendation below remains unexecuted, and the next run is
+already queued for 2026-10-31.
+
+### Scripts committed this run
+
+[`postchecks.sh`](postchecks.sh) — the detached, NFS-heavy post-check runner
+(`verify_writes` block + gapcheck + `probe_scan.py`), so the full verify sequence
+is one background job rather than several foreground commands racing the 420 s
+window. No other scripts changed.
