@@ -1389,3 +1389,162 @@ already queued for 2026-10-31.
 (`verify_writes` block + gapcheck + `probe_scan.py`), so the full verify sequence
 is one background job rather than several foreground commands racing the 420 s
 window. No other scripts changed.
+
+## Re-run — 2026-10-31 (bare command FAILED — review-DB host unreachable; recovered via the local DB)
+
+This is the **twentieth** audited run and the **first** in which the bare command
+failed. Two findings this run, one mechanical and one structural.
+
+### Finding 1 — the command as specified cannot reach the review DB
+
+The launch `tools.hegre_dataset enrich --dataset …/hegre-faces/v1 --status approved
+--skip-stratum` exited **1 in 6 s** (`enrich-20261031.bare-fail.log`) with:
+
+```
+psycopg2.OperationalError: connection to server at "192.168.86.49", port 5432
+failed: No route to host
+```
+
+Independent probes: `ping 192.168.86.49` → `Destination Host Unreachable`;
+`nc -zv 192.168.86.49 5432` → `No route to host`; ARP `192.168.86.49 dev wlo1 FAILED`.
+
+### Finding 2 (root cause) — `192.168.86.49` is *this host's own* former Ethernet address
+
+`journalctl -b -1 -u NetworkManager` shows, throughout the prior successful-run
+window:
+
+```
+game NetworkManager[…]: dhcp4 (enp42s0): state changed new lease, address=192.168.86.49
+  2026-10-27 … 2026-10-30
+```
+
+The box (`game`) **rebooted 2026-10-31 09:33**. On this boot `enp42s0` is `DOWN`
+(no carrier) and the box is on **WiFi** (`wlo1`, profile `935-401`) at
+**192.168.86.248**. `config/database.yml` hardcodes `host: 192.168.86.49`, so it now
+points at a dead interface. The review DB is **local** to `game` (Postgres 18.6 on
+`localhost:5432`) and its census is exactly the audited set below — i.e. the same DB
+every prior audit read while `.49` resolved to this host. (The DB is untouched; this
+is a name-resolution failure, not a data failure.)
+
+### Recovery — identical sweep against `localhost` (no file, schedule, or DB mutation)
+
+Re-ran the same command with the **documented** env override
+`EIDOLON_DB_URL=postgresql+psycopg2://tim:***@localhost/eidolon` → the same local
+Postgres over loopback instead of the host's own (ex-)LAN IP. `ENRICH_EXIT=0`, wall
+clock **1451 s** (`enrich-20261031.log`). No config file, no schedule, and no DB row
+was written. Result: **0 LDA files projected** —
+*"All approved images already have AuraFace-LDA data."* — same as all 19 prior runs.
+
+### Numbers (columns as before)
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 | 10-27 | 10-28 | 10-29 | 10-30 | 10-31 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (via [`status_census.py`](status_census.py),
+`status_census-20261031.log`) — **set identical to every prior audited run**, store
+total included: `approved` 166,200 · `tainted:extraction_nonface` 215,914 ·
+`tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or
+re-statused. (Read locally over loopback this run, since `.49` is down.)
+
+### Independent checks (all before/after the run)
+
+* **Pre-flight whole-tree set-difference** (run *before* `enrich`, via the committed
+  [`preflight_setdiff.sh`](preflight_setdiff.sh)): `preflight_setdiff-20261031.log` →
+  `auraface/` and `lda/` each hold exactly **295,468 `.npy`**; `comm -23` / `comm -13`
+  on tree-relative, `LC_ALL=C`-sorted paths → **0** and **0**. Zero LDA work is
+  reachable from the *entire* tree — **and this check is DB-independent**, so it holds
+  even on a run where the DB is unreachable.
+* Post-run write verification via [`postchecks.sh`](postchecks.sh)
+  (`verify_writes-20261031.log`, exit 0): `find v1/lda -name '*.npy' -newermt
+  '2026-10-31 00:00'` → **0**; `-newermt '2026-10-30 00:00'` → **0**;
+  `-mmin -1440` → **0**; tree counts **295,468** (`auraface/`) and **295,468**
+  (`lda/`). Newest file in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`).
+  The "0 files written" line is a true zero, not a silent-failure zero.
+* `gapcheck` (`verify_writes-20261031.log`): `find lda … -newermt '2026-10-20 00:00'`
+  → **0**; `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any day
+  since 2026-10-20.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261031.log`).
+* `probe_scan.py` re-sweep over all approved images (`probe_scan-20261031.log`, exit 0):
+  `missing auraface .npy: 23` · `missing LDA .npy: 23` (`of those no auraface: 23,
+  not projectable`) · `missing z_g .npy: 9` · `missing pose.npy: 0`. Existing LDA
+  samples (five): shape `(64,)`, `float32`, norms 152.61–154.79 — refit raw-coords
+  convention, unchanged.
+
+### Timing / occurrence notes
+
+* **The occurrence fired at 09:41:31 EDT, not 03:00.** The box was off/rebooting at
+  the scheduled time (boot 09:33), so the scheduler ran the missed occurrence
+  post-boot. `executions.db` row for 10-31: `started_at 2026-10-31T09:41:31`.
+* **The sweep is ~3.5–4× slower on WiFi than on the wired link** — **1451 s** vs the
+  ~300–410 s of every 10-11…10-30 run — because the box's NFS mount to
+  `192.168.86.43` now goes over `wlo1`. Measured mid-run: process in state `Dl`
+  (`rpc_wait_bit_killable`), ~34 s CPU over 15 min elapsed; it is NFS-latency-bound,
+  not compute-bound.
+* The CUDA self-restart **fired** (visible as a doubled sequence in the log below),
+  so the tree was walked twice — consistent with the 2026-10-16 note that the line is
+  unreliable in the *other* direction, but here both passes' output survived.
+
+Raw `enrich` output for this run (exit 0, via the `EIDOLON_DB_URL` override):
+```
+=== enrich launch Sat Oct 31 09:49:38 AM EDT 2026 (git 0e2a0e1, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=1451s END=Sat Oct 31 10:13:49 AM EDT 2026
+```
+
+No eidolon process held the GPU: `nvidia-smi --query-compute-apps` showed **no**
+compute apps (idle card). No `insightface` CUDA work ran, so this job needed no
+GPU-scheduler reservation.
+
+### Job state, read after the run ([`cron_state.py`](cron_state.py), `cron_state-20261031.log`)
+
+`enabled: true`, `state: scheduled`, `last_status: ok`, `last_error: null`,
+`failure_streak: 0`, `repeat.completed = 57`, `last_run_at = 2026-10-30T03:37:23`,
+`next_run_at = 2026-11-01T03:00`, `deliver: local`, `created_at = 2026-07-24T08:45:36`.
+`executions.db` since 2026-10-29: 10-29 `completed`, 10-30 `completed`, 10-31
+`running` (this occurrence; finishes on completion). `main == origin/main` at
+`0e2a0e1` at launch; this run commits and pushes its own record.
+
+### Recommendation — TWO operator actions, both unexecuted here
+
+1. **De-register this cron job** (re-stated from the section above; still no-op).
+2. **Fix the DB host reference — this is new and now blocking.** `config/database.yml`
+   hardcodes `host: 192.168.86.49`, which is `game`'s *own* Ethernet address and is
+   dead whenever `enp42s0` is down (WiFi-only boot, unplugged cable, or a DHCP change
+   like today's). The DB is local, so the robust value is `localhost` (or `127.0.0.1`).
+   Until then, **every** run of this job fails unless `EIDOLON_DB_URL` is exported —
+   and the failure is a hard stop (exit 1), not the usual benign no-op. Suggested
+   one-line change: `config/database.yml` `host: 192.168.86.49` → `host: localhost`.
+   Not executed here — a committed shared-config change is the operator's call, and a
+   job run may not edit its own inputs.
+
+### Interpretation caveat
+
+The material finding (**0 files written**) does **not** depend on the DB: it is
+corroborated by the DB-independent pre-flight set-difference (295,468 == 295,468,
+0/0) and the post-run `find -newermt` scans. The DB was needed only to enumerate the
+approved set, which the census shows is unchanged. So this run's verdict — *job
+complete, nothing to project* — stands on evidence even though the bare command
+could not run.
+
