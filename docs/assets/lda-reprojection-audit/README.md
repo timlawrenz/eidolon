@@ -1548,3 +1548,129 @@ approved set, which the census shows is unchanged. So this run's verdict — *jo
 complete, nothing to project* — stands on evidence even though the bare command
 could not run.
 
+## Re-run — 2026-11-01 (scheduled cron, same command)
+
+Identical outcome for the **twenty-first** audited run. Unlike 2026-10-31, the
+**bare command ran as specified** (no `EIDOLON_DB_URL` override) — the DB-host
+blockage had cleared by environment, not by repair (Finding below). `enrich` exit 0,
+**0 files written** (`enrich-20261101.log`; wall clock **462 s** [03:03:05 → 03:10:47
+EST], git `154079b`, clean tree at launch — `main` and `origin/main` both at
+`154079b`; launched detached via [`run_enrich.sh`](run_enrich.sh)). Independent
+`probe_scan.py` re-sweep over all approved images (`probe_scan-20261101.log`, exit 0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 | 10-27 | 10-28 | 10-29 | 10-30 | 10-31 | 11-01 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (via [`status_census.py`](status_census.py),
+`status_census-20261101.log`) — **set strictly identical to every prior audited
+run**, store total included: `approved` 166,200 · `tainted:extraction_nonface`
+215,914 · `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or
+re-statused.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (run *before* `enrich`, via the committed
+  [`preflight_setdiff.sh`](preflight_setdiff.sh); 03:01:24 → 03:03:05, 101 s):
+  `preflight_setdiff-20261101.log` → `auraface/` and `lda/` each hold exactly
+  **295,468 `.npy`**; `comm -23` / `comm -13` on tree-relative, `LC_ALL=C`-sorted
+  paths → **0** and **0**. Zero LDA work is reachable from the *entire* tree,
+  independent of the review DB.
+* Post-run write verification via [`postchecks.sh`](postchecks.sh)
+  (`verify_writes-20261101.log`, exit 0): `find v1/lda -name '*.npy' -newermt
+  '2026-11-01 00:00'` → **0**; `-newermt '2026-10-31 00:00'` → **0**;
+  `-mmin -1440` → **0**; tree counts **295,468** (`auraface/`) and **295,468**
+  (`lda/`). Newest file in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`).
+  The "0 files written" line is a true zero, not a silent-failure zero.
+* `gapcheck` (`verify_writes-20261101.log`): `find lda … -newermt '2026-10-20 00:00'`
+  → **0**; `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any day
+  since 2026-10-20.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261101.log`).
+* `probe_scan.py` re-sweep (`probe_scan-20261101.log`, PROBE_EXIT=0): `missing
+  auraface .npy: 23` · `missing LDA .npy: 23` (`of those no auraface: 23, not
+  projectable`) · `missing z_g .npy: 9` · `missing pose.npy: 0`. Existing LDA
+  samples (five): shape `(64,)`, `float32`, norms 152.61–154.79 — refit raw-coords
+  convention, unchanged.
+
+### Finding — the 2026-10-31 DB-host blockage cleared by the environment, not by a repair
+
+The blocker recorded on 2026-10-31 was that `config/database.yml` hardcodes
+`host: 192.168.86.49` — `game`'s **own** Ethernet address — which went dead when
+`enp42s0` was down on the post-reboot WiFi-only boot. This run:
+
+* `enp42s0` is **UP** again at `192.168.86.49/24` and `wlo1` is **DOWN**;
+  `nc -zv 192.168.86.49 5432` → **succeeded**; the bare command therefore reached
+  the local review DB with no `EIDOLON_DB_URL` override. Route to the NAS
+  (`192.168.86.43`) is now `dev enp42s0 src 192.168.86.49`.
+* **`config/database.yml` still reads `host: 192.168.86.49`** (line 8, unchanged).
+  So the 2026-10-31 operator action is **still unapplied** — this run succeeded only
+  because the wired link happened to return. The latent bug is intact: any future
+  WiFi-only boot, unplugged cable, or DHCP change re-breaks the **bare** command
+  (exit 1), with the same local-`localhost` workaround. Today is evidence the fault
+  is *environment-dependent*, not *fixed*.
+* **Stale NFS mount attribute:** `mount` still reports
+  `clientaddr=192.168.86.248` (the 10-31 WiFi address) even though `wlo1` is now
+  DOWN and all NAS traffic flows over `enp42s0` (`.49`). The mount is functional
+  (every `find`/`probe_scan` walk above completed), so this is cosmetic mount
+  metadata left over from the 10-31 automount, not a live misconfiguration —
+  recorded because a stale `clientaddr` on a *down* interface is exactly the kind of
+  value that reads as a fault when it is not one.
+* **Timing:** 462 s wall clock sits in the wired band (~300–410 s of 10-11…10-30)
+  plus the CUDA self-restart's second sweep — **not** the 1451 s WiFi band of
+  10-31. Consistent with the wired link being back.
+
+Raw `enrich` output for this run (exit 0) — the CUDA-library self-restart fired
+(also seen 10-19, 10-22, 10-26, 10-27, 10-29, 10-31); per the 2026-10-16 correction
+the `Restarting subprocess…` line is *not* a reliable witness in either direction,
+and it does not change the material finding:
+```
+=== enrich launch Sun Nov  1 03:03:05 AM EST 2026 (git 154079b, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=462s END=Sun Nov  1 03:10:47 AM EST 2026
+```
+
+No eidolon process held the GPU: `nvidia-smi --query-compute-apps` showed only
+`xdg-desktop-portal-gnome` (33 MiB). No `insightface` CUDA work ran, so this job
+needed no GPU-scheduler reservation.
+
+### Timing / occurrence notes
+
+* **The occurrence fired on time at 03:00:35 EST** (unlike 10-31, which fired late
+  post-boot at 09:41): `executions.db` row for 11-01 → `started_at
+  2026-11-01T03:00:35`, `status = running` (finishes on completion). Occurrence
+  **59**.
+
+### Job state, read after the run ([`cron_state.py`](cron_state.py), `cron_state-20261101.log`)
+
+`enabled: true`, `state: scheduled`, `last_status: ok`, `last_error: null`,
+`failure_streak: 0`, `repeat.completed = 58`, `last_run_at = 2026-10-31T10:25:01`,
+`next_run_at = 2026-11-02T03:00`, `deliver: local`, `created_at = 2026-07-24T08:45:36`.
+`executions.db` since 2026-10-29: 10-29 `completed`, 10-30 `completed`, 10-31
+`completed`, 11-01 `running` (this occurrence). `main == origin/main` at `154079b` at
+launch; this run commits and pushes its own record.
+
+The de-registration recommendation below remains unexecuted, and the next run is
+already queued for 2026-11-02. The DB-host repair (2026-10-31 action 2) also remains
+unexecuted and is again the live risk — today's run only masks it.
+
