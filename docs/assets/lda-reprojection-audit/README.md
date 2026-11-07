@@ -2098,3 +2098,113 @@ at launch; this run commits and pushes its own record.
 The de-registration recommendation (2026-10-23, restated 10-31) remains unexecuted, and
 the next run is already queued for 2026-11-06. The DB-host repair (2026-10-31 action 2)
 also remains unexecuted — today's clean run only masks it.
+
+
+## Re-run — 2026-11-07 (scheduled cron, same command)
+
+Identical outcome for the **twenty-sixth** audited run. The **bare command ran as
+specified** (no `EIDOLON_DB_URL` override) — the wired link is up, so `.49` resolves.
+`enrich` exit 0, **0 files written** (`enrich-20261107.log`; wall clock **371 s**
+[03:27:37 → 03:33:48 EST], git `1f252d6`, clean tree at launch — `main` and
+`origin/main` both at `1f252d6`; launched detached via [`run_enrich.sh`](run_enrich.sh)).
+Independent `probe_scan.py` re-sweep over all approved images
+(`probe_scan-20261107.log`, PROBE_EXIT=0):
+
+| quantity | 09-28 | 09-30 | 10-11 | 10-12 | 10-13 | 10-14 | 10-15 | 10-16 | 10-17 | 10-18 | 10-19 | 10-20 | 10-21 | 10-22 | 10-23 | 10-26 | 10-27 | 10-28 | 10-29 | 10-30 | 10-31 | 11-01 | 11-02 | 11-03 | 11-04 | 11-05 | 11-07 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (via [`status_census.py`](status_census.py),
+`status_census-20261107.log`) — **set strictly identical to every prior audited
+run**, store total included: `approved` 166,200 · `tainted:extraction_nonface`
+215,914 · `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or
+re-statused.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (run *before* `enrich`, via the committed
+  [`preflight_setdiff.sh`](preflight_setdiff.sh)): `preflight_setdiff-20261107.log`
+  → `auraface/` and `lda/` each hold exactly **295,468 `.npy`**; `comm -23` / `comm -13`
+  on tree-relative, `LC_ALL=C`-sorted paths → **0** and **0**. Zero LDA work is
+  reachable from the *entire* tree, independent of the review DB.
+* Post-run write verification via [`postchecks.sh`](postchecks.sh)
+  (`verify_writes-20261107.log`): `find v1/lda -name '*.npy' -newermt
+  '2026-11-07 00:00'` → **0**; `-newermt '2026-11-06 00:00'` → **0**; `-mmin -1440`
+  → **0**; tree counts **295,468** (`auraface/`) and **295,468** (`lda/`). Newest file
+  in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`).
+  The "0 files written" line is a true zero, not a silent-failure zero.
+* `gapcheck` (`verify_writes-20261107.log`): `find lda … -newermt '2026-10-20 00:00'`
+  → **0**; `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any day
+  since 2026-10-20.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261107.log`).
+* `probe_scan.py` re-sweep (`probe_scan-20261107.log`): `missing auraface .npy: 23` ·
+  `missing LDA .npy: 23` (`of those no auraface: 23, not projectable`) · `missing z_g
+  .npy: 9` · `missing pose.npy: 0`. Existing LDA samples (five): shape `(64,)`,
+  `float32`, norms 152.61–154.79 — refit raw-coords convention, unchanged.
+* **Numeric basis recompute added this run** (not in the standard probe set): for 50
+  approved images, `project_to_lda(clean_auraface(auraface.npy))` with the basis now
+  in `experiments/geometry_pca/output/` was compared against the on-disk `lda/*.npy`
+  — `max_abs_diff` 9.2e-07 … 1.9e-06 (float32 quantisation only; 0 bit-exact, 50/50
+  shape `(64,)`). Confirms by direct recomputation what the fingerprint stamp asserts.
+  A separate sweep of the **2,220 pre-refit files** (mtime 2026-07-03→07-06) matched
+  the 2026-09-28 finding: **0 approved** images hold a pre-refit LDA file (2,219
+  `tainted:extraction_nonface` + 1 `tainted:contamination`).
+
+Raw `enrich` output for this run (exit 0):
+```
+=== enrich launch Sat Nov  7 03:27:37 AM EST 2026 (git 1f252d6, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=371s END=Sat Nov  7 03:33:48 AM EST 2026
+```
+
+The CUDA-lib re-exec branch (`tools/hegre_dataset/enrichment.py:216-227`) fired again
+— `Restarting subprocess to load CUDA libraries...` — as on 10-19, 10-22 and 11-05.
+The restarted subprocess still hits `import insightface` → `ImportError`, so no GPU
+work ran and the 23 AuraFace-less images remain untouched. The latent path stands: **if
+`insightface` were ever importable in this venv, this branch would launch AuraFace GPU
+extraction outside the GPU scheduler.**
+
+### Audit-coverage gap — the 2026-11-06 occurrence
+
+The 11-06 occurrence fired on schedule (`executions.db` row → `started_at
+2026-11-06T03:00:38`, `finished_at 03:08:44`, `status = completed`) but left **no
+record here and no commit** — no `*-20261106.log` exists in this dir and the newest
+commit remains the 11-05 record (`1f252d6`). Its outcome is presumed a no-op by
+continuity (the tree is unchanged — newest file still 2026-07-28) but it is **not
+audited**. This run is therefore counted as the **26th audited**, not the 27th.
+
+### Job state, read during the run ([`cron_state.py`](cron_state.py), `cron_state-20261107.log`)
+
+`enabled: true`, `state: scheduled`, `last_status: ok`, `last_error: null`,
+`failure_streak: 0`, `repeat.completed = 64`, `last_run_at = 2026-11-06T03:08:44`,
+`next_run_at = 2026-11-08T03:00`, `deliver: local`. `executions.db` since 2026-11-01:
+11-01 … 11-06 `completed`, 11-07 `running` (this occurrence). Job id `2aec4dd52b5c`.
+`main == origin/main` at `1f252d6` at launch; this run commits and pushes its own record.
+
+**Timing:** 371 s — inside the wired band and the fastest wired run recorded (the
+CUDA re-exec still doubles the visible pass, but ~7 m under the 1451 s WiFi band of
+10-31).
+
+The de-registration recommendation (2026-10-23, restated 10-31) remains unexecuted, and
+the next run is already queued for 2026-11-08. The DB-host repair (2026-10-31 action 2)
+also remains unexecuted — today's clean run only masks it.
