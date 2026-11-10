@@ -2311,5 +2311,156 @@ its own record.
 on time at 03:00:39 EST.
 
 The de-registration recommendation (2026-10-23, restated 10-31 and every run since) remains
-unexecuted, and the next run is already queued for 2026-11-10. The DB-host repair (2026-10-31
+unexecuted, and the next run is already queued for 2026-11-11. The DB-host repair (2026-10-31
 action 2) also remains unexecuted — today's clean run only masks it.
+
+## Re-run — 2026-11-10 (fired 08:00 on reboot, not 03:00 — host down overnight; first attempt hit a recovering DB)
+
+Identical **material** outcome for the **twenty-eighth** audited run — `enrich` exit 0,
+**0 files written** — but this occurrence is *not* routine: **two availability events** bracket
+it, and the first `enrich` attempt failed.
+
+### Event 1 — the 03:00 occurrence never fired; the host was powered off ~7 h
+
+`journalctl --list-boots` places the end of the previous boot session at
+**2026-11-10 00:45:05 EST** and the start of the current one at **07:57:47 EST**: `game` was
+**down ≈ 7 h 12 m**. The scheduled `03:00 EST` occurrence therefore never ran — `executions.db`
+carries **no 11-10 row until the catch-up fire at `08:00:32`**, and `repeat.completed` advanced
+66 → 67 only on that fire. (Forensic caution: the kernel line `PM: RTC time: 05:45:55, date:
+2026-11-10` shows the box came up with a ~7 h-stale RTC, so **`uptime -s` misreports the boot as
+`00:45:53`** — the *previous* session's end. `who -b` and the journal boot-id list agree on
+**07:57:47**; after a stale-RTC boot, trust those, not `uptime -s`.)
+
+This is the **third** audited occurrence to fire off its `03:00` slot — after **10-31** (09:41)
+and **11-04** (07:04) — and each time it fired **on reboot**, i.e. the scheduler runs the missed
+occurrence when the box comes up. The pattern is now three-for-three: a reboot before 03:00
+converts the nightly fire into a morning catch-up.
+
+### Event 2 — the first `enrich` attempt died on a PostgreSQL in crash recovery
+
+Attempt 1 (launched `08:02:10`) exited **`ENRICH_EXIT=1` in 8 s** with
+`FATAL: the database system is starting up` — preserved in
+[`enrich-20261110.fail.log`](enrich-20261110.fail.log). The unclean shutdown left postgres 18
+crash-recovering (`database system was interrupted; last known up at 2026-11-10 00:08:49 EST`);
+the unit began listening at `07:58:02` and reported `Started` at `07:59:01` (with
+`pg_ctl: server did not start in time`), but **rejected connections until recovery finished
+≈ 08:02:4x**. Critically, **`nc -zv 192.168.86.49 5432` succeeded throughout** — the port was
+open the whole time — so the readiness probe used in every earlier audit was *blind* to this
+mode; only `pg_isready` (`rejecting connections` → `accepting connections` at `08:02:42`)
+distinguishes "listening" from "ready". The sweep was re-launched at **08:02:46** against the
+recovered DB.
+
+**Readiness rule (new, recorded here):** after a reboot of this box, gate the bare command on
+`pg_isready -h 192.168.86.49 -p 5432`, **not** `nc` — a listening-but-recovering postgres passes
+the TCP probe and fails the query (the same lesson as the 10-31 section, one layer down: then
+the host was unreachable; now the *host* is up and the *database* is not).
+
+### Outcome — second attempt, `enrich` exit 0, 0 files written
+
+`enrich-20261110.log`; wall clock **298 s** [`08:02:46` → `08:07:44 EST`], git `345d517`, clean
+tree at launch — `main` and `origin/main` both at `345d517`. Independent `probe_scan.py`
+re-sweep over all approved images (`probe_scan-20261110.log`, PROBE_EXIT=0):
+
+| quantity | 09-28 | 09-30 | … | 11-07 | 11-09 | 11-10 |
+|---|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | … | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | … | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | … | 9 | 9 | **9** |
+| approved missing pose.npy | — | 0 | … | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | … | 0 | 0 | **0** |
+
+(All intermediate audited runs 10-11…11-09 are identical; full columns are in their own sections
+above.)
+
+Review-DB status census (via [`status_census.py`](status_census.py),
+`status_census-20261110.log`) — **set strictly identical to every prior audited run**, store
+total included: `approved` 166,200 · `tainted:extraction_nonface` 215,914 ·
+`tainted:contamination` 1,626 · `tainted:unusable` 253 · `tainted:approved_bad_geometry` 19 ·
+**TOTAL 384,012**. No row added, removed, or re-statused — so the 7 h outage and the crash
+recovery left the review DB in its prior state, with no lost or duplicated row.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (before `enrich`, via the committed
+  [`preflight_setdiff.sh`](preflight_setdiff.sh), `preflight_setdiff-20261110.log`, 08:00:59):
+  `auraface/` and `lda/` each hold exactly **295,468 `.npy`**; `comm -23` / `comm -13` on
+  tree-relative, `LC_ALL=C`-sorted paths → **0** and **0**. Zero LDA work is reachable from the
+  *entire* tree, independent of the review DB.
+* Post-run write verification via [`postchecks.sh`](postchecks.sh)
+  (`verify_writes-20261110.log`): `find v1/lda -name '*.npy' -newermt '2026-11-10 00:00'` →
+  **0**; `-newermt '2026-11-09 00:00'` → **0**; `-mmin -1440` → **0**; tree counts **295,468**
+  (`auraface/`) and **295,468** (`lda/`). Newest file in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`). The "0 files
+  written" line is a true zero, not a silent-failure zero.
+* `gapcheck` (`verify_writes-20261110.log`): `find lda … -newermt '2026-10-20 00:00'` → **0**;
+  `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any day since 2026-10-20.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261110.log`). (`v1/auraface/` carries no `BASIS_FINGERPRINT.json` — expected:
+  it holds raw AuraFace embeddings, not an LDA basis; only `v1/lda` is stamped, mtime
+  2026-09-24.)
+* `probe_scan.py` re-sweep (`probe_scan-20261110.log`): `missing auraface .npy: 23` ·
+  `missing LDA .npy: 23` (`of those no auraface: 23, not projectable`) · `missing z_g .npy: 9` ·
+  `missing pose.npy: 0`. Existing LDA samples (five): shape `(64,)`, `float32`, norms
+  152.61–154.79 — refit raw-coords convention, unchanged.
+
+Raw `enrich` output for the successful attempt (exit 0):
+```
+=== enrich launch Tue Nov 10 08:02:46 AM EST 2026 (git 345d517, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Restarting subprocess to load CUDA libraries...
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=298s END=Tue Nov 10 08:07:44 AM EST 2026
+```
+
+The CUDA-lib re-exec branch (`tools/hegre_dataset/enrichment.py:216-227`) fired again; its
+restarted subprocess still fails at `import insightface` (`ImportError`) before any CUDA call, so
+no GPU work ran and no GPU-scheduler reservation was needed. The latent path stands (unchanged):
+**if `insightface` were ever importable in this venv, this branch would launch AuraFace GPU
+extraction outside the GPU scheduler.**
+
+### Audit-coverage gaps (carried + one new)
+
+The **11-06** and **11-08** occurrences remain unaudited (fired `completed`, no README
+record/commit). New this run: the **11-10 03:00 occurrence did not fire at all** — the host was
+powered off (Event 1) — so there is nothing to audit for it (no `enrich-20261110.log` exists for
+a 03:00 run). This 08:00 catch-up run is therefore counted as the **28th audited**, not the
+29th.
+
+### Job state, read during the run ([`cron_state.py`](cron_state.py), `cron_state-20261110.log`)
+
+`enabled: true`, `state: scheduled`, `last_status: ok`, `last_error: null`,
+`failure_streak: 0`, `repeat.completed = 67`, `last_run_at = 2026-11-09T03:28:17`,
+`next_run_at = 2026-11-11T03:00`, `deliver: local`. `executions.db` since 2026-11-09: 11-09
+`completed`, 11-10 `running` (this occurrence, `started_at 2026-11-10T08:00:32`). Job id
+`2aec4dd52b5c`. `main == origin/main` at `345d517` at launch; this run commits and pushes its
+own record.
+
+**Timing:** 298 s — inside the wired band (~250–547 s of 10-11…11-09), far below the 1451 s WiFi
+band of 10-31, and the fastest of the recent wired runs. Note the registry shows
+`last_status: ok` / `failure_streak: 0` **despite** the missed 03:00 fire and the failed first
+attempt: a skipped occurrence and a transient DB-not-ready failure leave **no trace in the
+registry's status fields** — only this audit does.
+
+### Standing recommendation — now with a third availability incident on the same host
+
+The de-registration recommendation (2026-10-23, restated 10-31 and every run since) remains
+unexecuted. This run adds a **third** availability incident on the review-DB host (`game`),
+after the 10-31 address/stall event and the reboot catch-up of 11-04: a ~7 h power-off that
+silently skipped a scheduled fire and left postgres crash-recovering on boot. The point of the
+recommendation is unchanged and strengthened — the sweep proves nothing on a fixed cadence, and
+**a job whose host can be off cannot be trusted to have run**: a missed fire is indistinguishable
+from a no-op in the registry (`last_status: ok`, `failure_streak: 0`, no execution row at all).
+The DB-host repair (2026-10-31 action 2, `config/database.yml` `host: 192.168.86.49` →
+`localhost`) also remains unexecuted.
