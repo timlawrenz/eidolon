@@ -2464,3 +2464,130 @@ recommendation is unchanged and strengthened — the sweep proves nothing on a f
 from a no-op in the registry (`last_status: ok`, `failure_streak: 0`, no execution row at all).
 The DB-host repair (2026-10-31 action 2, `config/database.yml` `host: 192.168.86.49` →
 `localhost`) also remains unexecuted.
+
+## Re-run — 2026-11-11 (scheduled cron, in-slot 03:00 — 29th audited)
+
+Identical **material** outcome for the **twenty-ninth** audited run — `enrich` exit 0,
+**0 files written** — and, unlike the last three audited occurrences (11-04 catch-up, 11-05
+off-slot, 11-10 reboot catch-up), this one **fired in its own slot** (`03:00:31 EST`) on a host
+that had **not** rebooted since 2026-11-10 07:57.
+
+The audit adds **one new forensic finding**: the `os.execv` CUDA-lib restart that prior records
+read as an *intermittent* branch (fired on some runs, not others) in fact fires on **every** run;
+its log line is a **stdout-buffering artifact**.
+
+### Outcome — `enrich` exit 0, 0 files written
+
+`enrich-20261111.log`; wall clock **403 s** [`03:02:35` → `03:09:18 EST`], git `e128d51`, clean
+tree at launch — `main` and `origin/main` both at `e128d51`. Independent `probe_scan.py` re-sweep
+(`probe_scan-20261111.log`, PROBE_EXIT=0):
+
+| quantity | 11-05 | 11-07 | 11-09 | 11-10 | 11-11 |
+|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (`status_census.py`, `status_census-20261111.log`) — set strictly
+identical to every prior audited run, store total included: `approved` 166,200 ·
+`tainted:extraction_nonface` 215,914 · `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or re-statused.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (before `enrich`, `preflight_setdiff.sh`,
+  `preflight_setdiff-20261111.log`): `auraface/` and `lda/` each hold exactly **295,468 `.npy`**;
+  `comm -23` / `comm -13` on tree-relative, `LC_ALL=C`-sorted paths → **0** and **0**.
+* Post-run write verification (`postchecks.sh`, `verify_writes-20261111.log`):
+  `find v1/lda -name '*.npy' -newermt '2026-11-11 00:00'` → **0**; `-newermt '2026-11-10 00:00'`
+  → **0**; `-mmin -1440` → **0**; tree counts **295,468** (`auraface/`) and **295,468** (`lda/`).
+  Newest file in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`). The "0 files
+  written" line is a true zero, not a silent-failure zero.
+* `gapcheck` (`verify_writes-20261111.log`): `find lda … -newermt '2026-10-20 00:00'` → **0**;
+  `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any day since 2026-10-20.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261111.log`).
+* `probe_scan.py` (`probe_scan-20261111.log`): `missing auraface .npy: 23` · `missing LDA .npy:
+  23` (`of those no auraface: 23, not projectable`) · `missing z_g .npy: 9` · `missing pose.npy:
+  0`. Existing LDA samples (five): shape `(64,)`, `float32`, norms 152.61–154.79 — refit
+  raw-coords convention, unchanged.
+
+Raw `enrich` output (exit 0):
+```
+=== enrich launch Wed Nov 11 03:02:35 AM EST 2026 (git e128d51, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=403s END=Wed Nov 11 03:09:18 AM EST 2026
+```
+
+### New finding — the `os.execv` restart fires every run; its log line is a buffering artifact
+
+Prior records (from 10-11 onward) read the presence/absence of `Restarting subprocess to load
+CUDA libraries...` as evidence that the branch fired or did not fire, and called it intermittent
+("the four prior recorded runs did not restart"). It is **not** intermittent — the branch
+condition is deterministic and **true on every launch**:
+
+* `run_enrich.sh` never pre-sets `LD_LIBRARY_PATH` (the header prints `'<empty>'` in all 29
+  recorded logs), and `experiments/geometry_pca/.venv/lib/python3.14/site-packages/nvidia/cudnn/lib`
+  **exists** — verified by [`cuda_branch_probe.py`](cuda_branch_probe.py)
+  (`cuda_branch_probe-20261111.log`), which reproduces the exact predicate and prints
+  `would_restart: True`.
+* The line is missing whenever Python's **block-buffered stdout is discarded by `os.execv`**. The
+  `Restarting…` `print` (`tools/hegre_dataset/enrichment.py:218`) has no `flush=True`; if the
+  ~8 KB buffer has not filled/flushed before the `execv`, the **entire first-pass output** — that
+  line included — is dropped, and the surviving log is the **second pass alone**, which reads as a
+  single clean pass ending in `Error: insightface not installed.`
+* **Proof.** Re-running the identical command with `PYTHONUNBUFFERED=1`
+  (`enrich-20261111.unbuffered.log`, exit 0, wall **379 s**, **0 files written**) prints **both**
+  passes *and* the `Restarting subprocess…` line — the branch fires. The buffered run 25 min
+  earlier (same host, same git `e128d51`) printed one pass and no line.
+* **Corroboration from the existing data.** The restart flag is uncorrelated with wall clock
+  across the 26 completed runs (e.g. 11-03 `restarts=0` 389 s vs 11-05 `restarts=1` 404 s; 11-10
+  `restarts=1` 298 s; 11-11 `restarts=0` 403 s). A branch that genuinely skipped a whole 166k-stat
+  sweep would show a systematic time gap; there is none.
+
+**Consequence.** The sweep has been running the **full NFS scan twice** on essentially every night
+of its life (~2×166k stat loops). The prior audit's "the four prior recorded runs did not restart"
+reading is a **measurement artifact of the instrument (a log line), not a fact about the code** —
+the same class of error the project's own adversarial-pass rule names: *a check that cannot fail
+is not a check*. Fix, if the job is kept: add `flush=True` before `os.execv` (or pre-set
+`LD_LIBRARY_PATH` in `run_enrich.sh`), so the branch's firing is auditable from the log. This is a
+further argument for the standing de-registration recommendation below.
+
+### Audit-coverage gaps (carried)
+
+The **11-06** and **11-08** occurrences remain unaudited (fired `completed`, no README
+record/commit), as recorded on 11-10. No new gap this run.
+
+### Job state, read during the run ([`cron_state.py`](cron_state.py), `cron_state-20261111.log`)
+
+`enabled: true`, `state: scheduled`, `last_status: ok`, `last_error: null`, `failure_streak: 0`,
+`repeat.completed = 68`, `last_run_at = 2026-11-10T08:22:32`, `next_run_at = 2026-11-12T03:00`,
+`deliver: local`. `executions.db` since 2026-11-04: 11-04…11-09 in-slot `completed` (03:00:xx),
+11-10 catch-up at `08:00:32`, **11-11 in-slot at `03:00:31`** (this occurrence, `running`). Job id
+`2aec4dd52b5c`. `main == origin/main` at `e128d51` at launch; this run commits and pushes its own
+record.
+
+**Timing:** 403 s — inside the wired band (~250–547 s of 10-11…11-10), consistent with the double
+sweep the buffering finding implies. As established on 11-10, the registry's `last_status: ok` /
+`failure_streak: 0` leave **no trace** of a skipped fire or a transient DB-not-ready failure; only
+this audit does.
+
+### Standing recommendation — de-register (unchanged; now a 4th restatement unexecuted)
+
+The de-registration recommendation (2026-10-23, restated 10-31 and every run since) remains
+unexecuted. This run adds no new availability incident — the host stayed up and the fire was
+in-slot — but the buffering finding sharpens the case: the job is a proven no-op that has quietly
+consumed **two** full NFS sweeps per night, and its own log line is an unreliable witness to which
+code path ran. The DB-host repair (2026-10-31 action 2, `config/database.yml` `host:
+192.168.86.49` → `localhost`) also remains unexecuted.
