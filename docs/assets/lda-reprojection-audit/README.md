@@ -2837,3 +2837,129 @@ unexecuted. This run adds no new availability incident and no new finding; the j
 proven no-op on a fixed nightly cadence, consuming two full NFS sweeps per night. The DB-host
 repair (2026-10-31 action 2, `config/database.yml` `host: 192.168.86.49` → `localhost`) also
 remains unexecuted.
+
+## Re-run — 2026-11-14 (scheduled cron, in-slot 03:00 — 32nd audited)
+
+Identical **material** outcome for the **thirty-second** audited run — `enrich` exit 0, **0 files
+written** — fired in its own slot (`03:00:30 EST`) on a host that has **not** rebooted since
+2026-11-10 07:57 (4 days 2 h uptime). **No new forensic finding.** The 11-11 buffering conclusion
+gains a third data point, in the *negative* direction again (below): the `Restarting subprocess…`
+line was **absent** from this run's buffered log — a single clean pass, as on 11-12.
+
+### Outcome — `enrich` exit 0, 0 files written
+
+`enrich-20261114.log`; wall clock **346 s** [`03:02:18` → `03:08:04 EST`], git `4f88e7f`, clean
+tree at launch — `main` and `origin/main` both at `4f88e7f`, pushed before the run. Independent
+`probe_scan.py` re-sweep (`probe_scan-20261114.log`, PROBE_EXIT=0):
+
+| quantity | 11-10 | 11-11 | 11-12 | 11-13 | 11-14 |
+|---|---|---|---|---|---|
+| approved images | 166,200 | 166,200 | 166,200 | 166,200 | **166,200** |
+| approved missing LDA | 23 | 23 | 23 | 23 | **23** (all 23 also missing AuraFace ⇒ unprojectable) |
+| approved missing z_g | 9 | 9 | 9 | 9 | **9** |
+| approved missing pose.npy | 0 | 0 | 0 | 0 | **0** |
+| LDA files written by the run | 0 | 0 | 0 | 0 | **0** |
+
+Review-DB status census (`status_census.py`, `status_census-20261114.log`) — set strictly
+identical to every prior audited run, store total included: `approved` 166,200 ·
+`tainted:extraction_nonface` 215,914 · `tainted:contamination` 1,626 · `tainted:unusable` 253 ·
+`tainted:approved_bad_geometry` 19 · **TOTAL 384,012**. No row added, removed, or re-statused.
+
+Independent checks (all before/after the run):
+
+* **Pre-flight whole-tree set-difference** (before `enrich`, `preflight_setdiff.sh`,
+  `preflight_setdiff-20261114.log`, 03:01:01 → 03:02:14, 73 s): `auraface/` and `lda/` each hold
+  exactly **295,468 `.npy`**; `comm -23` / `comm -13` on tree-relative, `LC_ALL=C`-sorted paths →
+  **0** and **0**. Zero LDA work is reachable from the *entire* tree, independent of the review
+  DB.
+* Post-run write verification (`postchecks.sh`, `verify_writes-20261114.log`):
+  `find lda -name '*.npy' -newermt '2026-11-14 00:00'` → **0**; `-newermt '2026-11-13 00:00'`
+  → **0**; `-mmin -1440` → **0**; tree counts **295,468** (`auraface/`) and **295,468** (`lda/`).
+  Newest file in the tree is still **2026-07-28 14:42**
+  (`…/radka-in/radka-in-summer-dress/radka-in-summer-dress-poster_face1.npy`). The "0 files
+  written" line is a true zero, not a silent-failure zero.
+* `gapcheck` (`verify_writes-20261114.log`): `find lda … -newermt '2026-10-20 00:00'` → **0**;
+  `-newermt '2026-10-29 00:00'` → **0** — no LDA file written on any day since 2026-10-20.
+* `hegre-dataset basis-fingerprint verify --dataset v1/lda` →
+  `OK  …/v1/lda  120e1c5a1dc4f423  refit basis, raw coords (norm ~153)` — match
+  (`basis_verify-20261114.log`).
+* `cuda_branch_probe.py` (`cuda_branch_probe-20261114.log`): `would_restart: True`;
+  `insightface ImportError: No module named 'insightface'` — the re-exec branch predicate is
+  again true and the restarted pass again fails before any CUDA call, so no GPU work ran and no
+  GPU-scheduler reservation was needed.
+* `probe_scan.py` (`probe_scan-20261114.log`): `missing auraface .npy: 23` · `missing LDA .npy:
+  23` (`of those no auraface: 23, not projectable`) · `missing z_g .npy: 9` · `missing pose.npy:
+  0`. Existing LDA samples (five): shape `(64,)`, `float32`, norms 152.61–154.79 — refit
+  raw-coords convention, unchanged.
+
+Raw `enrich` output (exit 0):
+```
+=== enrich launch Sat Nov 14 03:02:18 AM EST 2026 (git 4f88e7f, LD_LIBRARY_PATH='<empty>') ===
+Running AuraFace-only enrichment (--skip-stratum) for approved images...
+Skipping Stratum enrichment (--skip-stratum).
+Found 9 approved images with pose but missing z_g. Extracting...
+z_g extraction complete in 0s. Extracted 0, skipped 9.
+Found 23 approved images missing AuraFace data. Extracting...
+Error: insightface not installed. Skipping AuraFace extraction.
+All approved images already have AuraFace-LDA data.
+Enrichment complete.
+ENRICH_EXIT=0 WALL=346s END=Sat Nov 14 03:08:04 AM EST 2026
+```
+
+### Corroboration of the 11-11 buffering finding — the line is absent again
+
+The 11-11 conclusion — the `os.execv` CUDA-lib restart fires on **every** launch and its
+`Restarting subprocess…` line is a **stdout-buffering artifact** — now has three observations
+across runs of *identical* conditions (same launcher, empty `LD_LIBRARY_PATH`, same
+deterministic branch predicate `would_restart: True`): **absent** on 11-12 (single pass),
+**present** on 11-13 (both passes), **absent again here on 11-14** (single pass). Presence is
+non-deterministic under fixed conditions — exactly what a buffer-flush race predicts, and what
+the 11-11 `PYTHONUNBUFFERED=1` proof established. Wall clock **346 s** sits inside the
+established band (11-10 298 s; 11-11 403 s / same-run unbuffered 379 s; 11-12 395 s; 11-13 368 s).
+
+### Environment / occurrence notes
+
+* **Wired link up; the bare command works.** `enp42s0` **UP** at `192.168.86.49/24` (`wlo1`
+  down); `config/database.yml` reads `host: 192.168.86.49` (line 8, unchanged), and
+  `pg_isready -h 192.168.86.49 -p 5432` → **accepting connections**, so the review DB was reached
+  with no `EIDOLON_DB_URL` override. The 2026-10-31 operator action (its 2 remaining items) is
+  still unapplied — the latent bug is intact.
+* **The NFS mount's `clientaddr` mismatch remains cleared** (2nd consecutive run): `mount`
+  reports **`clientaddr=192.168.86.49`**, the live wired address.
+* **The occurrence fired on time at 03:00:30 EST** (`executions.db` row for 11-14 →
+  `started_at 2026-11-14T03:00:30`, `status = running`, finishes on completion). Occurrence **72**.
+* **No process held the GPU at all this run:** `nvidia-smi --query-compute-apps` returned **no
+  rows** (on 11-13 it showed a single foreign `llama-server`, 4,842 MiB — an `ollama` process,
+  never eidolon). Either way the CUDA-lib re-exec's restarted subprocess fails at
+  `import insightface` (`ImportError`) before any CUDA call, so no `insightface` CUDA work ran.
+* **Timing / window:** the NFS-heavy `postchecks.sh` (`verify_writes` + `gapcheck` +
+  `probe_scan.py`) again exceeds the **420 s foreground window**, so — as on 11-12/11-13 — it was
+  launched as a **tracked background job** (the documented two-stage handling). `verify_writes` +
+  `gapcheck` completed first (`03:15:00`), then `probe_scan.py` walked all 166,200 approved paths
+  to `PROBE_EXIT=0` (`03:21:21`, `POSTCHECKS_DONE`). No NFS-throughput anomaly.
+
+### Audit-coverage gaps (carried)
+
+The **11-06** and **11-08** occurrences remain unaudited (fired `completed`, no README
+record/commit), as recorded on 11-10 through 11-13. No new gap this run.
+
+### Job state, read during the run ([`cron_state.py`](cron_state.py), `cron_state-20261114.log`)
+
+`enabled: true`, `state: scheduled`, `last_status: ok`, `last_error: null`, `failure_streak: 0`,
+`repeat.completed = 71`, `last_run_at = 2026-11-13T03:26:21`, `next_run_at = 2026-11-15T03:00`,
+`deliver: local`, `created_at = 2026-07-24T08:45:36`. `executions.db` since 2026-11-09: 11-09…
+11-13 in-slot `completed`, **11-14 in-slot at `03:00:30`** (this occurrence, `running`). Job id
+`2aec4dd52b5c`. `main == origin/main` at `4f88e7f` at launch; this run commits and pushes its own
+record.
+
+**Timing:** 346 s — inside the wired band (~250–547 s of 10-11…11-13). As established on 11-10,
+the registry's `last_status: ok` / `failure_streak: 0` leave **no trace** of a skipped fire or a
+transient DB-not-ready failure; only this audit does.
+
+### Standing recommendation — de-register (unchanged; now a 7th restatement unexecuted)
+
+The de-registration recommendation (2026-10-23, restated every run since 10-31) remains
+unexecuted. This run adds no new availability incident and no new finding; the job remains a
+proven no-op on a fixed nightly cadence, consuming two full NFS sweeps per night. The DB-host
+repair (2026-10-31 action 2, `config/database.yml` `host: 192.168.86.49` → `localhost`) also
+remains unexecuted.
